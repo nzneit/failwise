@@ -36,7 +36,13 @@ function nameNotAsserted(machine: Machine): boolean {
   return true;
 }
 
-const GATE: Run = { name: "gate", config: "dev/browser/playwright.config.ts", fetch: true, after: nameNotAsserted };
+const GATE: Run = {
+  name: "gate",
+  config: "dev/browser/playwright.config.ts",
+  out: "build/browser/gate",
+  accepts: { fetch: true, report: true, base: false },
+  after: nameNotAsserted,
+};
 
 export function runGate(argv: string[], machine: Machine): number {
   return runBrowser(GATE, argv, machine);

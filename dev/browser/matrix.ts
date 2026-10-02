@@ -1,8 +1,18 @@
 export const ENGINES = ["chromium", "firefox", "webkit"] as const;
 export type Engine = (typeof ENGINES)[number];
 
-/** The viewport widths every layout check runs at: a phone, a tablet, a laptop and a desktop. */
-export const WIDTHS = [375, 768, 1280, 1920] as const;
+/** The viewport widths every layout check runs at: a small phone (320 px, the width of the reflow criterion), a phone, a tablet, a laptop and a desktop. */
+export const WIDTHS = [320, 375, 768, 1280, 1920] as const;
+export type View = (typeof WIDTHS)[number] | "print";
+/** Every view the comparison photographs a part at: each width, then print. */
+export const VIEWS: readonly View[] = [...WIDTHS, "print"];
+/** The first width with the wide layout; the template's one width query is BREAKPOINT - 1 px. */
+export const BREAKPOINT = 768;
+/** The widths the stepped check visits, ascending: 320 to 1280 in steps of 4, and BREAKPOINT - 1. */
+export const STEPPED_WIDTHS: readonly number[] = [
+  ...Array.from({ length: (1280 - 320) / 4 + 1 }, (_, step) => 320 + 4 * step),
+  BREAKPOINT - 1,
+].sort((a, b) => a - b);
 export const VIEWPORT_HEIGHT = 900;
 /** The width the print checks open the report at: a landscape page less its margins, in CSS pixels. */
 export const PRINT_WIDTH = 965;
@@ -11,10 +21,7 @@ export type CheckId = "scroll" | "edge" | "axe";
 export interface ExpectedFailure { check: CheckId; width: number; reason: string }
 
 /** The checks known to fail on today's report, each with the reason it fails. */
-export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [
-  { check: "scroll", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
-  { check: "edge", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
-];
+export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [];
 
 /** The expected failure of `check` at `width`, or undefined when that check must pass. */
 export function expectedFailure(check: CheckId, width: number): ExpectedFailure | undefined {
@@ -25,35 +32,47 @@ export function expectedFailure(check: CheckId, width: number): ExpectedFailure 
 export type NotAsserted = ExpectedFailure;
 
 /** The checks measured and named on every passing run but not asserted, each with the reason. */
-export const NOT_ASSERTED: readonly NotAsserted[] = [
-  {
-    check: "scroll",
-    width: 768,
-    reason: "the contents line cannot wrap between its links, so its last link, Provenance, widens the page by an amount that depends on the reader's fonts; left to the narrow-screen design",
-  },
-  {
-    check: "edge",
-    width: 768,
-    reason: "the contents line cannot wrap between its links, so its last link, Provenance, passes the right edge by an amount that depends on the reader's fonts; left to the narrow-screen design",
-  },
-];
+export const NOT_ASSERTED: readonly NotAsserted[] = [];
 
 /** The not-asserted entry of `check` at `width`, or undefined when the check is asserted. */
 export function notAsserted(check: CheckId, width: number): NotAsserted | undefined {
   return NOT_ASSERTED.find((open) => open.check === check && open.width === width);
 }
 
-/** Selectors of elements that may scroll sideways inside themselves; empty until the narrow-screen design. */
-export const SCROLL_CONTAINERS: readonly string[] = [];
+/** An identifier of 65 lower-case letters and underscores, with no place a line may break: what the tokens check
+ *  writes into every text of the report that may wrap. */
+export const LONG_TOKEN = "an_identifier_long_enough_to_widen_any_field_it_is_written_into_x";
+/** The widths the tokens check runs at: the two phones and the last width under the breakpoint. */
+export const TOKEN_WIDTHS: readonly number[] = [320, 375, BREAKPOINT - 1];
+/** An element the tokens check writes nothing into, and where its text comes from. */
+interface TokenExemption { selector: string; reason: string }
+/** The elements that hold a short label from a fixed vocabulary or the priority table, not text a user wrote,
+ *  and are built not to wrap or shrink. */
+export const TOKEN_EXEMPT: readonly TokenExemption[] = [
+  { selector: ".pri", reason: "the priority badge: a value of the priority table's vocabulary, in an inline-flex box that does not shrink" },
+];
+
+/** Selectors of elements that may scroll sideways inside themselves: the frames every table of the report sits in. */
+export const SCROLL_CONTAINERS: readonly string[] = [".frame"];
 
 /** The ids of the report's sections photographed one by one: every <section> but the chains. */
 export const SECTION_PARTS = ["header", "ground-rules", "assumptions", "reviews", "structure", "actions", "lints", "provenance"] as const;
 /** The tallest a part image may be, in pixels; a taller part is written in consecutive pieces. */
 export const MAX_PART_HEIGHT = 1600;
 
+/** A row id without its "row-" prefix, every character outside A-Z a-z 0-9 . _ - replaced by "-". */
+function reducedName(id: string): string {
+  return id.replace(/^row-/, "").replace(/[^A-Za-z0-9._-]/g, "-");
+}
+
 /** The file stem of a row section: its 1-based position, two digits, then its element id without "row-",
  *  every character outside A-Z a-z 0-9 . _ - replaced by "-". rowFileStem(1, "row-ch-2") is "row-01-ch-2". */
 export function rowFileStem(position: number, id: string): string {
-  const name = id.replace(/^row-/, "").replace(/[^A-Za-z0-9._-]/g, "-");
-  return `row-${String(position).padStart(2, "0")}-${name}`;
+  return `row-${String(position).padStart(2, "0")}-${reducedName(id)}`;
+}
+
+/** A row's file stem in the comparison: "row-" and its element id without "row-", every character outside
+ *  A-Z a-z 0-9 . _ - replaced by "-", with no position, so rows match by id. rowStem("row-ch-2") is "row-ch-2". */
+export function rowStem(id: string): string {
+  return `row-${reducedName(id)}`;
 }

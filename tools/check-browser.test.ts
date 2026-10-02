@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { runGate } from "./check-browser.ts";
-import { EXPECTED_FAILURES, expectedFailure, NOT_ASSERTED } from "../dev/browser/matrix.ts";
+import { BREAKPOINT, EXPECTED_FAILURES, NOT_ASSERTED, notAsserted, STEPPED_WIDTHS } from "../dev/browser/matrix.ts";
 import { fakeMachine, report, type Call, type FakeOptions } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
@@ -43,7 +45,7 @@ test("the default run: dry run, render, Playwright on chromium, the other engine
     "skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out build/browser/report.html --force",
     `${PLAYWRIGHT} test --config dev/browser/playwright.config.ts --project chromium`,
   ]);
-  assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", NOT_ASSERTED_LINE, "## not run here: firefox, webkit"]);
+  assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", ...(NOT_ASSERTED.length > 0 ? [NOT_ASSERTED_LINE] : []), "## not run here: firefox, webkit"]);
   assert.equal(result.env[2], "/repo/build/browser/report.html");
 });
 
@@ -51,7 +53,7 @@ test("all three engines: one --project each, and no line about engines not run",
   const result = run(["--engines", "webkit,chromium,firefox"]);
   assert.equal(result.status, 0);
   assert.match(result.calls[2], /--project chromium --project firefox --project webkit$/);
-  assert.deepEqual(result.lines, ["## gate: playwright test over chromium, firefox, webkit (node v24.17.0)", NOT_ASSERTED_LINE]);
+  assert.deepEqual(result.lines, ["## gate: playwright test over chromium, firefox, webkit (node v24.17.0)", ...(NOT_ASSERTED.length > 0 ? [NOT_ASSERTED_LINE] : [])]);
 });
 
 test("a repeated engine is run once; an empty item is USAGE", () => {
@@ -76,6 +78,11 @@ test("an unknown flag, an unknown engine, a flag without its value, --with-deps 
     assert.deepEqual(result.errors, [line]);
     assert.deepEqual(result.calls, []);
   }
+});
+
+test("--base belongs to the comparison: USAGE, nothing started", () => {
+  const result = run(["--base", "main"]);
+  assert.deepEqual([result.status, result.errors, result.calls], [1, ["error USAGE: unknown flag --base"], []]);
 });
 
 test("no Node 24.2 or later: NODE, nothing started", () => {
@@ -252,14 +259,21 @@ test("the stale results file the fake starts with sits where the runner reads it
   assert.equal(machine.files.readText(RESULTS), "{}");
 });
 
-test("the phone-width layout checks are expected failures, and the tablet-width ones are measured and not asserted", () => {
-  assert.deepEqual(EXPECTED_FAILURES.map((known) => `${known.width} ${known.check}`), ["375 scroll", "375 edge"]);
-  assert.deepEqual(NOT_ASSERTED.map((open) => `${open.width} ${open.check}`), ["768 scroll", "768 edge"]);
-  for (const entry of [...EXPECTED_FAILURES, ...NOT_ASSERTED]) {
-    assert.match(entry.reason, /narrow-screen design/, `${entry.check} at ${entry.width}`);
-  }
-  for (const open of NOT_ASSERTED) {
-    assert.match(open.reason, /fonts/, `${open.check} at ${open.width}`);
-    assert.equal(expectedFailure(open.check, open.width), undefined, "a check is an expected failure or not asserted, never both");
-  }
+test("both lists are empty, and share no entry", () => {
+  // The loop runs first: the strict deepEqual below narrows EXPECTED_FAILURES to never[] for the type checker.
+  for (const known of EXPECTED_FAILURES) assert.equal(notAsserted(known.check, known.width), undefined);
+  assert.deepEqual(EXPECTED_FAILURES, []);
+  assert.deepEqual(NOT_ASSERTED, []);
+});
+
+test("the template's one width query is at BREAKPOINT - 1 px", () => {
+  const template = readFileSync(join(import.meta.dirname, "..", "skills", "fmea-software", "assets", "report-template.html"), "utf8");
+  assert.deepEqual([...template.matchAll(/@media\s*\(([^)]*)\)/g)].map((match) => match[1]), [`max-width: ${BREAKPOINT - 1}px`]);
+});
+
+test("the stepped check visits 242 widths, ascending, from 320 to 1280 px, the last width under the breakpoint among them", () => {
+  assert.equal(STEPPED_WIDTHS.length, 242);
+  assert.ok(STEPPED_WIDTHS.every((width, i) => i === 0 || width > STEPPED_WIDTHS[i - 1]), "ascending");
+  assert.deepEqual([STEPPED_WIDTHS[0], STEPPED_WIDTHS.at(-1)], [320, 1280]);
+  assert.ok(STEPPED_WIDTHS.includes(BREAKPOINT - 1));
 });

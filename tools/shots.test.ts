@@ -61,7 +61,7 @@ function run(argv: string[], fake: Fake = {}): { status: number; lines: string[]
 test("everything owed is there, one part in two pieces: the count, exit 0", () => {
   const result = run([]);
   assert.equal(result.status, 0);
-  assert.equal(result.lines.at(-2), "## shots: 57 files under build/shots/"); // 4 widths × 14 files, and the PDF
+  assert.equal(result.lines.at(-2), "## shots: 71 files under build/shots/"); // 5 widths × 14 files, and the PDF
   assert.equal(result.lines.at(-1), "## not run here: firefox, webkit");
   assert.ok(!result.lines.some((line) => line.startsWith("## not asserted")), result.lines.join("\n"));
 });
@@ -115,7 +115,15 @@ test("a report with no chains owes no key, no index and no row", () => {
   const html = SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join("") + '<p class="empty">No chains.</p>';
   const result = run(["--report", "/work/empty.html"], { html, written: ["page.png", ...SECTION_PARTS.map((id) => `${id}.png`)] });
   assert.equal(result.status, 0);
-  assert.equal(result.lines.at(-2), "## shots: 37 files under build/shots/"); // 4 widths × 9 files, and the PDF
+  assert.equal(result.lines.at(-2), "## shots: 46 files under build/shots/"); // 5 widths × 9 files, and the PDF
+});
+
+test("an index inside a frame still owes the key and the index", () => {
+  const html = HTML.replace('<table class="index">', '<div class="frame" tabindex="0" role="region" aria-label="Index of failure chains"><table class="index" aria-labelledby="index-caption">');
+  assert.equal(run([], { html }).status, 0);
+  const lacking = run([], { html, drop: ["chromium/375/index.png"] });
+  assert.equal(lacking.status, 1);
+  assert.deepEqual(lacking.errors, ["error UNVERIFIED: build/shots/chromium/375/ lacks index"]);
 });
 
 test("without chromium among the engines no PDF is owed", () => {
@@ -124,6 +132,10 @@ test("without chromium among the engines no PDF is owed", () => {
 
 test("--fetch belongs to the gate's runner: USAGE", () => {
   assert.deepEqual(run(["--fetch"]).errors, ["error USAGE: unknown flag --fetch"]);
+});
+
+test("--base belongs to the comparison: USAGE", () => {
+  assert.deepEqual(run(["--base", "main"]).errors, ["error USAGE: unknown flag --base"]);
 });
 
 test("a row's file stem carries its position and its id reduced to file-name characters", () => {

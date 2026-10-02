@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test, type Locator, type Page } from "@playwright/test";
 import { SHOTS_DIR } from "./config.ts";
 import { MAX_PART_HEIGHT, rowFileStem, SECTION_PARTS, WIDTHS } from "./matrix.ts";
-import { openReport } from "./report.ts";
+import { openReport, partLocator } from "./report.ts";
 
 /** Writes `locator`'s element as `<stem>.png`, or as `<stem>-p1.png`, `<stem>-p2.png` ... when it is
  *  taller than MAX_PART_HEIGHT. Writes nothing when the locator matches nothing. */
@@ -37,9 +37,9 @@ for (const width of WIDTHS) {
     await openReport(page, width);
     const dir = join(SHOTS_DIR, testInfo.project.name, String(width));
     await page.screenshot({ path: join(dir, "page.png"), fullPage: true });
-    for (const id of SECTION_PARTS) await writePart(page, page.locator(`#${id}`), dir, id);
-    await writePart(page, page.locator(".key"), dir, "key");
-    await writePart(page, page.locator("table.index"), dir, "index");
+    // The index is its frame when the table has one, and the table when it does not, so it shows as the reader
+    // first sees it and not as a wide table cut at the page's edge.
+    for (const stem of [...SECTION_PARTS, "key", "index"]) await writePart(page, await partLocator(page, stem), dir, stem);
     const rows = page.locator("article.row");
     const ids = await rows.evaluateAll((elements) => elements.map((element) => element.id));
     for (const [i, id] of ids.entries()) await writePart(page, rows.nth(i), dir, rowFileStem(i + 1, id));

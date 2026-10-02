@@ -65,29 +65,43 @@ renderer (`skills/fmea-software/scripts/render.ts` and the modules it imports):
 
 ```
 node tools/check-browser.ts
-node tools/shots.ts
+node tools/compare.ts
 ```
 
-The first renders the checkout fixture and opens it in Chromium at four widths (375, 768, 1280 and
-1920 px) and under print emulation. It fails on a page that scrolls sideways, on an element past
-the right edge, on a WCAG A or AA violation that axe-core finds, and on a print rule that does not
-take effect. The second writes a screenshot of every part of the report, at every width, to
-`build/shots/`, with the print PDF. Look at the parts your change touches, at every width, before
-calling the change done: the gate cannot judge page breaks or whether the report reads well. A part
-image is cut at its element's box, so content that spills sideways shows only in `page.png`.
+The first renders the checkout fixture and opens it in Chromium at five widths (320, 375, 768, 1280
+and 1920 px), at every width from 320 to 1280 px in 4 px steps, and under print emulation. It fails
+on a page that scrolls sideways, on an element past the right edge, on a table outside its frame or
+a frame that clips, on a WCAG A or AA violation that axe-core finds, and on a print rule that does
+not take effect. A table wider than the page scrolls inside its own frame, which the gate checks in
+place of the table's own edge.
+
+The second compares the report of your working tree with the report of the commit where your
+branch left `main`, part by part, at every width and in print. Each part is photographed on its own,
+with the rest of the page hidden, so a change shows only in the parts it touches. For each view that
+changed it writes a before, an after and a difference image to `build/compare/changed/`, with a
+summary in `build/compare/summary.md` and a viewer in `build/compare/html/`. A changed view is not a
+failure: read the summary and look at every changed view before calling the change done. The command
+exits 1 only when a view could not be judged or the comparison could not be done. A change you did
+not intend is a finding. `--base <commit>` compares against another commit.
+
+`node tools/shots.ts` writes a screenshot of every part of the report, at every width, to
+`build/shots/`, with the print PDF, for a look at the report as it is. A part image is cut at its
+element's box, and a framed table shows cut at its frame.
 
 Fetch the browser once with `node tools/check-browser.ts --fetch`, and again when
-`dev/package-lock.json` changes Playwright's version. Both commands take
-`--engines chromium,firefox,webkit` and `--report <file.html>` for a report that already exists, and
-both are the same in bash and fish. A local run names the engines it did not run. CI runs all three
-on every pull request and uploads the screenshots as the `browser-checks` artifact.
+`dev/package-lock.json` changes Playwright's version. The three commands take
+`--engines chromium,firefox,webkit`; the gate and the screenshot command also take
+`--report <file.html>` for a report that already exists. All are the same in bash and fish, and a
+local run names the engines it did not run. CI runs the gate and the screenshots on all three
+engines and uploads them, as the `browser-checks` artifact, only when one of them fails. On a pull
+request it also runs the comparison on Chromium against the pull request's base, shows its summary
+on the run's page, and uploads the summary and the viewer as the `report-changes` artifact when a
+view changed or the comparison itself failed.
 
-A check listed in `EXPECTED_FAILURES` of `dev/browser/matrix.ts` is a known gap with its reason. The
-run fails when such a check starts to pass, so a change that closes a gap removes its entry.
-
-A check listed in `NOT_ASSERTED` there is measured but cannot fail the run, because its result
-depends on the reader's fonts. Every passing run names these checks in a `## not asserted` line;
-they are not verified until their entries are removed.
+`EXPECTED_FAILURES` and `NOT_ASSERTED` in `dev/browser/matrix.ts` are empty. A gap found later is
+recorded there with its reason. The run fails when an expected failure starts to pass, so a change
+that closes a gap removes its entry. A check not asserted, one whose result depends on the reader's
+fonts, cannot fail the run and is named in a `## not asserted` line on every passing run.
 
 ## Scripts and tools
 

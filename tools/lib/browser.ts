@@ -1,20 +1,23 @@
-// The runner both browser commands share: tools/check-browser.ts (the gate) and the screenshot
-// command. It starts Playwright's CLI, the entry under dev/node_modules/.bin, as a child process
-// through the Node 24.2 or later that tools/lib/host.ts finds, and turns Playwright's JSON report
-// into a verdict that fails closed: an engine asked for that ran no test, a skipped test, a test
-// with a status it does not know, or a report that is absent or unreadable each make the run exit 1
-// with an UNVERIFIED line. It imports no package; the one file of dev/browser/ it reads is
-// matrix.ts. Everything it touches goes through an injected `Machine`, so the tests stand in for
-// the machine (tools/lib/fake-machine.ts).
+// The runner the three browser commands share: tools/check-browser.ts (the gate), tools/shots.ts
+// (the screenshots) and tools/compare.ts (the report comparison). It parses their flags, finds a
+// Node 24.2 or later through tools/lib/host.ts, checks the tooling and the browsers, and starts
+// Playwright's CLI, the entry under dev/node_modules/.bin, as a child process. For the gate and the
+// screenshots it turns Playwright's JSON report into the default verdict, which fails closed: an
+// engine asked for that ran no test, a skipped test, a test with a status it does not know, or a
+// report that is absent or unreadable each make the run exit 1 with an UNVERIFIED line. The
+// comparison gives its own `execute` and judges for itself, through the same session. It imports no
+// package; the one file of dev/browser/ it reads is matrix.ts. Everything it touches goes through an
+// injected `Machine`, so the tests stand in for the machine (tools/lib/fake-machine.ts).
 
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { ENGINES, type Engine } from "../../dev/browser/matrix.ts";
 import { defaultHost, findNode, MIN_LABEL, type Host } from "./host.ts";
 
 const PLAYWRIGHT = "dev/node_modules/.bin/playwright";
-const RENDER = "skills/fmea-software/scripts/render.ts";
-const FIXTURE = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
+/** The renderer and the fixture every browser command renders, repository-relative. */
+export const RENDER = "skills/fmea-software/scripts/render.ts";
+export const FIXTURE = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
 const OUT = "build/browser";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
 const ENGINE_LIST = ENGINES.join(", ");
@@ -26,6 +29,9 @@ export interface Files {
   readText: (path: string) => string | null; // null when the file is absent or unreadable
   remove: (path: string) => void; // recursive; an absent path is not an error
   makeDir: (path: string) => void; // recursive
+  writeText: (path: string, text: string) => void; // creates the parent folder
+  appendText: (path: string, text: string) => void; // creates the file when absent
+  copy: (from: string, to: string) => boolean; // creates the parent folder; false when `from` cannot be copied
 }
 
 export interface Machine {
@@ -38,16 +44,46 @@ export interface Machine {
 }
 
 export interface Run {
-  name: "gate" | "shots";
+  name: "gate" | "shots" | "compare";
   config: string; // repository-relative path of the Playwright configuration
-  fetch: boolean; // whether --fetch and --with-deps are accepted
+  out: string; // repository-relative folder removed before the run; the default results file is <out>/results.json
+  accepts: { fetch: boolean; report: boolean; base: boolean }; // the optional flags it takes; any other is "unknown flag"
   prepare?: (machine: Machine) => void;
+  /** Steps 6 to 10 when given: the run renders, runs Playwright and judges for itself. */
+  execute?: (session: Session) => boolean;
   after?: (machine: Machine, engines: readonly Engine[], report: string) => boolean;
+}
+
+/** What `execute` works with. Every child is started from the repository root. */
+export interface Session {
+  machine: Machine;
+  engines: readonly Engine[];
+  base: string; // --base; "main" when not given
+  nodeVersion: string; // "24.17.0"
+  /** Starts `<node> <renderer> <input> --out <out> --force` with stdio "inherit"; its exit status. */
+  render: (renderer: string, input: string, out: string) => number | null;
+  /** Starts `<node> <playwright> test --config <run.config> --project <engine>... ...args` with stdio "inherit" and
+   *  `env` added; its exit status, or null after a TOOLING line. */
+  playwright: (args: string[], env: Record<string, string>) => number | null;
+  /** The tests of the Playwright JSON report at `results` (repository-relative); null when absent or not one. */
+  readTests: (results: string) => ReportedTest[] | null;
+  /** Starts `command ...args` from the root with stdio "pipe": git and tar. */
+  exec: (command: string, args: string[]) => { status: number | null; stdout: string; stderr: string };
+}
+
+/** One test of a JSON report. */
+export interface ReportedTest {
+  title: string; // the spec's title
+  projectName: string;
+  status: string; // String(field), so "undefined" when absent
+  attachments: { name: string; path: string }[]; // of the last result; one without a string path is left out
+  message: string; // the first error message of the last result; "" when none
 }
 
 interface Flags {
   engines: Engine[];
   report: string | null;
+  base: string | null;
   fetch: boolean;
   withDeps: boolean;
 }
@@ -68,6 +104,13 @@ function parseEngines(value: string | undefined): Engine[] | string {
   return ENGINES.filter((engine) => names.includes(engine));
 }
 
+/** Sets a flag that takes a value: returns 2, the arguments it took, or `needs` when the value is missing or empty. */
+function applyValue(flags: Flags, key: "report" | "base", value: string | undefined, needs: string): number | string {
+  if (value === undefined || value === "") return needs;
+  flags[key] = value;
+  return 2;
+}
+
 /** Applies one flag to `flags`. Returns how many arguments it took, or the USAGE message. */
 function applyFlag(run: Run, flags: Flags, flag: string, value: string | undefined): number | string {
   if (flag === "--engines") {
@@ -76,20 +119,18 @@ function applyFlag(run: Run, flags: Flags, flag: string, value: string | undefin
     flags.engines = engines;
     return 2;
   }
-  if (flag === "--report") {
-    if (value === undefined || value === "") return "--report needs a path";
-    flags.report = value;
-    return 2;
-  }
-  if (run.fetch && flag === "--fetch") flags.fetch = true;
-  else if (run.fetch && flag === "--with-deps") flags.withDeps = true;
+  const { accepts } = run;
+  if (accepts.report && flag === "--report") return applyValue(flags, "report", value, "--report needs a path");
+  if (accepts.base && flag === "--base") return applyValue(flags, "base", value, "--base needs a commit");
+  if (accepts.fetch && flag === "--fetch") flags.fetch = true;
+  else if (accepts.fetch && flag === "--with-deps") flags.withDeps = true;
   else return `unknown flag ${flag}`;
   return 1;
 }
 
 /** Step 1: the flags, or null after a USAGE line. */
 function parseFlags(run: Run, argv: string[], writeError: (line: string) => void): Flags | null {
-  const flags: Flags = { engines: ["chromium"], report: null, fetch: false, withDeps: false };
+  const flags: Flags = { engines: ["chromium"], report: null, base: null, fetch: false, withDeps: false };
   let i = 0;
   while (i < argv.length) {
     const taken = applyFlag(run, flags, argv[i], argv[i + 1]);
@@ -166,12 +207,13 @@ function givenReport(machine: Machine, report: string): string | null {
 
 /** Step 6 without --report: renders the checkout fixture, and returns the report's absolute path or
  *  null after a TOOLING line. */
-function renderFixture(ctx: Context): string | null {
+function renderFixture(session: Session): string | null {
+  const { machine } = session;
   const out = `${OUT}/report.html`;
-  ctx.machine.files.makeDir(join(ctx.machine.root, OUT));
-  const { status } = start(ctx, RENDER, [FIXTURE, "--out", out, "--force"], "inherit");
-  if (status === 0) return join(ctx.machine.root, out);
-  ctx.machine.writeError(`error TOOLING: render.ts exited ${status ?? "without a status"}; the checkout fixture could not be rendered`);
+  machine.files.makeDir(join(machine.root, OUT));
+  const status = session.render(RENDER, FIXTURE, out);
+  if (status === 0) return join(machine.root, out);
+  machine.writeError(`error TOOLING: render.ts exited ${status ?? "without a status"}; the checkout fixture could not be rendered`);
   return null;
 }
 
@@ -183,16 +225,33 @@ function items(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
+/** The value when it is a string, else "". */
+function stringOf(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** One `specs[].tests[]` entry of the spec titled `title`, as the runners read it. */
+function reportedTest(title: string, one: unknown): ReportedTest {
+  const last = items(field(one, "results")).at(-1);
+  const attachments = items(field(last, "attachments"))
+    .filter((attachment) => typeof field(attachment, "path") === "string")
+    .map((attachment) => ({ name: stringOf(field(attachment, "name")), path: stringOf(field(attachment, "path")) }));
+  const message = stringOf(field(items(field(last, "errors"))[0], "message"));
+  return { title, projectName: stringOf(field(one, "projectName")), status: String(field(one, "status")), attachments, message };
+}
+
 /** Every `specs[].tests[]` entry under `suites`, walked recursively; a missing list is empty. */
-function testsOf(suites: unknown[]): unknown[] {
+function testsOf(suites: unknown[]): ReportedTest[] {
   return suites.flatMap((suite) => [
-    ...items(field(suite, "specs")).flatMap((spec) => items(field(spec, "tests"))),
+    ...items(field(suite, "specs")).flatMap((spec) =>
+      items(field(spec, "tests")).map((one) => reportedTest(stringOf(field(spec, "title")), one)),
+    ),
     ...testsOf(items(field(suite, "suites"))),
   ]);
 }
 
 /** The tests of Playwright's JSON report, or null when the text is absent, not JSON, or has no `suites` array. */
-function reportedTests(text: string | null): unknown[] | null {
+function reportedTests(text: string | null): ReportedTest[] | null {
   if (text === null) return null;
   let parsed: unknown;
   try {
@@ -201,21 +260,24 @@ function reportedTests(text: string | null): unknown[] | null {
     return null;
   }
   const suites = field(parsed, "suites");
-  return Array.isArray(suites) ? testsOf(suites) : null;
+  if (!Array.isArray(suites)) return null;
+  return testsOf(suites);
 }
 
-/** Step 9: whether the report proves every engine asked for ran, nothing was skipped, every test
- *  ended as expected, and Playwright exited 0. Each gap in the proof is an UNVERIFIED line. */
-function verdict(machine: Machine, run: Run, engines: Engine[], exitStatus: number): boolean {
-  const results = `${OUT}/${run.name}/results.json`;
-  const tests = reportedTests(machine.files.readText(join(machine.root, results)));
+/** Step 9: whether the report at `<out>/results.json` proves every engine asked for ran, nothing was
+ *  skipped, every test ended as expected, and Playwright exited 0. Each gap in the proof is an
+ *  UNVERIFIED line. */
+function verdict(session: Session, out: string, exitStatus: number): boolean {
+  const { machine, engines } = session;
+  const results = `${out}/results.json`;
+  const tests = session.readTests(results);
   if (tests === null) {
     machine.writeError(`error UNVERIFIED: ${results} is absent or is not Playwright's JSON report`);
     return false;
   }
-  const unrun = engines.filter((engine) => !tests.some((one) => field(one, "projectName") === engine));
+  const unrun = engines.filter((engine) => !tests.some((one) => one.projectName === engine));
   for (const engine of unrun) machine.writeError(`error UNVERIFIED: no test ran on ${engine}`);
-  const statuses = tests.map((one) => String(field(one, "status")));
+  const statuses = tests.map((one) => one.status);
   const skipped = statuses.filter((status) => status === "skipped").length;
   if (skipped > 0) machine.writeError(`error UNVERIFIED: ${skipped} test(s) were skipped`);
   const unknown = statuses.filter((status) => !KNOWN_STATUSES.includes(status)).length;
@@ -225,20 +287,43 @@ function verdict(machine: Machine, run: Run, engines: Engine[], exitStatus: numb
   return unrun.length === 0 && skipped === 0 && unknown === 0 && !failed && exitStatus === 0;
 }
 
-/** After step 4, before step 5: prepares the run and removes build/browser/<run>, so an earlier
+/** After step 4, before step 5: prepares the run and removes its folder, `run.out`, so an earlier
  *  run's output survives no failure from here on and cannot stand in for this run's. */
 function clearEarlierRun(machine: Machine, run: Run): void {
   run.prepare?.(machine);
-  machine.files.remove(join(machine.root, OUT, run.name));
+  machine.files.remove(join(machine.root, run.out));
 }
 
-/** Steps 7 to 9: starts `playwright test` and gives the verdict. */
-function testRun(ctx: Context, run: Run, engines: Engine[], report: string, version: string): boolean {
+/** What steps 6 to 10 work with: every child started through the resolved Node from the root. */
+function openSession(ctx: Context, run: Run, flags: Flags, nodeVersion: string): Session {
   const { machine } = ctx;
-  machine.write(`## ${run.name}: playwright test over ${engines.join(", ")} (node v${version})`);
-  const projects = engines.flatMap((engine) => ["--project", engine]);
-  const status = playwright(ctx, ["test", "--config", run.config, ...projects], { FAILWISE_REPORT: report });
-  return status !== null && verdict(machine, run, engines, status);
+  const projects = flags.engines.flatMap((engine) => ["--project", engine]);
+  return {
+    machine,
+    engines: flags.engines,
+    base: flags.base ?? "main",
+    nodeVersion,
+    render: (renderer, input, out) => start(ctx, renderer, [input, "--out", out, "--force"], "inherit").status,
+    playwright: (args, env) => playwright(ctx, ["test", "--config", run.config, ...projects, ...args], env),
+    readTests: (results) => reportedTests(machine.files.readText(join(machine.root, results))),
+    exec: (command, args) => {
+      const { root, host } = machine;
+      const { status, stdout, stderr } = host.spawn(command, args, { cwd: root, stdio: "pipe", env: { ...host.env } });
+      return { status, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") };
+    },
+  };
+}
+
+/** Steps 6 to 10 for a run with no `execute`: the report, `playwright test` over it, the verdict,
+ *  then the run's own `after`. */
+function defaultExecute(run: Run, session: Session, flags: Flags): boolean {
+  const { machine, engines } = session;
+  const report = flags.report === null ? renderFixture(session) : givenReport(machine, flags.report);
+  if (report === null) return false;
+  machine.write(`## ${run.name}: playwright test over ${engines.join(", ")} (node v${session.nodeVersion})`);
+  const status = session.playwright([], { FAILWISE_REPORT: report });
+  if (status === null || !verdict(session, run.out, status)) return false;
+  return run.after === undefined || run.after(machine, engines, report);
 }
 
 export function runBrowser(run: Run, argv: string[], machine: Machine): number {
@@ -254,10 +339,8 @@ export function runBrowser(run: Run, argv: string[], machine: Machine): number {
   if (flags.fetch) return fetchBrowsers(ctx, flags);
   clearEarlierRun(machine, run);
   if (!browsersPresent(ctx, flags.engines)) return 1;
-  const report = flags.report === null ? renderFixture(ctx) : givenReport(machine, flags.report);
-  if (report === null) return 1;
-  if (!testRun(ctx, run, flags.engines, report, node.version.join("."))) return 1;
-  if (run.after && !run.after(machine, flags.engines, report)) return 1;
+  const session = openSession(ctx, run, flags, node.version.join("."));
+  if (!(run.execute ? run.execute(session) : defaultExecute(run, session, flags))) return 1;
   const others = ENGINES.filter((engine) => !flags.engines.includes(engine));
   if (others.length > 0) machine.write(`## not run here: ${others.join(", ")}`);
   return 0;
@@ -279,6 +362,20 @@ export function defaultMachine(): Machine {
       remove: (path) => rmSync(path, { recursive: true, force: true }),
       makeDir: (path) => {
         mkdirSync(path, { recursive: true });
+      },
+      writeText: (path, text) => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, text);
+      },
+      appendText: (path, text) => appendFileSync(path, text),
+      copy: (from, to) => {
+        try {
+          mkdirSync(dirname(to), { recursive: true });
+          copyFileSync(from, to);
+          return true;
+        } catch {
+          return false;
+        }
       },
     },
     write: (line) => process.stdout.write(line + "\n"),
