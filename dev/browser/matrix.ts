@@ -3,6 +3,9 @@ export type Engine = (typeof ENGINES)[number];
 
 /** The viewport widths every layout check runs at: a phone, a tablet, a laptop and a desktop. */
 export const WIDTHS = [375, 768, 1280, 1920] as const;
+export type View = (typeof WIDTHS)[number] | "print";
+/** Every view the comparison photographs a part at: each width, then print. */
+export const VIEWS: readonly View[] = [...WIDTHS, "print"];
 export const VIEWPORT_HEIGHT = 900;
 /** The width the print checks open the report at: a landscape page less its margins, in CSS pixels. */
 export const PRINT_WIDTH = 965;
@@ -51,9 +54,19 @@ export const SECTION_PARTS = ["header", "ground-rules", "assumptions", "reviews"
 /** The tallest a part image may be, in pixels; a taller part is written in consecutive pieces. */
 export const MAX_PART_HEIGHT = 1600;
 
+/** A row id without its "row-" prefix, every character outside A-Z a-z 0-9 . _ - replaced by "-". */
+function reducedName(id: string): string {
+  return id.replace(/^row-/, "").replace(/[^A-Za-z0-9._-]/g, "-");
+}
+
 /** The file stem of a row section: its 1-based position, two digits, then its element id without "row-",
  *  every character outside A-Z a-z 0-9 . _ - replaced by "-". rowFileStem(1, "row-ch-2") is "row-01-ch-2". */
 export function rowFileStem(position: number, id: string): string {
-  const name = id.replace(/^row-/, "").replace(/[^A-Za-z0-9._-]/g, "-");
-  return `row-${String(position).padStart(2, "0")}-${name}`;
+  return `row-${String(position).padStart(2, "0")}-${reducedName(id)}`;
+}
+
+/** A row's file stem in the comparison: "row-" and its element id without "row-", every character outside
+ *  A-Z a-z 0-9 . _ - replaced by "-", with no position, so rows match by id. rowStem("row-ch-2") is "row-ch-2". */
+export function rowStem(id: string): string {
+  return `row-${reducedName(id)}`;
 }

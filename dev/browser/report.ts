@@ -2,8 +2,8 @@
 // absolute path in FAILWISE_REPORT.
 
 import { pathToFileURL } from "node:url";
-import { test, type Page } from "@playwright/test";
-import { notAsserted, SCROLL_CONTAINERS, VIEWPORT_HEIGHT, type CheckId } from "./matrix.ts";
+import { test, type Locator, type Page } from "@playwright/test";
+import { notAsserted, rowStem, SCROLL_CONTAINERS, SECTION_PARTS, VIEWPORT_HEIGHT, type CheckId } from "./matrix.ts";
 
 /** Sets the viewport to `width` by VIEWPORT_HEIGHT and loads the report. Throws when FAILWISE_REPORT is unset,
  *  and when the page loaded has no <main> with an element in it, so neither measurement can pass on
@@ -51,4 +51,23 @@ export function recordNotAsserted(check: CheckId, width: number, measured: unkno
   if (open === undefined) return false;
   test.info().annotations.push({ type: "not asserted", description: `${open.reason}; measured: ${JSON.stringify(measured)}` });
   return true;
+}
+
+/** The element the part `stem` is photographed from: `#<stem>` for a name of SECTION_PARTS; `.key` for "key";
+ *  for "index", the index's frame `.frame:has(> table.index)` when it matches, else `table.index`; for a stem that
+ *  starts "row-", the `article.row` whose rowStem(id) equals it, and an Error when none does. */
+export async function partLocator(page: Page, stem: string): Promise<Locator> {
+  if ((SECTION_PARTS as readonly string[]).includes(stem)) return page.locator(`#${stem}`);
+  if (stem === "key") return page.locator(".key");
+  if (stem === "index") {
+    const frame = page.locator(".frame:has(> table.index)");
+    return (await frame.count()) > 0 ? frame : page.locator("table.index");
+  }
+  if (stem.startsWith("row-")) {
+    const rows = page.locator("article.row");
+    const ids = await rows.evaluateAll((elements) => elements.map((element) => element.id));
+    const at = ids.findIndex((id) => rowStem(id) === stem);
+    if (at >= 0) return rows.nth(at);
+  }
+  throw new Error(`the report has no part "${stem}"`);
 }
