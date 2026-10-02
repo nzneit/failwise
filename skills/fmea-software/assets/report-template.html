@@ -44,7 +44,8 @@ dl.header dd { margin:0; }
 .key dt { white-space:nowrap; }
 .key dd { margin:0; }
 abbr { text-decoration:underline dotted; text-underline-offset:2px; cursor:help; }
-.toc a { margin-right:.9rem; white-space:nowrap; }
+.toc { display:flex; flex-wrap:wrap; align-items:center; column-gap:.9rem; }
+.toc a { display:flex; align-items:center; min-height:24px; white-space:nowrap; }
 
 /* marks and badges */
 .pri { display:inline-flex; align-items:center; justify-content:center; min-width:1.6rem; height:1.6rem; padding:0 .25rem; border-radius:4px; font-weight:700; font-size:.85rem; flex-shrink:0; }

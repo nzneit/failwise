@@ -144,7 +144,7 @@ function attentionHtml(a: Attention): string {
 }
 
 function contentsHtml(): string {
-  return `<p class="toc"><b>Contents</b>&nbsp; ${CONTENTS.map(([id, label]) => `<a href="#${e(id)}">${e(label)}</a>`).join("")}</p>`;
+  return `<p class="toc"><b>Contents</b>${CONTENTS.map(([id, label]) => `<a href="#${e(id)}">${e(label)}</a>`).join("")}</p>`;
 }
 
 function headerHtml(doc: FmeaDocument, model: ReportModel): string {

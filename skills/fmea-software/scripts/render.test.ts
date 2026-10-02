@@ -354,10 +354,16 @@ test("a document without a computed block shows an em dash in the quality score 
 
 test("the header ends with the contents line, after the metadata, the tiles and the block", () => {
   const header = headerOf(golden());
-  const toc = '<p class="toc"><b>Contents</b>&nbsp; <a href="#ground-rules">Ground rules</a><a href="#assumptions">Assumptions</a><a href="#reviews">Review record</a><a href="#structure">Structure</a><a href="#chains">Failure chains</a><a href="#actions">Actions</a><a href="#lints">Automated checks</a><a href="#provenance">Provenance</a></p>';
+  const toc = '<p class="toc"><b>Contents</b><a href="#ground-rules">Ground rules</a><a href="#assumptions">Assumptions</a><a href="#reviews">Review record</a><a href="#structure">Structure</a><a href="#chains">Failure chains</a><a href="#actions">Actions</a><a href="#lints">Automated checks</a><a href="#provenance">Provenance</a></p>';
   const at = ['<dl class="header">', '<div class="tiles">', '<div class="attn">', toc].map((s) => header.indexOf(s));
   assert.ok(at.every((i) => i !== -1), `a header part is missing: ${at.join(", ")}`);
   assert.deepEqual(at, [...at].sort((a, b) => a - b));
+});
+
+test("the contents line wraps between its links, and each link is at least 24 px tall", () => {
+  assert.ok(template.includes(".toc { display:flex; flex-wrap:wrap; align-items:center; column-gap:.9rem; }"));
+  assert.ok(template.includes(".toc a { display:flex; align-items:center; min-height:24px; white-space:nowrap; }"));
+  assert.ok(!template.includes(".toc a { margin-right"));
 });
 
 test("row marks: one handoff, three provisional rows, no stale row", () => {

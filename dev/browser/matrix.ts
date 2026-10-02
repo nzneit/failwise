@@ -30,18 +30,7 @@ export function expectedFailure(check: CheckId, width: number): ExpectedFailure 
 export type NotAsserted = ExpectedFailure;
 
 /** The checks measured and named on every passing run but not asserted, each with the reason. */
-export const NOT_ASSERTED: readonly NotAsserted[] = [
-  {
-    check: "scroll",
-    width: 768,
-    reason: "the contents line cannot wrap between its links, so its last link, Provenance, widens the page by an amount that depends on the reader's fonts; left to the narrow-screen design",
-  },
-  {
-    check: "edge",
-    width: 768,
-    reason: "the contents line cannot wrap between its links, so its last link, Provenance, passes the right edge by an amount that depends on the reader's fonts; left to the narrow-screen design",
-  },
-];
+export const NOT_ASSERTED: readonly NotAsserted[] = [];
 
 /** The not-asserted entry of `check` at `width`, or undefined when the check is asserted. */
 export function notAsserted(check: CheckId, width: number): NotAsserted | undefined {

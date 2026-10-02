@@ -43,7 +43,7 @@ test("the default run: dry run, render, Playwright on chromium, the other engine
     "skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out build/browser/report.html --force",
     `${PLAYWRIGHT} test --config dev/browser/playwright.config.ts --project chromium`,
   ]);
-  assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", NOT_ASSERTED_LINE, "## not run here: firefox, webkit"]);
+  assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", ...(NOT_ASSERTED.length > 0 ? [NOT_ASSERTED_LINE] : []), "## not run here: firefox, webkit"]);
   assert.equal(result.env[2], "/repo/build/browser/report.html");
 });
 
@@ -51,7 +51,7 @@ test("all three engines: one --project each, and no line about engines not run",
   const result = run(["--engines", "webkit,chromium,firefox"]);
   assert.equal(result.status, 0);
   assert.match(result.calls[2], /--project chromium --project firefox --project webkit$/);
-  assert.deepEqual(result.lines, ["## gate: playwright test over chromium, firefox, webkit (node v24.17.0)", NOT_ASSERTED_LINE]);
+  assert.deepEqual(result.lines, ["## gate: playwright test over chromium, firefox, webkit (node v24.17.0)", ...(NOT_ASSERTED.length > 0 ? [NOT_ASSERTED_LINE] : [])]);
 });
 
 test("a repeated engine is run once; an empty item is USAGE", () => {
@@ -259,7 +259,7 @@ test("the stale results file the fake starts with sits where the runner reads it
 
 test("the phone-width layout checks are expected failures, and the tablet-width ones are measured and not asserted", () => {
   assert.deepEqual(EXPECTED_FAILURES.map((known) => `${known.width} ${known.check}`), ["320 scroll", "320 edge", "375 scroll", "375 edge"]);
-  assert.deepEqual(NOT_ASSERTED.map((open) => `${open.width} ${open.check}`), ["768 scroll", "768 edge"]);
+  assert.deepEqual(NOT_ASSERTED.map((open) => `${open.width} ${open.check}`), []);
   for (const entry of [...EXPECTED_FAILURES, ...NOT_ASSERTED]) {
     assert.match(entry.reason, /narrow-screen design/, `${entry.check} at ${entry.width}`);
   }
