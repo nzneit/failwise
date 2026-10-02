@@ -243,6 +243,15 @@ function workflowSteps(file: string): { runs: string[]; uses: string[] } {
   };
 }
 
+/** The `browser` job's lines before its steps: its name, runner and permissions. */
+const BROWSER_HEADER = [
+  "  browser:",
+  "    runs-on: ubuntu-latest",
+  "    permissions:",
+  "      contents: read",
+  "    steps:",
+];
+
 /** The `browser` job's nine steps, each as the text it has in ci.yml: ids, conditions, environment, artifacts and retention are held word for word. */
 const BROWSER_STEPS = [
   [
@@ -320,8 +329,10 @@ test("the CI workflow runs the suites and the gate in one job, the browser check
   for (const action of uses) assert.match(action, /@[0-9a-f]{40}$/, action);
   const workflow = workflowText("ci.yml");
   assert.equal(workflow.split("contents: read").length - 1, 2, "each job reads the repository and nothing more");
-  const [, browser] = workflow.split(/^ {2}browser:$/m);
-  for (const block of BROWSER_STEPS) assert.equal(browser.split(block).length - 1, 1, block);
+  const [jobs, browser] = workflow.split(/^(?= {2}browser:$)/m);
+  const [, check] = jobs.split(/^(?= {2}check:$)/m);
+  assert.ok(!check.includes("fetch-depth"), "the check job needs no history");
+  assert.equal(browser, [...BROWSER_HEADER, ...BROWSER_STEPS].join("\n") + "\n", "the browser job is its header and its nine steps, in order, and nothing else");
   assert.ok(!workflow.includes("if: ${{ !cancelled() }}\n"), "no step runs on a bare !cancelled() any more");
 });
 
