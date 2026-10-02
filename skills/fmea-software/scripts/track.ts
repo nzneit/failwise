@@ -57,7 +57,8 @@ const defaultDeps: Deps = {
 interface Ctx { path: string; doc: FmeaDocument; refs: ActionRef[]; deps: Deps; provider: Provider; waited: boolean }
 
 interface Done { key: string; pointer: string; outcome: PlannedAction["outcome"]; link: Link }
-interface Failure { key: string; code: Code; message: string }
+/** `link` is there only when the item was created and its link could not be recorded. */
+interface Failure { key: string; code: Code; message: string; link?: Link }
 interface ApplyOutcome { done: Done[]; remaining: string[]; failure?: Failure }
 
 function stringFlag(flags: Flags, name: string): string | undefined {
@@ -147,7 +148,7 @@ function onlyKeys(value: string | undefined): string[] | undefined {
 function checkVisibility(visibility: Visibility, publicOk: boolean): void {
   if (publicOk || (visibility !== "public" && visibility !== "unknown")) return;
   const why = visibility === "public" ? "is public" : "has a visibility that was not established";
-  throw new ScriptError("TRACKER_PUBLIC", `the target ${why}, so what apply creates may be read by anyone; pass --public-ok to create it anyway`);
+  throw new ScriptError("TRACKER_PUBLIC", `the target ${why}, so what apply creates may be read by anyone: creating it needs the person's agreement to publish there, and --public-ok records that agreement`);
 }
 
 const isWork = (a: PlannedAction): boolean => a.outcome === "create" || a.outcome === "adopt";
@@ -174,6 +175,27 @@ function record(ctx: Ctx, key: string, link: Link): void {
   writeFileAtomic(ctx.path, stringifyDocument(ctx.doc));
 }
 
+/** An item was created and its link could not be written into the document: the failure names it. */
+class LinkNotRecorded extends Error {
+  readonly link: Link;
+
+  constructor(link: Link, cause: unknown) {
+    const why = cause instanceof Error ? cause.message : String(cause);
+    super(`the item ${link.key} was created, at ${link.url}, and its link could not be written to the document: ${why}`, { cause });
+    this.name = "LinkNotRecorded";
+    this.link = link;
+  }
+}
+
+/** Records the link of an item just created; a failed write is a LinkNotRecorded that carries it. */
+function recordCreated(ctx: Ctx, key: string, link: Link): void {
+  try {
+    record(ctx, key, link);
+  } catch (err) {
+    throw new LinkNotRecorded(link, err);
+  }
+}
+
 /** Creates the item. One that exists with a fault comes back with its link and the fault (§6.4). */
 async function createItem(ctx: Ctx, plan: Plan, key: string): Promise<{ link: Link; fault?: string }> {
   const item = plan.items.get(key);
@@ -191,7 +213,7 @@ async function createItem(ctx: Ctx, plan: Plan, key: string): Promise<{ link: Li
 async function settle(ctx: Ctx, plan: Plan, planned: PlannedAction): Promise<{ link: Link; fault?: string }> {
   if (planned.outcome === "create") {
     const created = await createItem(ctx, plan, planned.key);
-    record(ctx, planned.key, checkedLink(created.link));
+    recordCreated(ctx, planned.key, checkedLink(created.link));
     return created;
   }
   if (planned.link === undefined) throw new Error(`the ${planned.outcome} action ${planned.key} has no link`);
@@ -200,6 +222,7 @@ async function settle(ctx: Ctx, plan: Plan, planned: PlannedAction): Promise<{ l
 }
 
 function failureOf(key: string, err: unknown): Failure {
+  if (err instanceof LinkNotRecorded) return { ...failureOf(key, err.cause), message: err.message, link: err.link };
   if (err instanceof ScriptError) return { key, code: err.code, message: err.message };
   return { key, code: "INTERNAL", message: err instanceof Error ? err.message : String(err) };
 }

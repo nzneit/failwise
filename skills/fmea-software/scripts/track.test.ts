@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -56,7 +56,7 @@ interface Entry { key: string; pointer: string; outcome: string; link?: Link; it
 interface RefreshItem { key: string; status: string; link: Link; observed: { state: string; detail: string; date: string; closed_date?: string }; proposal?: unknown; finding?: string }
 interface Result {
   command: string; target: unknown; digest: string; actions: Entry[]; findings: unknown[]; counts: Record<string, number>;
-  done: Entry[]; remaining: string[]; failure?: { key: string; code: string; message: string };
+  done: Entry[]; remaining: string[]; failure?: { key: string; code: string; message: string; link?: Link };
   written: boolean; items: RefreshItem[];
 }
 interface Run { status: number; result: Result; stderr: string; sleeps: number[] }
@@ -242,9 +242,11 @@ test("apply with a digest that is not the plan's is TRACKER_PLAN, exit 1, and no
   assert.equal(s.text(), before);
 });
 
-test("apply on a public target without --public-ok is TRACKER_PUBLIC and its message says public", async (t) => {
+const AGREEMENT = "so what apply creates may be read by anyone: creating it needs the person's agreement to publish there, and --public-ok records that agreement";
+
+test("apply on a public target without --public-ok is TRACKER_PUBLIC and its message says public and asks for the person's agreement", async (t) => {
   const s = session(t, docWith(act(1)), { target: { visibility: "public" } });
-  await assert.rejects(applyPlanned(s), (err: Error & { code?: string }) => err.code === "TRACKER_PUBLIC" && /is public/.test(err.message));
+  await assert.rejects(applyPlanned(s), { code: "TRACKER_PUBLIC", message: `the target is public, ${AGREEMENT}` });
   assert.deepEqual(s.fake.created, []);
   assert.equal((await applyPlanned(s, "--public-ok")).status, 0);
   assert.deepEqual(createdKeys(s), [key(1)]);
@@ -252,7 +254,7 @@ test("apply on a public target without --public-ok is TRACKER_PUBLIC and its mes
 
 test("apply on a target of unknown visibility without --public-ok is TRACKER_PUBLIC and its message says not established", async (t) => {
   const s = session(t, docWith(act(1)), { target: { visibility: "unknown" } });
-  await assert.rejects(applyPlanned(s), (err: Error & { code?: string }) => err.code === "TRACKER_PUBLIC" && /not established/.test(err.message));
+  await assert.rejects(applyPlanned(s), { code: "TRACKER_PUBLIC", message: `the target has a visibility that was not established, ${AGREEMENT}` });
   assert.deepEqual(s.fake.created, []);
 });
 
@@ -376,6 +378,34 @@ test("CreatedWithFault records the link and then stops with TRACKER_REJECTED", a
   assert.deepEqual(result.remaining, [key(2)]);
   assert.deepEqual(result.failure, { key: key(1), code: "TRACKER_REJECTED", message: "the item came back without the label" });
   assert.equal(s.fake.created.length, 1);
+});
+
+test("a created item whose link cannot be written is named, with its link, in the failure, and its key stays in remaining", async (t) => {
+  const s = session(t, docWith(act(1), act(2)));
+  const create = s.fake.create.bind(s.fake);
+  s.fake.create = async (item) => {
+    const link = await create(item);
+    // The document's path becomes a folder, so the write that would record the link fails.
+    rmSync(s.path);
+    mkdirSync(s.path);
+    return link;
+  };
+  const { status, result, stderr } = await applyPlanned(s);
+  assert.equal(status, 3);
+  assert.deepEqual(createdKeys(s), [key(1)]);
+  assert.deepEqual(result.done, []);
+  assert.deepEqual(result.remaining, [key(1), key(2)]);
+  assert.equal(result.failure?.key, key(1));
+  assert.equal(result.failure?.code, "IO_WRITE");
+  assert.deepEqual(result.failure?.link, linkOf(1));
+  assert.match(result.failure?.message ?? "", /^the item acme\/checkout#1 was created, at https:\/\/github\.example\.com\/acme\/checkout\/issues\/1, and its link could not be written to the document: cannot write /);
+  assert.equal(stderr, `error IO_WRITE: ${result.failure?.message}\n`);
+});
+
+test("a failure with no item behind it carries no link", async (t) => {
+  const s = session(t, docWith(act(1)), { failCreateAt: 1 });
+  const { result } = await applyPlanned(s);
+  assert.ok(result.failure !== undefined && !("link" in result.failure));
 });
 
 test("a link whose url does not begin https:// is TRACKER_REJECTED and the file is unchanged", async (t) => {
