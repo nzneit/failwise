@@ -5,12 +5,16 @@ import { pathToFileURL } from "node:url";
 import type { Page } from "@playwright/test";
 import { SCROLL_CONTAINERS, VIEWPORT_HEIGHT } from "./matrix.ts";
 
-/** Sets the viewport to `width` by VIEWPORT_HEIGHT and loads the report. Throws when FAILWISE_REPORT is unset. */
+/** Sets the viewport to `width` by VIEWPORT_HEIGHT and loads the report. Throws when FAILWISE_REPORT is unset,
+ *  and when the page loaded has no <main> with an element in it, so neither measurement can pass on
+ *  a blank or wrong page. */
 export async function openReport(page: Page, width: number): Promise<void> {
   const report = process.env.FAILWISE_REPORT;
   if (report === undefined || report === "") throw new Error("FAILWISE_REPORT is unset: run the checks through tools/check-browser.ts");
   await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
   await page.goto(pathToFileURL(report).href);
+  const loaded = await page.evaluate(() => document.querySelector("main")?.firstElementChild != null);
+  if (!loaded) throw new Error(`the report did not load: ${report} has no <main> with an element in it`);
 }
 
 /** How many pixels the document is wider than the viewport; 0 when it fits. */
