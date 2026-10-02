@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ScriptError, formatError } from "./lib/codes.ts";
-import type { Action, Chain, Element, FmeaDocument, Lint, Priority, Ratings, Factor } from "./lib/types.ts";
+import type { Action, Chain, Element, FmeaDocument, Lint, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import { checkSchema } from "./lib/schema.ts";
@@ -168,36 +168,6 @@ function structureHtml(elements: Element[]): string {
   return `<ul class="tree">${roots.map(node).join("")}</ul>`;
 }
 
-// `priority` is the block computed from these ratings, given only for the post-action ratings:
-// the letter and the RPN save the reader a table lookup (§6). The pre-action priority already
-// has its own column in the chain table, so the pre-action block passes none.
-function ratingsHtml(ratings: Ratings, caption: string, priority?: Priority): string {
-  const rows = FACTORS.map((f) => {
-    const r = ratings[f];
-    const review = r.review.by && r.review.date ? `${e(r.review.status)} by ${e(r.review.by)} on ${e(r.review.date)}` : e(r.review.status);
-    return `<tr><th>${f}</th><td class="num">${r.value}</td><td>${e(r.rationale)}</td><td>${e(r.evidence_kind)}${r.evidence_ref ? ` <code>${e(r.evidence_ref)}</code>` : ""}</td><td>${review}</td></tr>`;
-  }).join("");
-  const line = priority ? `<p>Priority ${e(priority.value)} &mdash; RPN ${priority.rpn}</p>` : "";
-  return `<h3>${e(caption)}</h3>${line}<table><tr><th>Factor</th><th>Value</th><th>Rationale</th><th>Evidence</th><th>Review</th></tr>${rows}</table>`;
-}
-
-function chainDetailHtml(chain: Chain): string {
-  const causes = list(chain.causes.map((c) => `${e(c.text)}${c.origin ? ` <span class="empty">[${e(c.origin)}]</span>` : ""}${c.adversarial ? ` <span class="mark mark-adversarial">adversarial</span>` : ""}`), "No causes recorded.");
-  const controls = list(chain.controls.map((c) => `<strong>${e(c.kind)}</strong> &mdash; ${e(c.description)} <span class="empty">(${e(c.status)}, evidence ${e(c.evidence.kind)}${c.evidence.ref ? ` <code>${e(c.evidence.ref)}</code>` : ""})</span>`), "No controls recorded.");
-  const actions = list(chain.actions.map((a) => `<code>${e(a.id)}</code> ${e(a.description)} <span class="empty">(${e(a.owner)}, ${e(a.status)}, target ${e(a.target_date)}${a.completed_date ? `, completed ${e(a.completed_date)}` : ""})</span>`), "No actions on this row.");
-  const history = list(chain.history.map((h) => `v${h.version} ${e(h.date)} &mdash; ${e(h.change)}`), "No row history.");
-  return [
-    `<h3>Trigger</h3>${chain.trigger && chain.trigger.trim() !== "" ? `<p>${e(chain.trigger)}</p>` : `<p class="empty">No trigger recorded.</p>`}`,
-    `<h3>Causes</h3>${causes}`,
-    `<h3>Controls</h3>${controls}`,
-    ratingsHtml(chain.ratings, "Ratings"),
-    chain.post_ratings ? ratingsHtml(chain.post_ratings, "Post-action ratings", chain.post_priority) : "",
-    `<h3>Actions</h3>${actions}`,
-    chain.handoff ? `<h3>Handoff</h3><p>${e(chain.handoff.to)} &mdash; ${e(chain.handoff.reason)} <span class="empty">(adversary cause: ${e(chain.handoff.adversary_cause)})</span></p>` : "",
-    `<h3>Row history</h3>${history}`,
-  ].join("");
-}
-
 function marksHtml(marks: readonly RowMark[]): string {
   return marks.map(markHtml).join(" ");
 }
@@ -237,10 +207,102 @@ function indexHtml(rows: RowModel[]): string {
   return `<table class="index"><caption>${e(INDEX_CAPTION)}</caption>${head}<tbody>${rows.map(indexRowHtml).join("")}</tbody></table>`;
 }
 
+function part(label: string, body: string): string {
+  return `<div><span class="lbl">${e(label)}</span>${body}</div>`;
+}
+
+function rowHeaderHtml(row: RowModel): string {
+  const c = row.chain;
+  const marks = row.marks.length === 0 ? "" : ` &middot; ${marksHtml(row.marks)}`;
+  const post = c.post_priority && row.postStyle !== null
+    ? `<br><span class="muted">after actions:</span> ${badgeHtml(c.post_priority.value, row.postStyle)} <span class="muted">RPN ${c.post_priority.rpn}</span>`
+    : "";
+  return `<header>${badgeHtml(c.priority.value, row.style)}<h3><code>${e(c.id)}</code>&nbsp; ${e(c.failure_mode)}</h3><div class="meta"><code>${e(row.element)}</code><br>` +
+    `S <b>${c.ratings.S.value}</b> &middot; O <b>${c.ratings.O.value}</b> &middot; D <b>${c.ratings.D.value}</b> &middot; <span class="muted">RPN ${c.priority.rpn}</span>${marks}${post}</div></header>`;
+}
+
+function findingHtml(finding: PlacedFinding): string {
+  const where = finding.where;
+  const label = where.kind === "row" && where.label !== null ? `${labelHtml(where.label, where.raw)} &mdash; ` : "";
+  const cls = finding.severity === "blocker" ? "finding" : "finding warn";
+  return `<p class="${cls}">${markHtml(finding.severity)} &nbsp;${label}${e(finding.message)} <span class="muted"><code>${e(finding.rule)}</code></span></p>`;
+}
+
+function effectsHtml(chain: Chain): string {
+  const box = (cls: string, label: string, text: string): string => `<div class="${cls}"><span class="lbl">${e(label)}</span>${e(text)}</div>`;
+  const arrow = `<div class="arrow">&rarr;</div>`;
+  return `<div class="fx">${box("box", "Local", chain.effects.local)}${arrow}${box("box", "Next level", chain.effects.next_level)}${arrow}${box("box end", "End", chain.effects.end)}</div>`;
+}
+
+function causesHtml(row: RowModel): string {
+  const items = row.chain.causes.map((c, i) => {
+    const origin = c.origin ? ` <span class="muted">[${e(c.origin)}]</span>` : "";
+    const adversarial = c.adversarial ? ` ${markHtml("adversarial")}` : "";
+    const trigger = row.triggerCauses.includes(i) ? ` ${markHtml("trigger")}` : "";
+    return `${e(c.text)}${origin}${adversarial}${trigger}`;
+  });
+  return part("Causes", list(items, "No causes recorded."));
+}
+
+function controlsHtml(chain: Chain): string {
+  const items = chain.controls.map((c) => `<b>${e(c.kind)}</b> &mdash; ${e(c.description)} <span class="muted">(${e(c.status)}, evidence ${e(c.evidence.kind)}${c.evidence.ref ? ` <code>${e(c.evidence.ref)}</code>` : ""})</span>`);
+  return part("Controls", list(items, "No controls recorded."));
+}
+
+function reviewHtml(review: Ratings[Factor]["review"]): string {
+  if (review.status === "provisional") return markHtml("provisional");
+  return review.by && review.date ? `${e(review.status)} by ${e(review.by)} on ${e(review.date)}` : e(review.status);
+}
+
+function ratingsTableHtml(ratings: Ratings, before?: Ratings): string {
+  const rows = FACTORS.map((f) => {
+    const r = ratings[f];
+    const was = before && before[f].value !== r.value ? ` <span class="muted">(was ${before[f].value})</span>` : "";
+    return `<tr><th>${f}</th><td class="num">${r.value}${was}</td><td>${e(r.rationale)}</td><td>${e(r.evidence_kind)}${r.evidence_ref ? ` <code>${e(r.evidence_ref)}</code>` : ""}</td><td>${reviewHtml(r.review)}</td></tr>`;
+  }).join("");
+  return `<table><tr><th>Factor</th><th class="num">Value</th><th>Rationale</th><th>Evidence</th><th>Review</th></tr>${rows}</table>`;
+}
+
+function postRatingsHtml(chain: Chain): string {
+  if (!chain.post_ratings) return "";
+  const label = chain.post_priority ? `Post-action ratings — priority ${chain.post_priority.value}, RPN ${chain.post_priority.rpn}` : "Post-action ratings";
+  return part(label, ratingsTableHtml(chain.post_ratings, chain.ratings));
+}
+
+function rowActionsHtml(chain: Chain): string {
+  const items = chain.actions.map((a) => {
+    const completed = a.completed_date ? `, completed ${e(a.completed_date)}` : "";
+    const incident = a.source_incident ? `, incident <code>${e(a.source_incident)}</code>` : "";
+    return `<code>${e(a.id)}</code> ${e(a.description)} <span class="muted">(${e(a.owner)}, ${e(a.status)}, target ${e(a.target_date)}${completed}${incident})</span>`;
+  });
+  return part("Actions", list(items, "No actions on this row."));
+}
+
+function gridHtml(row: RowModel): string {
+  const c = row.chain;
+  return [
+    c.handoff ? part("Handoff", `<b>${e(c.handoff.to)}</b> &mdash; ${e(c.handoff.reason)} <span class="muted">(adversary cause: ${e(c.handoff.adversary_cause)})</span>`) : "",
+    part("Function", e(row.statement)),
+    c.source_incident ? part("Seeded from incident", `<code>${e(c.source_incident)}</code>`) : "",
+    part("Effects", effectsHtml(c)),
+    row.trigger === null ? "" : part("Trigger", e(row.trigger)),
+    `<div class="two">${causesHtml(row)}${controlsHtml(c)}</div>`,
+    part("Ratings", ratingsTableHtml(c.ratings)),
+    postRatingsHtml(c),
+    rowActionsHtml(c),
+    c.history.length === 0 ? "" : part("Row history", list(c.history.map((h) => `v${h.version} ${e(h.date)} &mdash; ${e(h.change)}`), "")),
+  ].join("");
+}
+
+function rowSectionHtml(row: RowModel): string {
+  const stale = row.staleNotice === null ? "" : `<p class="stale-notice">${e(row.staleNotice)}</p>`;
+  return `<article class="row" id="row-${e(row.chain.id)}">${rowHeaderHtml(row)}${row.findings.map(findingHtml).join("")}${stale}` +
+    `<div class="grid">${gridHtml(row)}</div><p class="back"><a href="#chains">&uarr; index</a></p></article>`;
+}
+
 function chainsHtml(model: ReportModel): string {
   if (model.rows.length === 0) return `<p class="empty">No chains.</p>`;
-  const details = model.rows.map((row) => `<details><summary>Row detail for ${e(row.chain.id)}</summary>${chainDetailHtml(row.chain)}</details>`).join("");
-  return keyHtml(model.vocabulary) + indexHtml(model.rows) + details;
+  return keyHtml(model.vocabulary) + indexHtml(model.rows) + model.rows.map(rowSectionHtml).join("");
 }
 
 function actionsHtml(doc: FmeaDocument): string {

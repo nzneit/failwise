@@ -4,9 +4,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TEMPLATE_PATH, renderHtml, sortChains } from "./render.ts";
 import { escapeHtml } from "./lib/escape.ts";
-import { computePriority, loadTable } from "./lib/table.ts";
+import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
+import type { PriorityTable } from "./lib/table.ts";
 import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
-import type { FmeaDocument, Lint } from "./lib/types.ts";
+import type { FmeaDocument, Lint, Severity } from "./lib/types.ts";
 
 const table = loadTable();
 const template = readFileSync(TEMPLATE_PATH, "utf8");
@@ -108,6 +109,41 @@ const SOD_TEXT = "Severity, Occurrence and Detection, each rated 1 to 10 against
 const PRIORITY_TEXT = "Priority, highest first, looked up from S, O and D in the priority table. Rows are sorted by it.";
 const RPN_TEXT = "S × O × D, kept for comparison with older sheets. It is not used to rank rows.";
 const indexTable = (html: string): string => between(html, '<table class="index">', "</table>");
+const rowSection = (html: string, id: string): string => between(html, `<article class="row" id="row-${id}">`, "</article>");
+const lint = (severity: Severity, rule: string, pointer: string, message: string): Lint => ({ rule, severity, pointer, message });
+
+// A supplied table: the shipped bands, every cell the vocabulary's first value, shape-checked as --table-file is.
+function suppliedTable(vocabulary: string[]): PriorityTable {
+  const cells = Object.fromEntries(Object.keys(table.cells).map((key) => [key, vocabulary[0]]));
+  return checkTableShape({ id: "priority-test-v1", vocabulary, bands: table.bands, cells }, "test table");
+}
+
+function priced(doc: FmeaDocument, index: number, value: string): FmeaDocument {
+  doc.chains[index].priority.value = value;
+  return doc;
+}
+
+// minimalDoc's one row with every part of §4.2: two findings and a rating-provisional one, stale with
+// reason and version, a handoff, an incident, a trigger equal to no cause, a control, post-action
+// ratings, an action carrying the incident, and a history entry.
+function everyPart(): FmeaDocument {
+  const doc = minimalDoc();
+  const chain = doc.chains[0];
+  chain.stale = { flag: true, reason: "element-changed", since_version: 2 };
+  chain.handoff = { to: "threat-model", reason: "an adversary forges the request", adversary_cause: "attacker forges a request" };
+  chain.source_incident = "INC-1";
+  chain.trigger = "a deploy restarts the process";
+  chain.controls = [{ kind: "detection", description: "crash alerting", status: "existing", evidence: { kind: "test_result", ref: "alert suite" } }];
+  chain.actions = [{ id: "act-1", description: "add a supervisor", owner: "T. Tester", status: "Completed", target_date: "2026-08-01", completed_date: "2026-08-15", source_incident: "INC-1" }];
+  chain.post_ratings = { S: rating(8), O: rating(2), D: rating(4) };
+  chain.post_priority = computePriority(table, chain.post_ratings);
+  chain.history = [{ version: 2, date: "2026-09-07", change: "element renamed" }];
+  return withComputed(doc, [
+    lint("warning", "occurrence-estimate-without-trigger", "/chains/0/post_ratings/O", "post-action finding"),
+    lint("warning", "rating-provisional", "/chains/0/ratings/S", "The rating is still provisional and needs re-scoring"),
+    lint("blocker", "detection-1-without-evidenced-control", "/chains/0/ratings/D", "Detection is 1 with no existing detection control carrying evidence"),
+  ]);
+}
 
 test("the report carries every section id, in the order section 9 fixes", () => {
   const html = renderHtml(golden(), table, template);
@@ -346,9 +382,119 @@ test("an expanded row shows the post-action priority letter and RPN in its post-
   doc.chains[0].actions = [{ id: "act-1", description: "add a retry", owner: "T. Tester", status: "Completed", target_date: "2026-08-01", completed_date: "2026-08-15" }];
   doc.chains[0].post_ratings = { S: rating(4), O: rating(3), D: rating(2) };
   doc.chains[0].post_priority = computePriority(table, doc.chains[0].post_ratings);
+  const section = rowSection(renderHtml(doc, table, template), "ch-1");
+  assert.ok(section.includes('<br><span class="muted">after actions:</span> <span class="pri pri-mid">M</span> <span class="muted">RPN 24</span></div></header>'), "the header's second line");
+  assert.ok(section.includes('<span class="lbl">Post-action ratings — priority M, RPN 24</span><table>'), "the post-action block leads with the post-action priority");
+  assert.ok(section.includes('<span class="lbl">Ratings</span><table>'), "the pre-action block carries no such line");
+  assert.ok(section.includes('<td class="num">4 <span class="muted">(was 8)</span></td>'), "S changed from 8");
+  assert.ok(section.includes('<td class="num">2 <span class="muted">(was 4)</span></td>'), "D changed from 4");
+  assert.ok(!section.includes("(was 3)"), "O did not change");
+});
+
+test("a row section carries its parts in order on a row that has every part", () => {
+  const doc = everyPart();
+  const article = rowSection(renderHtml(doc, table, template), "ch-1");
+  const post = doc.chains[0].post_priority!;
+  const parts = [
+    `<header><span class="pri pri-mid">M</span><h3><code>ch-1</code>&nbsp; stops serving</h3><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
+    `<p class="finding">${mark("blocker")} &nbsp;D &mdash; Detection is 1 with no existing detection control carrying evidence <span class="muted"><code>detection-1-without-evidenced-control</code></span></p>`,
+    `<p class="finding warn">${mark("warning")} &nbsp;post-action O &mdash; post-action finding <span class="muted"><code>occurrence-estimate-without-trigger</code></span></p>`,
+    '<p class="stale-notice">Stale since version 2: its element changed.</p>',
+    '<span class="lbl">Handoff</span><b>threat-model</b> &mdash; an adversary forges the request <span class="muted">(adversary cause: attacker forges a request)</span>',
+    '<span class="lbl">Function</span>serve requests',
+    '<span class="lbl">Seeded from incident</span><code>INC-1</code>',
+    '<span class="lbl">Effects</span><div class="fx"><div class="box"><span class="lbl">Local</span>no response</div>',
+    '<div class="box end"><span class="lbl">End</span>users cannot check out</div>',
+    '<span class="lbl">Trigger</span>a deploy restarts the process',
+    '<span class="lbl">Causes</span><ul><li>process crash</li></ul>',
+    '<span class="lbl">Controls</span><ul><li><b>detection</b> &mdash; crash alerting <span class="muted">(existing, evidence test_result <code>alert suite</code>)</span></li></ul>',
+    '<span class="lbl">Ratings</span><table>',
+    `<span class="lbl">Post-action ratings — priority ${post.value}, RPN ${post.rpn}</span><table>`,
+    '<span class="lbl">Actions</span><ul><li><code>act-1</code> add a supervisor <span class="muted">(T. Tester, Completed, target 2026-08-01, completed 2026-08-15, incident <code>INC-1</code>)</span></li></ul>',
+    '<span class="lbl">Row history</span><ul><li>v2 2026-09-07 &mdash; element renamed</li></ul>',
+    '<p class="back"><a href="#chains">',
+  ];
+  const at = parts.map((part) => article.indexOf(part));
+  assert.ok(at.every((i) => i !== -1), `a part is missing: ${JSON.stringify(at)}`);
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "the parts are out of order");
+  assert.equal(occurrences(article, '<p class="finding'), 2, "two finding lines, blocker first");
+  assert.ok(!article.includes("rating-provisional"), "a rating-provisional finding is not repeated in the row");
+});
+
+test("a row section leaves out each part it has nothing for", () => {
+  const doc = minimalDoc();
+  doc.chains[0].trigger = "   ";
+  const article = rowSection(renderHtml(doc, table, template), "ch-1");
+  for (const absent of ['<p class="finding', '<p class="stale-notice">', '<span class="lbl">Handoff</span>', '<span class="lbl">Seeded from incident</span>',
+    '<span class="lbl">Trigger</span>', '<span class="lbl">Post-action ratings', '<span class="lbl">Row history</span>', "mark-trigger", "after actions:"]) {
+    assert.ok(!article.includes(absent), `the row has ${absent}`);
+  }
+  for (const present of ['<span class="lbl">Function</span>serve requests', '<span class="lbl">Effects</span>', '<span class="lbl">Causes</span><ul>',
+    '<span class="lbl">Controls</span><p class="empty">No controls recorded.</p>', '<span class="lbl">Ratings</span><table>',
+    '<span class="lbl">Actions</span><p class="empty">No actions on this row.</p>', '<p class="back"><a href="#chains">']) {
+    assert.ok(article.includes(present), `the row lacks ${present}`);
+  }
+});
+
+test("a trigger equal to a cause marks that cause and gets no part of its own", () => {
+  const doc = golden();
   const html = renderHtml(doc, table, template);
-  assert.ok(html.includes("<h3>Post-action ratings</h3><p>Priority M &mdash; RPN 24</p><table>"), "the post-action block leads with the post-action priority");
-  assert.ok(html.includes("<h3>Ratings</h3><table>"), "the pre-action block carries no such line");
+  const ch2 = rowSection(html, "ch-2");
+  assert.ok(ch2.includes(`<li>${escapeHtml(doc.chains[1].causes[0].text)} <span class="muted">[design]</span> <span class="mark mark-trigger">trigger</span></li>`));
+  assert.equal(occurrences(ch2, "mark-trigger"), 1);
+  assert.ok(!ch2.includes('<span class="lbl">Trigger</span>'));
+  const ch7 = rowSection(html, "ch-7");
+  assert.ok(ch7.includes(`<span class="lbl">Trigger</span>${escapeHtml(doc.chains[6].trigger!)}`));
+  assert.ok(!ch7.includes("mark-trigger"));
+  assert.ok(ch2.includes(`<td>${mark("provisional")}</td></tr>`), "a provisional review status shows as the mark");
+  assert.ok(rowSection(html, "ch-5").includes('<span class="mark mark-adversarial">adversarial</span>'), "the adversarial mark carries no tooltip");
+});
+
+test("a finding on the row alone prints no location label", () => {
+  const doc = withComputed(minimalDoc(), [lint("warning", "test-row", "/chains/0", "row-alone finding")]);
+  assert.ok(rowSection(renderHtml(doc, table, template), "ch-1").includes(
+    `<p class="finding warn">${mark("warning")} &nbsp;row-alone finding <span class="muted"><code>test-row</code></span></p>`,
+  ));
+});
+
+test("a chain with no function, and two chains with one id, still render", () => {
+  const lost = minimalDoc();
+  lost.chains[0].function = "fn-missing";
+  const html = renderHtml(lost, table, template);
+  assert.ok(indexTable(html).includes("</td><td><code></code></td><td>stops serving</td>"), "an empty element cell");
+  assert.ok(rowSection(html, "ch-1").includes('<div><span class="lbl">Function</span></div>'), "an empty function part");
+
+  const twins = minimalDoc();
+  twins.chains.push({ ...twins.chains[0], failure_mode: "second" });
+  const both = renderHtml(twins, table, template);
+  assert.equal(occurrences(both, '<article class="row" id="row-ch-1">'), 2);
+  assert.ok(both.includes("second</h3>"));
+});
+
+test("a three-value and a one-value supplied table get the rank styles of section 4.7", () => {
+  // Letters reversed, so a style that followed the letter instead of the rank would fail.
+  const html = renderHtml(priced(golden(), 0, "L"), suppliedTable(["L", "M", "H"]), template);
+  assert.ok(html.includes('<dt><span class="pri pri-top">L</span> <span class="pri pri-mid">M</span> <span class="pri pri-low">H</span></dt>'));
+  const index = indexTable(html);
+  for (const [style, value, id] of [["top", "L", "ch-1"], ["low", "H", "ch-2"], ["mid", "M", "ch-3"]]) {
+    assert.ok(index.includes(`<tr><td><span class="pri pri-${style}">${value}</span></td><td class="nw"><a href="#row-${id}">`), `index row ${id}`);
+    assert.ok(rowSection(html, id).includes(`<header><span class="pri pri-${style}">${value}</span><h3>`), `row header ${id}`);
+  }
+  const one = renderHtml(priced(minimalDoc(), 0, "P"), suppliedTable(["P"]), template);
+  assert.ok(one.includes('<dt><span class="pri pri-top">P</span></dt>'));
+  assert.ok(indexTable(one).includes('<tr><td><span class="pri pri-top">P</span></td>'));
+  assert.ok(rowSection(one, "ch-1").includes('<header><span class="pri pri-top">P</span><h3>'));
+});
+
+test("a supplied table's vocabulary values are escaped in every badge", () => {
+  const html = renderHtml(priced(minimalDoc(), 0, vectors[0]), suppliedTable(vectors), template);
+  for (const vector of vectors) {
+    assert.ok(!html.includes(vector), `raw vector present: ${JSON.stringify(vector)}`);
+    assert.ok(html.includes(`>${escapeHtml(vector)}</span>`), `no escaped badge for ${JSON.stringify(vector)}`);
+  }
+  // The row's value is printed four times: in the tile, the key, the index and the row header.
+  assert.equal(occurrences(html, `<span class="pri pri-top">${escapeHtml(vectors[0])}</span>`), 4);
+  assert.ok(!html.includes("<img"));
 });
 
 test("a post_priority does not move a row in the sort order", () => {
@@ -394,8 +540,8 @@ test("the embedded JSON block round-trips and holds no raw vector", () => {
 test("the report loads nothing from the network and runs no script", () => {
   const doc = golden();
   const html = renderHtml(doc, table, template);
-  assert.equal(html.split("<details>").length - 1, doc.chains.length);
-  assert.ok(html.includes("<summary>Row detail for ch-1</summary>"));
+  assert.ok(!html.includes("<details"), "no <details> remains");
+  assert.equal(occurrences(html, '<article class="row"'), doc.chains.length);
   assert.ok(!html.includes("<script src"));
   assert.ok(!html.includes("http://"));
   assert.ok(!html.includes("https://"));
