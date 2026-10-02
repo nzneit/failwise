@@ -2,7 +2,7 @@
 // No HTML and no escaping here; `render.ts` emits and escapes. Chains are addressed by their
 // position in `chains[]`.
 
-import type { Action, Chain, Factor, FmeaDocument, Ratings, Severity } from "./types.ts";
+import type { Action, Chain, Factor, FmeaDocument, Ratings, Severity, Stale, StaleReason } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
 import { vocabularyRank } from "./table.ts";
 import { chainIndex } from "./pointer.ts";
@@ -49,6 +49,7 @@ export interface RowModel {
   actionsCell: { text: string; due: string | null };   // "1 open" | "1 open of 2" | "all 2 closed" | "none"; due = earliest open target date
   trigger: string | null;          // the trimmed trigger, when it gets its own part (§5.3); else null
   triggerCauses: number[];         // indexes into chain.causes of every cause whose trimmed text equals the trimmed trigger
+  staleNotice: string | null;      // null when stale.flag is false
 }
 
 export type GroupLocation =
@@ -259,6 +260,27 @@ function triggerMatch(chain: Chain): { trigger: string | null; triggerCauses: nu
   return { trigger: triggerCauses.length === 0 ? trigger : null, triggerCauses };
 }
 
+const STALE_REASON_WORDS: Record<StaleReason, string> = {
+  "element-changed": "its element changed",
+  "function-changed": "its function changed",
+  "control-removed": "a control it relied on was removed",
+  "scales-version": "the scales changed",
+};
+
+// A stale row's reason in words; null without a reason.
+function staleReasonWords(stale: Stale): string | null {
+  return stale.reason ? STALE_REASON_WORDS[stale.reason] : null;
+}
+
+// "Stale since version 2: its element changed.", "Stale since version 2.", "Stale."; null for a
+// row that is not stale.
+function staleNotice(stale: Stale): string | null {
+  if (!stale.flag) return null;
+  const since = stale.since_version === undefined ? "" : ` since version ${stale.since_version}`;
+  const words = staleReasonWords(stale);
+  return `Stale${since}${words === null ? "." : `: ${words}.`}`;
+}
+
 // The rows in the index order. A row's findings are found by its chain's position in
 // `doc.chains` (object identity), never by its id.
 function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]): RowModel[] {
@@ -277,6 +299,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
       findings: [...shown.filter((f) => f.severity === "blocker"), ...shown.filter((f) => f.severity !== "blocker")],
       actionsCell: actionsCell(chain),
       ...triggerMatch(chain),
+      staleNotice: staleNotice(chain.stale),
     };
   });
 }
