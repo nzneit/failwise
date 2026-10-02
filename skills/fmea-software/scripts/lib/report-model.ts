@@ -63,12 +63,22 @@ export interface CheckGroup { severity: Severity; rule: string; message: string;
 // One action of the document with its chain's id, for the Actions section (§5.2).
 export interface ActionRow { chainId: string; action: Action; open: boolean }
 
+// The items of the "Needs attention" block (§4.1); an item with nothing to list is null.
+export interface Attention {
+  blockers: { label: string; lines: PlacedFinding[] } | null;
+  stale: { label: string; rows: { chainId: string; reason: string | null }[] } | null;
+  provisional: { label: string; rows: { chainId: string; factors: string[] }[] } | null;   // factors: "S", "O", "D", "post-action S", ...
+  handoffs: { label: string; rows: { chainId: string; failureMode: string }[] } | null;
+  nextActions: ActionRow[];                                        // at most three; empty means the item is left out
+}
+
 export interface ReportModel {
   tiles: Tiles;
   vocabulary: { value: string; style: RankStyle }[];   // the loaded table's vocabulary in order, for the key
   rows: RowModel[];                                    // the index order of sortChains
   groups: CheckGroup[];                                // blocker groups first, then by first finding
   actions: ActionRow[];                                // open first, then by target date, ties in document order (§5.2)
+  attention: Attention;
 }
 
 // "1 row", "0 rows": the singular only for exactly one (§4).
@@ -314,6 +324,78 @@ function orderActions(doc: FmeaDocument): ActionRow[] {
   });
 }
 
+// The rows marked stale, in the index order, each with its reason in words.
+function staleItem(rows: RowModel[]): Attention["stale"] {
+  const marked = rows.filter((row) => row.marks.includes("stale"));
+  if (marked.length === 0) return null;
+  return {
+    label: count(marked.length, "row", "rows") + " due to be rated again",
+    rows: marked.map((row) => ({ chainId: row.chain.id, reason: staleReasonWords(row.chain.stale) })),
+  };
+}
+
+// The rows handed off to threat modelling, in the index order, each with its failure mode.
+function handoffItem(rows: RowModel[]): Attention["handoffs"] {
+  const marked = rows.filter((row) => row.marks.includes("handoff"));
+  if (marked.length === 0) return null;
+  return {
+    label: count(marked.length, "row", "rows") + " passed to threat modelling",
+    rows: marked.map((row) => ({ chainId: row.chain.id, failureMode: row.chain.failure_mode })),
+  };
+}
+
+// A row's provisional factors: S, O, D of the ratings, then those of the post-action ratings.
+function provisionalFactors(chain: Chain): string[] {
+  const factors: string[] = FACTORS.filter((f) => chain.ratings[f].review.status === "provisional");
+  const post = chain.post_ratings;
+  if (post) for (const f of FACTORS) if (post[f].review.status === "provisional") factors.push(`post-action ${f}`);
+  return factors;
+}
+
+// The rows with a provisional rating, in the index order. The label counts ratings, not rows.
+function provisionalItem(rows: RowModel[], ratings: number): Attention["provisional"] {
+  const marked = rows.filter((row) => row.marks.includes("provisional"));
+  if (marked.length === 0) return null;
+  return {
+    label: count(ratings, "rating", "ratings") + " not yet reviewed",
+    rows: marked.map((row) => ({ chainId: row.chain.id, factors: provisionalFactors(row.chain) })),
+  };
+}
+
+// The blocker item's label, by the blocker-label table (§4.1).
+function blockerLabel(rows: number, documentBlocker: boolean): string {
+  if (rows === 0) return documentBlocker ? "The document fails an automated check" : "An automated check fails";
+  const n = count(rows, "row", "rows");
+  if (documentBlocker) return `${n} and the document fail an automated check`;
+  return `${n} ${rows === 1 ? "fails" : "fail"} an automated check`;
+}
+
+// Every blocker: each row's in the index order, then those at a chain index with no chain, then
+// those outside `chains[]`, the last two in `computed.lints` order.
+function blockerItem(rows: RowModel[], located: Located[]): Attention["blockers"] {
+  const elsewhere = located.map((l) => l.finding).filter((f) => f.severity === "blocker");
+  const documents = elsewhere.filter((f) => f.where.kind === "document");
+  const lines = [
+    ...rows.flatMap((row) => row.findings.filter((f) => f.severity === "blocker")),
+    ...elsewhere.filter((f) => f.where.kind === "unknown-row"),
+    ...documents,
+  ];
+  if (lines.length === 0) return null;
+  const marked = rows.filter((row) => row.marks.includes("blocker")).length;
+  return { label: blockerLabel(marked, documents.length > 0), lines };
+}
+
+// The "Needs attention" items, all derived by row position from the index rows (§4.1).
+function buildAttention(rows: RowModel[], actions: ActionRow[], provisionalRatings: number, located: Located[]): Attention {
+  return {
+    blockers: blockerItem(rows, located),
+    stale: staleItem(rows),
+    provisional: provisionalItem(rows, provisionalRatings),
+    handoffs: handoffItem(rows),
+    nextActions: actions.filter((a) => a.open).slice(0, 3),
+  };
+}
+
 export function buildReportModel(doc: FmeaDocument, table: PriorityTable): ReportModel {
   const tiles: Tiles = {
     priorities: priorityCounts(doc, table.vocabulary),
@@ -324,11 +406,14 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     qualityScore: doc.computed ? doc.computed.quality_score : null,
   };
   const located = placeFindings(doc);
+  const rows = buildRows(doc, table, located);
+  const actions = orderActions(doc);
   return {
     tiles,
     vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })),
-    rows: buildRows(doc, table, located),
+    rows,
     groups: groupFindings(located),
-    actions: orderActions(doc),
+    actions,
+    attention: buildAttention(rows, actions, tiles.ratings.provisional, located),
   };
 }

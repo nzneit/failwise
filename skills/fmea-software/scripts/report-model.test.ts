@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildReportModel, sortChains } from "./lib/report-model.ts";
 import { sortChains as renderSortChains } from "./render.ts";
-import { loadTable } from "./lib/table.ts";
+import { computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { clone, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
 import type { Action, ActionStatus, Chain, FmeaDocument, Lint, Severity } from "./lib/types.ts";
@@ -123,6 +123,17 @@ function rowById(model: ReturnType<typeof buildReportModel>, id: string) {
   const row = model.rows.find((r) => r.chain.id === id);
   assert.ok(row, `no row ${id}`);
   return row;
+}
+
+const attentionOf = (doc: FmeaDocument) => modelOf(doc).attention;
+
+// update/stale-rows.fmea.json has no priority blocks and no computed block. render.test.ts's
+// staleRows() cannot be imported from a test file, so this helper fills the priorities the same way.
+// Index order: ch-4 (H), then ch-1, ch-3, ch-2, ch-5 (M, by S 8, 7, 5, 4).
+function staleFixture(): FmeaDocument {
+  const doc = loadFixture<FmeaDocument>("update", "stale-rows.fmea.json");
+  for (const chain of doc.chains) chain.priority = computePriority(table, chain.ratings);
+  return doc;
 }
 
 test("a finding is a row, unknown-row or document finding by its chain index", () => {
@@ -357,4 +368,134 @@ test("stale notice: without since_version, without reason, without either, and o
     null,
   ]);
   assert.ok(modelOf(fixture()).rows.every((r) => r.staleNotice === null));
+});
+
+test("attention: a document with nothing to list has every item left out", () => {
+  assert.deepEqual(attentionOf(minimalDoc()), { blockers: null, stale: null, provisional: null, handoffs: null, nextActions: [] });
+});
+
+test("attention: stale rows in index order with their reasons in words", () => {
+  const doc = staleFixture();
+  doc.chains[3].stale = { flag: true };   // ch-4: first in the index, no reason
+  assert.deepEqual(attentionOf(doc).stale, {
+    label: "3 rows due to be rated again",
+    rows: [
+      { chainId: "ch-4", reason: null },
+      { chainId: "ch-1", reason: "the scales changed" },
+      { chainId: "ch-2", reason: "its element changed" },
+    ],
+  });
+  doc.chains[1].stale = { flag: false };
+  doc.chains[3].stale = { flag: false };
+  assert.equal(attentionOf(doc).stale?.label, "1 row due to be rated again");
+});
+
+test("attention: handoff rows in index order with their failure modes", () => {
+  const doc = withComputed(docOf({ id: "ch-2" }, { id: "ch-1" }), []);
+  doc.chains.forEach((c, i) => {
+    c.handoff = { to: "threat-model", reason: "an attacker", adversary_cause: "process crash" };
+    c.failure_mode = `mode ${i}`;
+  });
+  assert.deepEqual(attentionOf(doc).handoffs, {
+    label: "2 rows passed to threat modelling",
+    rows: [{ chainId: "ch-1", failureMode: "mode 1" }, { chainId: "ch-2", failureMode: "mode 0" }],
+  });
+});
+
+test("attention: next actions due are the three earliest open actions", () => {
+  const checkout = attentionOf(fixture());
+  assert.deepEqual(
+    checkout.nextActions.map((r) => [r.action.target_date, r.chainId, r.action.id, r.action.owner, r.open]),
+    [["2026-10-09", "ch-4", "act-1", "Platform team", true], ["2026-10-15", "ch-1", "act-1", "Payments team", true], ["2026-10-16", "ch-8", "act-1", "Payments team", true]],
+  );
+  const doc = minimalDoc();
+  doc.chains[0].actions = (["Completed", "Not Implemented", "Decision pending"] as const)
+    .map((status, j) => action(`act-${j + 1}`, status, `2026-08-0${j + 1}`));
+  assert.deepEqual(attentionOf(doc).nextActions.map((r) => r.action.id), ["act-3"]);
+  doc.chains[0].actions.pop();
+  assert.deepEqual(attentionOf(doc).nextActions, []);
+});
+
+test("attention: provisional rows list their factors, pre-action before post-action", () => {
+  const one = minimalDoc();
+  one.chains[0].ratings.D = rating(4, "provisional");
+  assert.deepEqual(attentionOf(one).provisional, { label: "1 rating not yet reviewed", rows: [{ chainId: "ch-1", factors: ["D"] }] });
+
+  const post = minimalDoc();
+  post.chains[0].ratings.O = rating(3, "provisional");
+  post.chains[0].post_ratings = { S: rating(4, "provisional"), O: rating(3), D: rating(2, "provisional") };
+  assert.deepEqual(attentionOf(post).provisional, {
+    label: "3 ratings not yet reviewed",
+    rows: [{ chainId: "ch-1", factors: ["O", "post-action S", "post-action D"] }],
+  });
+
+  const two = withComputed(docOf({ id: "ch-2" }, { id: "ch-1" }), []);
+  two.chains[0].ratings.S = rating(8, "provisional");
+  two.chains[1].ratings.D = rating(4, "provisional");
+  assert.deepEqual(attentionOf(two).provisional, {
+    label: "2 ratings not yet reviewed",
+    rows: [{ chainId: "ch-1", factors: ["D"] }, { chainId: "ch-2", factors: ["S"] }],
+  });
+});
+
+test("attention: the blocker label follows the blocker-label table", () => {
+  const cases: [string[], string][] = [
+    [["/chains/0/ratings/D"], "1 row fails an automated check"],
+    [["/chains/0/ratings/S", "/chains/0/ratings/D", "/chains/1"], "2 rows fail an automated check"],
+    [["/chains/0", "/meta/ground_rules"], "1 row and the document fail an automated check"],
+    [["/chains/1", "/chains/0", ""], "2 rows and the document fail an automated check"],
+    [["/meta/assumptions"], "The document fails an automated check"],
+    [["/chains/9", "/meta/assumptions"], "The document fails an automated check"],
+    [["/chains/9", "/chains/2"], "An automated check fails"],
+  ];
+  for (const [pointers, label] of cases) {
+    const doc = withComputed(docOf({}, {}), pointers.map((p) => finding(p, "blocker")));
+    assert.equal(attentionOf(doc).blockers?.label, label, pointers.join(" "));
+  }
+  assert.equal(attentionOf(withComputed(docOf({}), [finding("/chains/0", "warning")])).blockers, null);
+});
+
+test("attention: blocker lines are row findings by index order, then unknown-row, then document", () => {
+  // Positions: /chains/0 is ch-2, /chains/1 is ch-1, and the index order is ch-1, ch-2.
+  const doc = withComputed(docOf({ id: "ch-2" }, { id: "ch-1" }), [
+    finding("/meta/ground_rules", "blocker"),
+    finding("/chains/0/ratings/S", "blocker"),
+    finding("/chains/7", "blocker"),
+    finding("/chains/1/ratings/O", "warning"),
+    finding("/chains/1", "blocker"),
+    finding("/chains/0", "blocker"),
+    finding("", "blocker"),
+  ]);
+  const blockers = attentionOf(doc).blockers;
+  assert.equal(blockers?.label, "2 rows and the document fail an automated check");
+  assert.deepEqual(blockers?.lines.map((l) => l.message), ["/chains/1", "/chains/0/ratings/S", "/chains/0", "/chains/7", "/meta/ground_rules", ""]);
+  assert.deepEqual(blockers?.lines.map((l) => l.where.kind), ["row", "row", "row", "unknown-row", "document", "document"]);
+
+  const noChains = attentionOf(withComputed(docOf(), [finding("/meta/ground_rules", "blocker"), finding("/chains/0", "blocker")]));
+  assert.deepEqual(noChains.blockers?.lines.map((l) => l.message), ["/chains/0", "/meta/ground_rules"]);
+  assert.equal(noChains.blockers?.label, "The document fails an automated check");
+});
+
+test("attention: the checkout fixture's block", () => {
+  const a = attentionOf(fixture());
+  assert.deepEqual(Object.keys(a), ["blockers", "stale", "provisional", "handoffs", "nextActions"]);
+  assert.deepEqual(a.blockers, {
+    label: "1 row fails an automated check",
+    lines: [{
+      severity: "blocker",
+      rule: "detection-1-without-evidenced-control",
+      message: "Detection is 1 with no existing detection control carrying evidence",
+      where: { kind: "row", chainId: "ch-7", label: "D", raw: false },
+    }],
+  });
+  assert.equal(a.stale, null);
+  assert.deepEqual(a.provisional, {
+    label: "8 ratings not yet reviewed",
+    rows: [{ chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] }],
+  });
+  assert.deepEqual(a.handoffs, {
+    label: "1 row passed to threat modelling",
+    rows: [{ chainId: "ch-5", failureMode: "A session token that this component did not issue for the current session is accepted" }],
+  });
+  assert.deepEqual(a.nextActions.map((r) => `${r.chainId} ${r.action.id}`), ["ch-4 act-1", "ch-1 act-1", "ch-8 act-1"]);
 });
