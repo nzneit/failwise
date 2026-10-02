@@ -58,6 +58,33 @@ root declares on every user's machine.
 Commit messages carry no AI attribution lines: no `Co-Authored-By` trailer naming an AI, no
 "Generated with" line, no session trailer.
 
+## Browser checks
+
+Run these before a commit that changes `skills/fmea-software/assets/report-template.html` or
+`skills/fmea-software/scripts/render.ts`:
+
+```
+node tools/check-browser.ts
+node tools/shots.ts
+```
+
+The first renders the checkout fixture and opens it in Chromium at four widths (375, 768, 1280 and
+1920 px) and under print emulation. It fails on a page that scrolls sideways, on an element past
+the right edge, on a WCAG A or AA violation that axe-core finds, and on a print rule that does not
+take effect. The second writes a screenshot of every part of the report, at every width, to
+`build/shots/`, with the print PDF. Look at the parts your change touches, at every width, before
+calling the change done: the gate cannot judge page breaks or whether the report reads well. A part
+image is cut at its element's box, so content that spills sideways shows only in `page.png`.
+
+Fetch the browser once with `node tools/check-browser.ts --fetch`, and again when
+`dev/package-lock.json` changes Playwright's version. Both commands take
+`--engines chromium,firefox,webkit` and `--report <file.html>` for a report that already exists, and
+both are the same in bash and fish. A local run names the engines it did not run. CI runs all three
+on every pull request and uploads the screenshots as the `browser-checks` artifact.
+
+A check listed in `EXPECTED_FAILURES` of `dev/browser/matrix.ts` is a known gap with its reason. The
+run fails when such a check starts to pass, so a change that closes a gap removes its entry.
+
 ## Scripts and tools
 
 - The TypeScript scripts and tools run directly under Node 24.2 or later and take no
