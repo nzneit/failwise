@@ -61,7 +61,9 @@ export type GroupLocation =
 export interface CheckGroup { severity: Severity; rule: string; message: string; count: number; locations: GroupLocation[] }
 
 // One action of the document with its chain's id, for the Actions section (§5.2).
-export interface ActionRow { chainId: string; action: Action; open: boolean }
+// `tracker` is the action's link as the report prints it: `url` only when it begins https://, else
+// null; `seen` is "<state>, seen <date>", or "not yet read" without an observed block.
+export interface ActionRow { chainId: string; action: Action; open: boolean; tracker: { key: string; url: string | null; seen: string } | null }
 
 // The items of the "Needs attention" block (§4.1); an item with nothing to list is null.
 export interface Attention {
@@ -78,6 +80,7 @@ export interface ReportModel {
   rows: RowModel[];                                    // the index order of sortChains
   groups: CheckGroup[];                                // blocker groups first, then by first finding
   actions: ActionRow[];                                // open first, then by target date, ties in document order (§5.2)
+  tracked: boolean;                                    // whether any action carries a link
   attention: Attention;
 }
 
@@ -99,6 +102,13 @@ function rankStyle(vocabulary: string[], value: string): RankStyle {
 // An action is open until it is completed or recorded as not implemented (§5.1).
 function isOpen(action: Action): boolean {
   return action.status !== "Completed" && action.status !== "Not Implemented";
+}
+
+function trackerOf(action: Action): ActionRow["tracker"] {
+  const link = action.tracker;
+  if (!link) return null;
+  const seen = link.observed ? `${link.observed.state}, seen ${link.observed.date}` : "not yet read";
+  return { key: link.key, url: link.url.startsWith("https://") ? link.url : null, seen };
 }
 
 // The rating blocks a row carries: `ratings` always, and `post_ratings` once the row has been
@@ -317,7 +327,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
 // Every action in document order (chain position, then action position), then sorted open
 // before closed and by target date; the sort is stable, so ties keep document order (§5.1, §5.2).
 function orderActions(doc: FmeaDocument): ActionRow[] {
-  const rows = doc.chains.flatMap((chain) => chain.actions.map((action) => ({ chainId: chain.id, action, open: isOpen(action) })));
+  const rows = doc.chains.flatMap((chain) => chain.actions.map((action) => ({ chainId: chain.id, action, open: isOpen(action), tracker: trackerOf(action) })));
   return rows.sort((a, b) => {
     if (a.open !== b.open) return a.open ? -1 : 1;
     return a.action.target_date < b.action.target_date ? -1 : a.action.target_date > b.action.target_date ? 1 : 0;
@@ -414,6 +424,7 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     rows,
     groups: groupFindings(located),
     actions,
+    tracked: actions.some((a) => a.tracker !== null),
     attention: buildAttention(rows, actions, tiles.ratings.provisional, located),
   };
 }

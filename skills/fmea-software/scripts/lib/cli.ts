@@ -1,7 +1,7 @@
 import process from "node:process";
 import { ScriptError, exitStatus, formatError } from "./codes.ts";
 
-export type Main = (argv: string[]) => number;
+export type Main = (argv: string[]) => number | Promise<number>;
 
 /** The only place in the skill that decides a process exit status: every lib function is pure or
  *  throws. Each CLI ends with `if (isEntry(import.meta)) run(main);`, never a bare
@@ -15,18 +15,26 @@ export type Main = (argv: string[]) => number;
  *  flush stdout and stderr and then exit with the same status. */
 export function run(main: Main): void {
   try {
-    process.exitCode = main(process.argv.slice(2));
-    return;
-  } catch (err) {
-    if (err instanceof ScriptError) {
-      process.stderr.write(formatError(err.code, err.message, err.pointer) + "\n");
-      process.exitCode = exitStatus(err.code);
+    const result = main(process.argv.slice(2));
+    if (typeof result === "number") {
+      process.exitCode = result;
       return;
     }
-    process.stderr.write(formatError("INTERNAL", String(err)) + "\n");
-    process.exitCode = exitStatus("INTERNAL");
+    result.then((status) => { process.exitCode = status; }, fail);
+  } catch (err) {
+    fail(err);
+  }
+}
+
+/** Reports a failure from `main`, thrown or rejected: a ScriptError by its code, anything else as INTERNAL. */
+function fail(err: unknown): void {
+  if (err instanceof ScriptError) {
+    process.stderr.write(formatError(err.code, err.message, err.pointer) + "\n");
+    process.exitCode = exitStatus(err.code);
     return;
   }
+  process.stderr.write(formatError("INTERNAL", String(err)) + "\n");
+  process.exitCode = exitStatus("INTERNAL");
 }
 
 /** Whether the module that passes its `import.meta` is the process's entry point. On a runtime

@@ -21,6 +21,15 @@ export function clone<T>(v: T): T {
   return structuredClone(v);
 }
 
+/** The document with the tracker target and every action's link removed: what the checkout fixture
+ *  was before it gained them, for a test of how the report looks when nothing is tracked. */
+export function withoutTracker(doc: FmeaDocument): FmeaDocument {
+  const bare = clone(doc);
+  delete bare.meta.tracker;
+  for (const chain of bare.chains) for (const action of chain.actions) delete action.tracker;
+  return bare;
+}
+
 /** Run `fn` against a fresh temporary directory and remove it afterwards, so a test that writes
  *  files never touches the repository. */
 export function withTempDir<T>(fn: (dir: string) => T): T {
@@ -32,8 +41,9 @@ export function withTempDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-export function runCli(script: string, args: string[]): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8" });
+/** Runs a script under the current Node; `env`, when given, replaces the inherited environment. */
+export function runCli(script: string, args: string[], options: { env?: NodeJS.ProcessEnv } = {}): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8", env: options.env });
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 

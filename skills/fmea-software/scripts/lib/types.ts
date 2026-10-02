@@ -21,10 +21,15 @@ export interface Assumption { text: string; owner: string; status: AssumptionSta
 export interface Review { date: string; reviewers: string[]; outcome: string }
 export interface Boundary { included: string[]; excluded: string[]; security: string }
 export interface Scales { version: number; priority_table: string }
+export type TrackerProvider = "github";
+export type ObservedState = "open" | "done" | "dropped" | "closed" | "unreachable";
+export interface TrackerConfig { provider: TrackerProvider; project: string; label: string; host?: string; record_url?: string }
+export interface Observed { state: ObservedState; detail: string; date: string; closed_date?: string }
+export interface TrackerLink { provider: TrackerProvider; id: string; key: string; url: string; linked: string; observed?: Observed }
 export interface Meta {
   id: string; name: string; version: number; branch: "DFMEA"; scope: string; boundary: Boundary;
   ground_rules: string[]; assumptions: Assumption[]; reviews: Review[]; scales: Scales;
-  created: string; updated: string; history: HistoryEntry[];
+  created: string; updated: string; history: HistoryEntry[]; tracker?: TrackerConfig;
 }
 export interface Dependency { strength: Strength; sla?: string; limits?: string }
 export interface Source { kind: SourceKind; ref: string }
@@ -37,7 +42,7 @@ export interface RatingReview { status: ReviewStatus; by?: string; date?: string
 export interface Rating { value: number; rationale: string; evidence_kind: RatingEvidenceKind; evidence_ref?: string; review: RatingReview }
 export interface Ratings { S: Rating; O: Rating; D: Rating }
 export interface Priority { value: string; table: string; rpn: number }
-export interface Action { id: string; description: string; owner: string; status: ActionStatus; target_date: string; completed_date?: string; source_incident?: string }
+export interface Action { id: string; description: string; owner: string; status: ActionStatus; target_date: string; completed_date?: string; source_incident?: string; tracker?: TrackerLink }
 export interface Handoff { to: "threat-model"; reason: string; adversary_cause: string }
 export interface CatalogRef { id: string; provenance: string }
 export interface Stale { flag: boolean; reason?: StaleReason; since_version?: number }

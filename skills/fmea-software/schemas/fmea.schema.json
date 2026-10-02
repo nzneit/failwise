@@ -227,6 +227,10 @@
         "scales": {
           "$ref": "#/$defs/scales"
         },
+        "tracker": {
+          "$ref": "#/$defs/trackerConfig",
+          "description": "Optional. The one tracker target of this analysis, set by the person; track.ts reads it and never writes it."
+        },
         "created": {
           "$ref": "#/$defs/date",
           "description": "The date the analysis was created."
@@ -545,6 +549,100 @@
         "source_incident": {
           "$ref": "#/$defs/nonEmptyString",
           "description": "The identifier of the incident whose postmortem action item this action was carried over from (C076). Present only on carried-over actions; the lint seeded-action-without-incident flags an action without one on a chain that carries source_incident, for the reviewer to decide."
+        },
+        "tracker": {
+          "$ref": "#/$defs/trackerLink",
+          "description": "Optional. The link to this action's item in the tracker. Written only by track.ts, as computed is written only by validate.ts, and never by hand."
+        }
+      }
+    },
+    "trackerConfig": {
+      "title": "Tracker target",
+      "description": "Where the analysis's actions are tracked: one provider, one project and one label. Flat, because the validator has no oneOf; track.ts checks that project has the form the provider needs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "project", "label"],
+      "properties": {
+        "provider": {
+          "enum": ["github"],
+          "description": "The tracker provider. Only github is supported, so a document cannot name a provider the scripts cannot run."
+        },
+        "project": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The container items are created in. For GitHub, owner/repo."
+        },
+        "label": {
+          "$ref": "#/$defs/plainId",
+          "description": "The label every created item carries."
+        },
+        "host": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$",
+          "description": "The tracker's host name. For GitHub, absent means github.com."
+        },
+        "record_url": {
+          "type": "string",
+          "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[A-Za-z0-9._~%/-]*)?$",
+          "description": "Where the rendered report can be read: https, no query and no fragment. When present, each item links to record_url#row-<chain id>."
+        }
+      }
+    },
+    "observed": {
+      "title": "Observed tracker state",
+      "description": "What the last refresh saw of an item, stored so that the report can print the tracker's state without a network call.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "detail", "date"],
+      "properties": {
+        "state": {
+          "enum": ["open", "done", "dropped", "closed", "unreachable"],
+          "description": "The state the tracker reported, reduced to one of five."
+        },
+        "detail": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "What the tracker said, in prose."
+        },
+        "date": {
+          "$ref": "#/$defs/date",
+          "description": "The calendar date it was seen."
+        },
+        "closed_date": {
+          "$ref": "#/$defs/date",
+          "description": "The calendar date, in UTC, on which the tracker says the item closed, if it says."
+        }
+      }
+    },
+    "trackerLink": {
+      "title": "Tracker link",
+      "description": "The link from one action to its item in the tracker. Written only by track.ts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "id", "key", "url", "linked"],
+      "properties": {
+        "provider": {
+          "enum": ["github"],
+          "description": "The provider that holds the item."
+        },
+        "id": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The tracker's stable identifier. For GitHub, the issue's node_id."
+        },
+        "key": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "A display key. For GitHub, owner/repo#number. Refreshed when the item moves."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://\\S+$",
+          "description": "The item's web address. Must begin https://, because the report turns it into a link. Refreshed when the item moves."
+        },
+        "linked": {
+          "$ref": "#/$defs/date",
+          "description": "The calendar date the link was recorded."
+        },
+        "observed": {
+          "$ref": "#/$defs/observed",
+          "description": "What the last refresh saw."
         }
       }
     },
