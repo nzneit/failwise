@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runGate } from "./check-browser.ts";
-import { BREAKPOINT, EXPECTED_FAILURES, NOT_ASSERTED, notAsserted } from "../dev/browser/matrix.ts";
+import { BREAKPOINT, EXPECTED_FAILURES, NOT_ASSERTED, notAsserted, STEPPED_WIDTHS } from "../dev/browser/matrix.ts";
 import { fakeMachine, report, type Call, type FakeOptions } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
@@ -269,4 +269,11 @@ test("both lists are empty, and share no entry", () => {
 test("the template's one width query is at BREAKPOINT - 1 px", () => {
   const template = readFileSync(join(import.meta.dirname, "..", "skills", "fmea-software", "assets", "report-template.html"), "utf8");
   assert.deepEqual([...template.matchAll(/@media\s*\(([^)]*)\)/g)].map((match) => match[1]), [`max-width: ${BREAKPOINT - 1}px`]);
+});
+
+test("the stepped check visits 242 widths, ascending, from 320 to 1280 px, the last width under the breakpoint among them", () => {
+  assert.equal(STEPPED_WIDTHS.length, 242);
+  assert.ok(STEPPED_WIDTHS.every((width, i) => i === 0 || width > STEPPED_WIDTHS[i - 1]), "ascending");
+  assert.deepEqual([STEPPED_WIDTHS[0], STEPPED_WIDTHS.at(-1)], [320, 1280]);
+  assert.ok(STEPPED_WIDTHS.includes(BREAKPOINT - 1));
 });
