@@ -4,6 +4,8 @@ export type Engine = (typeof ENGINES)[number];
 /** The viewport widths every layout check runs at: a phone, a tablet, a laptop and a desktop. */
 export const WIDTHS = [375, 768, 1280, 1920] as const;
 export const VIEWPORT_HEIGHT = 900;
+/** The width the print checks open the report at: a landscape page less its margins, in CSS pixels. */
+export const PRINT_WIDTH = 965;
 
 export type CheckId = "scroll" | "edge" | "axe";
 export interface ExpectedFailure { check: CheckId; width: number; reason: string }

@@ -16,7 +16,7 @@ export function browserConfig(run: "gate" | "shots", testMatch: string): Playwri
     forbidOnly: true,
     retries: 0,
     use: { trace: "retain-on-failure" },
-    projects: ENGINES.map((name) => ({ name, use: { browserName: name } })),
+    projects: ENGINES.map((name) => ({ name, use: { browserName: name }, ...(name === "chromium" ? {} : { testIgnore: "**/*.chromium.*" }) })),
     outputDir: join(out, "output"),
     reporter: [
       ["list"],
