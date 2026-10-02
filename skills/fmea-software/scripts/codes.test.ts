@@ -26,7 +26,11 @@ function demoCliSource(meta = "import.meta"): string {
     `import { ScriptError } from ${lib("codes.ts")};`,
     `import { isEntry, run } from ${lib("cli.ts")};`,
     ``,
-    `export function main(argv: string[]): number {`,
+    `export function main(argv: string[]): number | Promise<number> {`,
+    `  if (argv[0] === "async-two") return (async () => 2)();`,
+    `  if (argv[0] === "async-err") return (async () => { throw new ScriptError("SCHEMA", "boom", "/meta/name"); })();`,
+    `  if (argv[0] === "async-internal") return (async () => { throw new Error("kaboom"); })();`,
+    `  if (argv[0] === "async-big") return (async () => { console.log("x".repeat(300000)); return 0; })();`,
     `  if (argv[0] === "err") throw new ScriptError("SCHEMA", "boom", "/meta/name");`,
     `  if (argv[0] === "internal") throw new Error("kaboom");`,
     `  if (argv[0] === "two") return 2;`,
@@ -82,20 +86,25 @@ test("formatError escapes a line separator in the pointer, the class the message
   assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u2028b\\u2029c");
 });
 
-test("CODES holds exactly the thirteen codes of the closed list", () => {
+test("CODES holds exactly the eighteen codes of the closed list", () => {
   assert.deepEqual(Object.keys(CODES), [
     "USAGE",
     "NODE",
+    "TRACKER_PLAN",
+    "TRACKER_PUBLIC",
     "SCHEMA",
     "INVARIANT",
     "PRIORITY_MISMATCH",
     "TABLE_ID_MISMATCH",
     "RATING_RANGE",
     "COMPUTED_MISSING",
+    "TRACKER_CONFIG",
     "IO_READ",
     "IO_WRITE",
     "IO_EXISTS",
     "TABLE_MALFORMED",
+    "TRACKER_UNAVAILABLE",
+    "TRACKER_REJECTED",
     "INTERNAL",
   ]);
 });
@@ -114,6 +123,11 @@ test("exitStatus maps every code to 1 usage, 2 validation, or 3 I/O", () => {
   assert.equal(exitStatus("IO_EXISTS"), 3);
   assert.equal(exitStatus("TABLE_MALFORMED"), 3);
   assert.equal(exitStatus("INTERNAL"), 3);
+  assert.equal(exitStatus("TRACKER_PLAN"), 1);
+  assert.equal(exitStatus("TRACKER_PUBLIC"), 1);
+  assert.equal(exitStatus("TRACKER_CONFIG"), 2);
+  assert.equal(exitStatus("TRACKER_UNAVAILABLE"), 3);
+  assert.equal(exitStatus("TRACKER_REJECTED"), 3);
 });
 
 test("NODE, the too-old-runtime code, is a usage failure: exit status 1", () => {
@@ -219,6 +233,32 @@ test("run() exits with main's non-zero return value and prints nothing", () => {
 
 test("run() flushes a large stdout payload instead of truncating it", () => {
   const result = runDemoCli(["big"]);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.length, 300001);
+});
+
+test("run() exits with the value an async main resolves to", () => {
+  const result = runDemoCli(["async-two"]);
+  assert.equal(result.status, 2);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout, "");
+});
+
+test("run() prints the coded line when an async main rejects with a ScriptError", () => {
+  const result = runDemoCli(["async-err"]);
+  assert.equal(result.status, 2);
+  assert.equal(result.stderr.trim(), "error SCHEMA: boom at /meta/name");
+  assert.equal(result.stdout, "");
+});
+
+test("run() reports any other rejection as INTERNAL and exits 3", () => {
+  const result = runDemoCli(["async-internal"]);
+  assert.equal(result.status, 3);
+  assert.equal(result.stderr.trim(), "error INTERNAL: Error: kaboom");
+});
+
+test("run() flushes a large stdout payload from an async main", () => {
+  const result = runDemoCli(["async-big"]);
   assert.equal(result.status, 0);
   assert.equal(result.stdout.length, 300001);
 });
