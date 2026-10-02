@@ -2,6 +2,9 @@
 
 import type { ObservedState, TrackerProvider } from "../types.ts";
 
+/** The line every created item carries before its marker (§7). */
+export const CLOSING_LINE = "The status of this action is recorded in the analysis, and closing this item proposes a change there.";
+
 export interface Fact { label: string; value: string }
 interface Origin { analysis: string; chain: string; action: string; url?: string }
 export interface ItemContent { title: string; action: string; facts: Fact[]; origin: Origin }
