@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ScriptError, formatError } from "./lib/codes.ts";
-import type { Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
+import type { Action, Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import { checkSchema } from "./lib/schema.ts";
@@ -281,16 +281,24 @@ function postRatingsHtml(chain: Chain): string {
   return part(label, ratingsTableHtml(`Ratings of ${chain.id} after actions`, chain.post_ratings, chain.ratings));
 }
 
-function rowActionsHtml(chain: Chain): string {
+// The tracker's key, as a link when it has a url, then the state last seen. One text for the table
+// cell and the row section.
+function trackerHtml(tracker: NonNullable<ActionRow["tracker"]>): string {
+  const key = tracker.url === null ? e(tracker.key) : `<a href="${e(tracker.url)}">${e(tracker.key)}</a>`;
+  return `${key} <span class="muted">${e(tracker.seen)}</span>`;
+}
+
+function rowActionsHtml(chain: Chain, trackers: Map<Action, ActionRow["tracker"]>): string {
   const items = chain.actions.map((a) => {
+    const tracker = trackers.get(a) ?? null;
     const completed = a.completed_date ? `, completed ${e(a.completed_date)}` : "";
     const incident = a.source_incident ? `, incident <code>${e(a.source_incident)}</code>` : "";
-    return `<code>${e(a.id)}</code> ${e(a.description)} <span class="muted">(${e(a.owner)}, ${e(a.status)}, target ${e(a.target_date)}${completed}${incident})</span>`;
+    return `<code>${e(a.id)}</code> ${e(a.description)} <span class="muted">(${e(a.owner)}, ${e(a.status)}, target ${e(a.target_date)}${completed}${incident})</span>${tracker === null ? "" : ` ${trackerHtml(tracker)}`}`;
   });
   return part("Actions", list(items, "No actions on this row."));
 }
 
-function gridHtml(row: RowModel): string {
+function gridHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): string {
   const c = row.chain;
   return [
     c.handoff ? part("Handoff", `<b>${e(c.handoff.to)}</b> &mdash; ${e(c.handoff.reason)} <span class="muted">(adversary cause: ${e(c.handoff.adversary_cause)})</span>`) : "",
@@ -301,35 +309,36 @@ function gridHtml(row: RowModel): string {
     `<div class="two">${causesHtml(row)}${controlsHtml(c)}</div>`,
     part("Ratings", ratingsTableHtml(`Ratings of ${c.id}`, c.ratings)),
     postRatingsHtml(c),
-    rowActionsHtml(c),
+    rowActionsHtml(c, trackers),
     c.history.length === 0 ? "" : part("Row history", list(c.history.map((h) => `v${h.version} ${e(h.date)} &mdash; ${e(h.change)}`), "")),
   ].join("");
 }
 
-function rowSectionHtml(row: RowModel): string {
+function rowSectionHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): string {
   const stale = row.staleNotice === null ? "" : `<p class="stale-notice">${e(row.staleNotice)}</p>`;
   return `<article class="row" id="row-${e(row.chain.id)}">${rowHeaderHtml(row)}${row.findings.map(findingHtml).join("")}${stale}` +
-    `<div class="grid">${gridHtml(row)}</div><p class="back"><a href="#chains">&uarr; index</a></p></article>`;
+    `<div class="grid">${gridHtml(row, trackers)}</div><p class="back"><a href="#chains">&uarr; index</a></p></article>`;
 }
 
 function chainsHtml(model: ReportModel): string {
   if (model.rows.length === 0) return `<p class="empty">No chains.</p>`;
-  return keyHtml(model.vocabulary) + indexHtml(model.rows) + model.rows.map(rowSectionHtml).join("");
+  const trackers = new Map(model.actions.map((a) => [a.action, a.tracker]));
+  return keyHtml(model.vocabulary) + indexHtml(model.rows) + model.rows.map((row) => rowSectionHtml(row, trackers)).join("");
 }
 
 const ACTIONS_CAPTION = "Open actions first, by target date; closed actions last.";
 
-function actionRowHtml({ chainId, action, open }: ActionRow): string {
+function actionRowHtml({ chainId, action, open, tracker }: ActionRow, tracked: boolean): string {
   const completed = action.completed_date ? `<td class="nw">${e(action.completed_date)}</td>` : "<td>&mdash;</td>";
   return `${open ? "<tr>" : '<tr class="done">'}<td class="nw">${e(action.target_date)}</td><td>${rowLinkHtml(chainId)}</td><td><code>${e(action.id)}</code></td>` +
-    `<td>${e(action.description)}</td><td>${e(action.owner)}</td><td>${e(action.status)}</td>${completed}</tr>`;
+    `<td>${e(action.description)}</td><td>${e(action.owner)}</td><td>${e(action.status)}</td>${completed}${tracked ? `<td>${tracker === null ? "&mdash;" : trackerHtml(tracker)}</td>` : ""}</tr>`;
 }
 
-function actionsHtml(actions: ActionRow[]): string {
+function actionsHtml(actions: ActionRow[], tracked: boolean): string {
   if (actions.length === 0) return `<p class="empty">No actions.</p>`;
-  const head = `<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th></tr></thead>`;
+  const head = `<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th>${tracked ? "<th>Tracker</th>" : ""}</tr></thead>`;
   return captionHtml("actions-caption", ACTIONS_CAPTION) +
-    frameHtml("Actions", `<table aria-labelledby="actions-caption">${head}<tbody>${actions.map(actionRowHtml).join("")}</tbody></table>`);
+    frameHtml("Actions", `<table aria-labelledby="actions-caption">${head}<tbody>${actions.map((a) => actionRowHtml(a, tracked)).join("")}</tbody></table>`);
 }
 
 const CHECKS_INTRO: [string, string, string] = [
@@ -386,7 +395,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),
     structure: structureHtml(doc.elements),
     chains: chainsHtml(model),
-    actions: actionsHtml(model.actions),
+    actions: actionsHtml(model.actions, model.tracked),
     lints: checksHtml(model.groups, model.tiles.qualityScore),
     provenance: provenanceHtml(doc),
     data: escapeJsonForScript(JSON.stringify(doc, null, 2)),

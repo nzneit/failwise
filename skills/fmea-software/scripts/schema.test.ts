@@ -13,7 +13,7 @@ import { checkSchema, loadSchema, SCHEMA_PATH, SUPPORTED_FORMATS, SUPPORTED_KEYW
 import type { SchemaNode } from "./lib/schema.ts";
 import { ptr } from "./lib/pointer.ts";
 import { clone, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
-import type { Computed, HistoryEntry, Stale } from "./lib/types.ts";
+import type { Computed, FmeaDocument, HistoryEntry, Stale } from "./lib/types.ts";
 
 // The pointers of the issues checkSchema reports for doc against schema, sorted.
 function pointers(doc: unknown, schema: SchemaNode): string[] {
@@ -217,6 +217,41 @@ test("a chain may carry post_priority beside post_ratings, in the shape of prior
   assert.deepEqual(checkSchema(extra).map((i) => i.pointer), ["/chains/0/post_priority/weight"]);
 });
 
+// `minimalDoc()` plus a tracker target and one action carrying a link, in the shapes of the
+// work tracking design's §5.2 and §5.3: every optional field present, so each new node is instantiated.
+function trackedDoc(): FmeaDocument {
+  const doc = minimalDoc();
+  doc.meta.tracker = { provider: "github", project: "acme/risk", label: "failwise", host: "github.example.com", record_url: "https://reports.example.com/fmea/checkout" };
+  doc.chains[0].actions = [{
+    id: "act-1", description: "add a retry budget", owner: "T. Tester", status: "Open", target_date: "2026-10-01",
+    tracker: {
+      provider: "github", id: "I_kwDOAAAA1", key: "acme/risk#12", url: "https://github.example.com/acme/risk/issues/12", linked: "2026-10-02",
+      observed: { state: "closed", detail: "closed as completed", date: "2026-10-03", closed_date: "2026-10-03" },
+    },
+  }];
+  return doc;
+}
+
+test("meta.tracker and actions[].tracker validate in the shapes of §5.2 and §5.3", () => {
+  assert.deepEqual(checkSchema(trackedDoc()), []);
+});
+
+test("a tracker provider other than github, an http url and a record_url with a query are schema issues", () => {
+  const doc = trackedDoc();
+  const meta = doc.meta.tracker as unknown as Record<string, unknown>;
+  const link = doc.chains[0].actions[0].tracker as unknown as Record<string, unknown>;
+  meta.provider = "jira";
+  meta.record_url = "https://a.example/r?x=1";
+  meta.host = "bad host";
+  link.url = "http://x/1";
+  assert.deepEqual(pointers(doc, loadSchema()), [
+    "/chains/0/actions/0/tracker/url",
+    "/meta/tracker/host",
+    "/meta/tracker/provider",
+    "/meta/tracker/record_url",
+  ]);
+});
+
 // ---- the drift test (§9: a test walks the schema's required lists, enums, formats, and
 // patterns and fails on drift). Violations are derived from the golden fixture and from the
 // second document below, so the tests also prove both documents still validate.
@@ -329,7 +364,7 @@ function constrainedNodes(schema: SchemaNode): string[] {
 // /$defs/lint, or /$defs/lint/properties/severity. This document instantiates all six, so the
 // pair's reach into the schema does not depend on whether Task 26 has already run.
 function derivationDoc(): Record<string, unknown> {
-  const doc = minimalDoc();
+  const doc = trackedDoc();
   const metaHistory: HistoryEntry[] = [{ version: 1, date: "2026-09-01", change: "created" }];
   const chainHistory: HistoryEntry[] = [{ version: 1, date: "2026-09-01", change: "rated" }];
   const stale: Stale = { flag: true, reason: "element-changed", since_version: 2 };
@@ -462,8 +497,10 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // reach. It stood at 883 while the reach was narrower, and Task 26's `computed` fill and Task
   // 28's review grew the total past it by more than a quarter, which is slack the rule does not
   // allow. If the schema or either document changes the count legitimately, move the floor —
-  // never lower it by more than the change accounts for.
-  assert.ok(derived >= 1150, `expected at least 1150 derived violations, ran ${derived}`);
+  // never lower it by more than the change accounts for. The tracker target, link and observed
+  // state added 35 derivations, all from the derivation document (1,241 in all), so the floor is
+  // 1,185.
+  assert.ok(derived >= 1185, `expected at least 1185 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -471,5 +508,6 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // assertion above this one now fails too, but as a bare shortfall, while this one says which
   // share vanished, which is the drift this test's name claims to catch. Against the old floor of
   // 883 it was the only assertion that failed at all.
-  assert.ok(minLengthDerived >= 248, `expected at least 248 derived minLength violations, ran ${minLengthDerived}`);
+  // The tracker nodes add six of them (254 in all).
+  assert.ok(minLengthDerived >= 254, `expected at least 254 derived minLength violations, ran ${minLengthDerived}`);
 });

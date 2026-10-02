@@ -48,6 +48,13 @@
       "version": 1,
       "priority_table": "priority-fmea-software-v1"
     },
+    "tracker": {
+      "provider": "github",
+      "host": "github.example.com",
+      "project": "acme/checkout",
+      "label": "failwise",
+      "record_url": "https://acme.example/checkout-fmea.html"
+    },
     "created": "2026-09-01",
     "updated": "2026-09-03",
     "history": []
@@ -292,7 +299,19 @@
           "description": "Align the gateway client timeout with the storefront request budget and publish the resulting retry policy in the interface contract",
           "owner": "Payments team",
           "status": "Open",
-          "target_date": "2026-10-15"
+          "target_date": "2026-10-15",
+          "tracker": {
+            "provider": "github",
+            "id": "I_example0000000012",
+            "key": "acme/checkout#12",
+            "url": "https://github.example.com/acme/checkout/issues/12",
+            "linked": "2026-09-20",
+            "observed": {
+              "state": "open",
+              "detail": "open",
+              "date": "2026-09-27"
+            }
+          }
         }
       ],
       "catalog_refs": [
@@ -383,7 +402,14 @@
           "description": "Decide whether the storefront's retry budget or a server-side admission control is the right place to bound retried load, and record the decision in the interface contract",
           "owner": "Checkout team",
           "status": "Decision pending",
-          "target_date": "2026-11-02"
+          "target_date": "2026-11-02",
+          "tracker": {
+            "provider": "github",
+            "id": "I_example0000000013",
+            "key": "acme/checkout#13",
+            "url": "https://github.example.com/acme/checkout/issues/13",
+            "linked": "2026-09-20"
+          }
         }
       ],
       "catalog_refs": [
@@ -470,7 +496,20 @@
           "owner": "Pricing team",
           "status": "Completed",
           "target_date": "2026-08-14",
-          "completed_date": "2026-08-15"
+          "completed_date": "2026-08-15",
+          "tracker": {
+            "provider": "github",
+            "id": "I_example0000000009",
+            "key": "acme/checkout#9",
+            "url": "https://github.example.com/acme/checkout/issues/9",
+            "linked": "2026-08-01",
+            "observed": {
+              "state": "done",
+              "detail": "closed: completed",
+              "date": "2026-09-27",
+              "closed_date": "2026-08-15"
+            }
+          }
         },
         {
           "id": "act-2",

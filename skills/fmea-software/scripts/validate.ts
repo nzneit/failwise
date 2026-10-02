@@ -35,6 +35,17 @@ export function validateDocument(raw: unknown, table: PriorityTable, rules: Mach
   return { ok: errors.length === 0, errors, lints, quality_score: qualityScore(doc.chains.length, lints) };
 }
 
+/** Prints a result as validate.ts does, the JSON on stdout and a coded line per error on stderr,
+ *  and returns the exit status: 2 when the document is invalid, else 0. track.ts prints the same. */
+export function reportValidation(result: ValidateResult): number {
+  process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+  if (!result.ok) {
+    for (const e of result.errors) process.stderr.write(formatError(e.code, `${e.rule}: ${e.message}`, e.pointer) + "\n");
+    return 2;
+  }
+  return 0;
+}
+
 function main(argv: string[]): number {
   const parsed = parseArgs(argv, { positional: 1, flags: { write: "boolean", "table-file": "string" } });
   const path = parsed.positional[0];
@@ -53,12 +64,7 @@ function main(argv: string[]): number {
     };
     writeFileAtomic(path, stringifyDocument(doc));
   }
-  process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-  if (!result.ok) {
-    for (const e of result.errors) process.stderr.write(formatError(e.code, `${e.rule}: ${e.message}`, e.pointer) + "\n");
-    return 2;
-  }
-  return 0;
+  return reportValidation(result);
 }
 
 if (isEntry(import.meta)) run(main);
