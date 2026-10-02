@@ -1,49 +1,40 @@
 # failwise
 
-failwise is a Claude Code plugin holding one skill, `fmea-software`, that conducts Failure Mode and Effects Analysis (FMEA) on enterprise software. Version 0.1.0 performs design-side analysis (DFMEA) of software systems, services, interfaces, and components; writes a JSON document that conforms to a published schema; validates, lints, and prioritizes that document with scripts; and renders it to a single-file HTML report.
+failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report.
 
-## What it does
+It is version 0.1.0, a pre-release whose own evaluations did not pass. Read [Status and limitations](#status-and-limitations) before relying on it.
 
-The skill runs a seven-step design FMEA: plan the scope and boundary, decompose the system into typed elements, state each element's functions, derive failure chains (mode, effects at three levels, causes, controls), rate Severity, Occurrence, and Detection on 1 to 10 against software-specific anchors, plan actions, and document the result. Every rating carries a rationale and an evidence kind and starts out provisional: the skill asks a named person to re-score each rating before any priority is treated as final.
+## What an FMEA is
 
-Four task shapes are supported:
+An FMEA asks, for each part of a system, what it must do, how that can fail, what the failure does to the rest of the system and to the user, what causes it, and what prevents or detects it today. Each answer is one failure chain. A chain is rated from 1 to 10 for Severity, Occurrence and Detection, and the three ratings give it a priority of high, medium or low, which says where to act first. A design-side FMEA is done on the design, before the incident, though it can also start from the incidents you already have. Wikipedia's [article on FMEA](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) covers the method's history and its variants.
 
-- a new design FMEA of a system from its architecture, dependency, contract, and incident inputs;
-- seeding an FMEA baseline from existing postmortems;
+## What the plugin does
+
+The plugin holds one skill, `fmea-software`, which handles four kinds of request:
+
+- a new analysis of a system, from its architecture, dependencies, contracts and incident history;
+- an analysis seeded from existing postmortems;
 - converting a legacy RPN spreadsheet to the JSON model, keeping the original ratings and RPN for reference;
-- updating an existing analysis after an architecture change, flagging stale rows rather than rewriting the document.
+- updating an analysis after an architecture change, flagging the affected rows as stale rather than rewriting the document.
 
-The behavioural failure catalog in `skills/fmea-software/references/design-failure-catalog.md` carries rows for services, external dependencies, and components, plus a short skill-authored set for security components; for interfaces, event streams, datastores, and ML or LLM components it supplies elicitation questions rather than rows, which is the scope this version claims.
+Every rating Claude suggests carries a rationale and starts out provisional. The skill asks a named person to re-score each one before any priority is treated as final.
 
-A failure whose cause is an adversary is recorded as a handoff to threat modeling; the plugin does no threat modeling itself. A process-side (PFMEA) request receives a short answer naming what is sourced and what is missing; the process branch is a stub in this version.
+## What you get
 
-The scripts, run as `node <script>` under Node.js 24.2 or later with no dependencies:
+- **A JSON document**, the analysis itself, which follows [`fmea.schema.json`](skills/fmea-software/schemas/fmea.schema.json). It is the record you keep and update.
+- **An HTML report** rendered from it: one self-contained file that needs no JavaScript and no network access, and prints in landscape. It opens with a summary strip and a "Needs attention" block, then gives the ground rules and assumptions, the system's structure, an index of the failure chains sorted by priority, one section per chain, the actions, and the automated checks with a quality score.
 
-| Script | Purpose |
-|---|---|
-| `skills/fmea-software/scripts/validate.ts <analysis.json> [--write]` | Schema checks, document invariants, priority recomputation, lint rules, quality score. `--write` stores the computed block in the document. |
-| `skills/fmea-software/scripts/priority.ts <analysis.json> --write` | Writes every row's priority from its ratings and the severity-first priority table, and, on a row that carries post-action ratings, its `post_priority` from those ratings by the same lookup; a row with no post-action ratings loses any `post_priority` it carried. |
-| `skills/fmea-software/scripts/render.ts <analysis.json> --out <report.html> [--force]` | Renders the validated document to one self-contained HTML file. It refuses to overwrite an existing output file unless `--force` is given. |
+An [example report](https://nzneit.github.io/failwise/) is published from this repository: the sample analysis the test suite uses, a synthetic checkout service, rendered by the current code. To render it yourself, from a clone:
 
-The priority table the plugin ships, `skills/fmea-software/data/priority-fmea-software-v1.json`, is the skill's own. A different table, including a licensed one you hold, can be supplied at run time with `--table-file`; it is never committed here. When `--table-file` is used it must be passed to all three scripts, because `priority.ts --write` records the table's id in the document and `validate.ts` and `render.ts` refuse a document whose table id differs from the loaded table's (`TABLE_ID_MISMATCH`).
-
-## Status
-
-This is 0.1.0, a pre-release. The design (`docs/specs/2026-09-07-fmea-software-design.md` §15) sets seven acceptance criteria for the first release, which the documents call v1. Six pass, though criterion 3 rests on checker verdicts from before the 2026-09-29 edits (see the addendum in the acceptance note). Criterion 2, the skill evals, does not: 3 of 8 (prompt, model capability) pairs pass, so v1 is not accepted. The scores are in `docs/specs/2026-09-07-eval-results.md`, and the ruling on each open question is in `docs/specs/2026-09-07-acceptance.md`.
-
-What passed: converting a legacy RPN sheet at both model capabilities, and updating an analysis after an architecture change at the high capability.
-
-Known limitations:
-
-- on a new analysis or when seeding from postmortems, no evaluated run asked for the one input the test fixture withholds, a dependency's scaling limit;
-- two runs on the same inputs can differ in how many failure chains they write (12 against 18 in one pair);
-- one hand-over message stated a priority the document did not carry, so read priorities from the JSON or the rendered report, which the scripts compute;
-- every rating stays provisional until a named person re-scores it;
-- the evaluated runs were made on glm-5.3 and glm-5.3-flash filling the high and medium capabilities, not on Anthropic models.
+```
+node skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out checkout-report.html
+```
 
 ## Install
 
-From the marketplace at `nzneit/failwise` on GitHub. From the shell:
+Requirements: Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that Node runs directly, so there is nothing else to install.
+
+From a shell:
 
 ```
 claude plugin marketplace add nzneit/failwise
@@ -57,7 +48,7 @@ or inside a Claude Code session:
 /plugin install failwise@failwise
 ```
 
-Then start a new session or run `/reload-plugins`. Update with `claude plugin update failwise@failwise`.
+Then start a new session or run `/reload-plugins`. To update, run `claude plugin update failwise@failwise`.
 
 To try a checkout without installing it, load it as a local plugin directory:
 
@@ -65,42 +56,59 @@ To try a checkout without installing it, load it as a local plugin directory:
 claude --plugin-dir /path/to/failwise
 ```
 
-The skill is discovered at `skills/fmea-software/SKILL.md` and triggers on FMEA, DFMEA, failure mode and effects analysis, and the four task shapes above; it can also be invoked directly as `/failwise:fmea-software`.
+## Use it
 
-Requirements: Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that node runs directly; there is nothing to install.
+Ask Claude Code for an FMEA in your own words, or invoke the skill directly with `/failwise:fmea-software`. For example:
 
-## Provenance policy
+- "Run a design FMEA of our checkout service, which depends on a third-party payment gateway and a pricing service."
+- "Seed an FMEA baseline from these postmortems and identify the gaps."
+- "Convert this legacy RPN spreadsheet to the JSON model."
+- "Update the existing FMEA after this architecture change."
 
-The skill depends on no external knowledge service. Every anchor, catalog row, table, and rule it carries is tagged with its provenance, using the vocabulary defined in `skills/fmea-software/references/provenance.md`:
+The skill works from the inputs listed in [`design-inputs.md`](skills/fmea-software/references/design-inputs.md): critical flows, a component inventory, the dependencies and their limits, incident history, and the controls already in place. [`checkout-inputs.md`](skills/fmea-software/evals/fixtures/checkout-inputs.md) is an example of such inputs. The skill is written to ask for what is missing and to record each gap as an open assumption instead of inventing a value; in testing it did not always ask (see the limitations below).
 
-- `sourced:<Cnnn>` — reproduced verbatim under a license that permits it, with attribution;
-- `paraphrased:<Cnnn>` — restated from a source;
-- `adapted-from:<Cnnn>` — derived from a source with changes;
-- `cites:<Cnnn>` — authored by the skill, citing the record for the concept only;
-- `skill-authored` — the skill's own, citing nothing.
+A session ends with the JSON document, the rendered report, and a request that you re-score each rating. Expect several dozen for one service: each failure chain carries three ratings, and the four test runs of a new analysis wrote between 12 and 18 chains.
 
-Each `Cnnn` is a record in the research evidence; "Where the evidence lives" below says where that is kept and how a record id is traced to its source. Which tags a source permits follows its license status: paywalled standards are paraphrase-only, the Google SRE Book is cite-only, IEC 60812 is cite-only in this version, public-domain and permissively licensed material may be reproduced with attribution. The plugin ships no AIAG-VDA cell values and nothing specific to any consuming application.
+## Status and limitations
 
-## Where the evidence lives
+0.1.0 is a pre-release that did not pass its own acceptance gate. The skill was tested on four prompts, each at two model capabilities, and three of the eight combinations passed: converting a legacy RPN sheet at both capabilities, and updating an analysis after an architecture change at the higher one. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md).
 
-The research the skill rests on (the research plan, the run 2 report with its findings `F-WSn-NN`, the 130-record records file, and the run 1 report), the two design-panel records, the implementation plan with its reference (cited in code comments as "plan reference §X"), and the publication design (`2026-09-11-publication-design.md`) live in the private repository `nzneit/failwise-research`, because the records file quotes paywalled standards and no-derivatives material verbatim. This repository carries the design spec (`docs/specs/2026-09-07-fmea-software-design.md`), the eval results (`docs/specs/2026-09-07-eval-results.md`), and the v1 acceptance note (`docs/specs/2026-09-07-acceptance.md`), all under `docs/specs/`.
+Known limitations:
 
-Every record id `Cnnn` is traced to its source through the 26-source register in `skills/fmea-software/references/provenance.md`, whose Address column gives each source's web address. Finding ids `F-WSn-NN`, in the design spec and in the schema, name sections of the private report and do not resolve here. Nothing from the evidence enters `skills/` except what the provenance tags allow, and the public tree is audited for restricted wording by the maintainer's pre-push hook before every push; an outside change to `skills/fmea-software/references/` is audited before it is merged (see `CONTRIBUTING.md`).
+- It may not ask for a missing input. No tested run of a new analysis or of postmortem seeding asked for a dependency's scaling limit that the test inputs deliberately leave out.
+- Results vary between runs. The same inputs gave 12 failure chains in one run and 18 in another.
+- Read priorities from the JSON or the rendered report, which the scripts compute, and not from Claude's closing message, which once stated a priority the document did not carry.
+- Every rating stays provisional until a named person re-scores it.
+- The tested runs were made on glm-5.3 and glm-5.3-flash, not on Anthropic models.
 
-## Development
+Not in this version:
 
-```
-npm ci --prefix dev --ignore-scripts                   # once: the static-check tools, installed into dev/node_modules
-node tools/run-tests.ts                                # both test suites under node --test, before every commit
-node tools/check.ts                                    # types, lint, dead code, duplication and complexity, before every commit
-tools/run-eval.sh <1|5|6|7> <high|medium> <run-n>      # one unattended eval run into build/evals/
-node tools/eval-report.ts                              # build/evals/results.json → docs/specs/2026-09-07-eval-results.md
-```
+- Ready-made failure modes for every kind of element. The skill's catalog has them for services, external dependencies and components, with a short set for security components. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
+- Threat modeling. A failure whose cause is an adversary is recorded as a handoff to threat modeling.
+- Process-side FMEA (PFMEA) of delivery, pipelines or operations. Such a request gets a short answer naming what is sourced and what is missing, and no analysis.
 
-The eval run is made at a model capability (`high`, `medium`), not a model name: `FMEA_EVAL_MODELS`, as `high=<model>,medium=<model>`, names the model that fills each capability for any provider, and defaults to the Anthropic table when unset. A full eval is sixteen runs, the four prompts at both capabilities twice each. After the sixteen runs, judge them with Claude Code's Workflow tool, `{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which writes `build/evals/results.json` for `eval-report.ts` to read. Sixteen unattended runs and their judging spend real model time and money. An eval run loads the runner's global Claude Code configuration (bare mode is not used) and grants Read with no path restriction, so run it from a machine and login you are content to expose.
+## The scripts
 
-The commands are the same in bash and fish: the test runner expands its globs itself, and `bun tools/run-tests.ts` and `bun tools/check.ts` also work from a shell where only Bun is on PATH (each finds Node.js 24.2 or later through nvm). The static-check tools are declared in `dev/package.json`, not at the root, so the plugin itself still installs no dependencies. Node.js 24.2 or later must otherwise be on PATH (`source ~/.nvm/nvm.sh` in bash, `nvm use 24` in fish). If you call `node --test` directly, use the glob form; `node --test <directory>` is not the same on Node 24. Commit policy and the provenance rule are in `.claude/CLAUDE.md`; read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+Claude runs three scripts during a session and never works out a priority itself. You can also run them directly with `node`; they have no dependencies. All three are in `skills/fmea-software/scripts/`.
+
+| Script | What it does |
+|---|---|
+| `validate.ts <analysis.json> [--write]` | Runs the schema checks, the document invariants and the lint rules, recomputes the priorities, and computes the quality score. `--write` stores the results in the document, which `render.ts` requires. |
+| `priority.ts <analysis.json> --write` | Writes each row's priority from its ratings, and its post-action priority where the row has post-action ratings. |
+| `render.ts <analysis.json> --out <report.html> [--force]` | Renders a validated document to one HTML file. `--force` overwrites an existing file. |
+
+The priority table the plugin ships, `skills/fmea-software/data/priority-fmea-software-v1.json`, is the skill's own and carries no cell value from any standard. To use a different table, such as a licensed one you hold, pass the same `--table-file <path>` to all three scripts: they refuse a document whose recorded table differs from the one loaded (`TABLE_ID_MISMATCH`). Such a table is never committed here.
+
+## Provenance
+
+The skill depends on no external knowledge service. Every anchor, catalog row, table and rule it carries is tagged with its provenance: either a record id (`Cnnn`) that traces to a source, or `skill-authored`. The tags, what each source's license permits, and the register that gives each record's source and its web address are in [`provenance.md`](skills/fmea-software/references/provenance.md). The plugin ships no AIAG-VDA cell values, no Google SRE Book text, and nothing specific to any consuming application.
+
+The research evidence behind the record ids quotes paywalled standards and no-derivatives material verbatim, so it is kept in a private repository. The design spec, the eval results and the acceptance note are public, under [`docs/specs/`](docs/specs/).
+
+## Contributing
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the tests and static checks, the evals, and the provenance rule for changes to the reference files. The design is [`docs/specs/2026-09-07-fmea-software-design.md`](docs/specs/2026-09-07-fmea-software-design.md).
 
 ## License
 
-Apache-2.0 for the plugin, Copyright 2026 Nathan Neitman; `LICENSE` carries the notice. Third-party material the skill reproduces or adapts keeps its own license and is listed with its attribution in [`skills/fmea-software/licenses/NOTICES.md`](skills/fmea-software/licenses/NOTICES.md), with copies of those licenses beside it (`licenses/APACHE-2.0.txt`, `licenses/MIT-ddunnock-claude-plugins.txt`). The provenance register in `skills/fmea-software/references/provenance.md` covers the rest.
+Apache-2.0, Copyright 2026 Nathan Neitman; see [`LICENSE`](LICENSE). Third-party material the skill reproduces or adapts keeps its own license and is listed with its attribution in [`NOTICES.md`](skills/fmea-software/licenses/NOTICES.md), with copies of those licenses beside it.
