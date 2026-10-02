@@ -78,6 +78,13 @@ test("a run that ends in a BROWSER line has removed the earlier run's files; a T
   assert.deepEqual(run([], { missing: ["dev/node_modules"] }).removed, []);
 });
 
+test("playwright test exits 1: exit 1, and neither the count nor the engines not run is printed", () => {
+  const result = run([], { statuses: { test: 1 } });
+  assert.equal(result.status, 1);
+  // The opening line "## shots: playwright test over ..." is printed; the closing count is not.
+  assert.ok(!result.lines.some((line) => /^## shots: \d+ files/.test(line) || line.startsWith("## not run here")), result.lines.join("\n"));
+});
+
 test("a missing part, a missing row and a missing PDF are each UNVERIFIED, exit 1", () => {
   const result = run([], { drop: ["chromium/375/key.png", "chromium/768/row-02-ch-2.png", "chromium/print.pdf"] });
   assert.equal(result.status, 1);

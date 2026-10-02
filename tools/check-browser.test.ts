@@ -155,6 +155,12 @@ test("a failing or flaky test, or a non-zero exit from Playwright: exit 1 with n
   }
 });
 
+test("a failing gate run prints no line about engines not run", () => {
+  const result = run([], { statuses: { test: 1 } });
+  assert.equal(result.status, 1);
+  assert.ok(!result.lines.some((line) => line.startsWith("## not run here")), result.lines.join("\n"));
+});
+
 test("no report, an unreadable report, an engine with no test, a skipped test: UNVERIFIED", () => {
   const absent = "error UNVERIFIED: build/browser/gate/results.json is absent or is not Playwright's JSON report";
   const cases: [string[], Fake, string[]][] = [
