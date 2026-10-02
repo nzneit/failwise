@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:fmea-software:schema:fmea:v1",
   "title": "fmea-software analysis document",
-  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain table prints. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
+  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
   "type": "object",
   "additionalProperties": false,
   "required": ["meta", "elements", "functions", "chains"],
@@ -27,7 +27,7 @@
     },
     "chains": {
       "type": "array",
-      "description": "One denormalized row per failure chain, as the report's chain table reads it. The file keeps authoring order; the report sorts by priority, then severity.",
+      "description": "One denormalized row per failure chain, as the report's chain index and row sections read it. The file keeps authoring order; the report sorts by priority, then severity.",
       "items": {
         "$ref": "#/$defs/chain"
       }
@@ -633,7 +633,7 @@
     },
     "chain": {
       "title": "Failure chain",
-      "description": "One row of the chain table: the function that fails, the mode, its effects, causes, trigger, controls, ratings, computed priority, actions, the optional post-action re-rating and its priority, the optional handoff and source incident, catalog references, the stale mark and the row's own history. post_priority is present exactly when post_ratings is (invariant post-priority-presence): priority.ts --write fills it from post_ratings with the same table and validate.ts recomputes it the same way, while the chain's priority, the report's sort order and the computed block derive from ratings alone.",
+      "description": "One chain row, as the report's chain index and its row section show it: the function that fails, the mode, its effects, causes, trigger, controls, ratings, computed priority, actions, the optional post-action re-rating and its priority, the optional handoff and source incident, catalog references, the stale mark and the row's own history. post_priority is present exactly when post_ratings is (invariant post-priority-presence): priority.ts --write fills it from post_ratings with the same table and validate.ts recomputes it the same way, while the chain's priority, the report's sort order and the computed block derive from ratings alone.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "function", "failure_mode", "effects", "causes", "controls", "ratings", "priority", "actions", "catalog_refs", "stale", "history"],
@@ -689,7 +689,7 @@
         },
         "post_ratings": {
           "$ref": "#/$defs/ratings",
-          "description": "The row's single post-action re-rating, present only when at least one action on the row has status Completed (invariant post-ratings-without-completed). Its three ratings carry their own review state and fire rating-provisional like any other; the report header's 'N of M ratings provisional' counts chains[].post_ratings alongside chains[].ratings, and a provisional post-action rating marks its row provisional in the report like any other rating. Earlier re-ratings are logged in history[]."
+          "description": "The row's single post-action re-rating, present only when at least one action on the row has status Completed (invariant post-ratings-without-completed). Its three ratings carry their own review state and fire rating-provisional like any other; the report's 'Ratings not yet reviewed' tile counts chains[].post_ratings alongside chains[].ratings, and a provisional post-action rating marks its row provisional in the report like any other rating. Earlier re-ratings are logged in history[]."
         },
         "post_priority": {
           "$ref": "#/$defs/priority"
