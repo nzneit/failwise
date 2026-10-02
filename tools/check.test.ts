@@ -243,9 +243,65 @@ function workflowSteps(file: string): { runs: string[]; uses: string[] } {
   };
 }
 
+/** The `browser` job's nine steps, each as the text it has in ci.yml: ids, conditions, environment, artifacts and retention are held word for word. */
+const BROWSER_STEPS = [
+  [
+    "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "        with:",
+    "          fetch-depth: 0",
+  ].join("\n"),
+  [
+    "      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0",
+    "        with:",
+    "          node-version: \"24\"",
+  ].join("\n"),
+  [
+    "      - run: npm ci --prefix dev --ignore-scripts",
+  ].join("\n"),
+  [
+    "      - run: node tools/check-browser.ts --fetch --with-deps --engines chromium,firefox,webkit",
+  ].join("\n"),
+  [
+    "      - id: gate",
+    "        run: node tools/check-browser.ts --engines chromium,firefox,webkit",
+  ].join("\n"),
+  [
+    "      - id: shots",
+    "        if: ${{ !cancelled() && steps.gate.outcome != 'skipped' }}",
+    "        run: node tools/shots.ts --engines chromium,firefox,webkit",
+  ].join("\n"),
+  [
+    "      - if: ${{ !cancelled() && (steps.gate.outcome == 'failure' || steps.shots.outcome == 'failure') }}",
+    "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    "        with:",
+    "          name: browser-checks",
+    "          path: |",
+    "            build/shots/",
+    "            build/browser/",
+    "          retention-days: 7",
+  ].join("\n"),
+  [
+    "      - id: compare",
+    "        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped' }}",
+    "        env:",
+    "          BASE: ${{ github.event.pull_request.base.sha }}",
+    "        run: node tools/compare.ts --base \"$BASE\"",
+  ].join("\n"),
+  [
+    "      - if: ${{ !cancelled() && (steps.compare.outcome == 'failure' || (steps.compare.outcome == 'success' && steps.compare.outputs.changed != '0')) }}",
+    "        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+    "        with:",
+    "          name: report-changes",
+    "          path: |",
+    "            build/compare/summary.md",
+    "            build/compare/html/",
+    "          retention-days: 14",
+  ].join("\n"),
+];
+
 // The workflow's syntax is first proved when it runs on GitHub. Until then this pins what it runs and
 // that every action is pinned to a commit, not to a tag that can be moved.
-test("the CI workflow runs the suites and the gate in one job and the browser checks in another, and pins every action by commit", () => {
+test("the CI workflow runs the suites and the gate in one job, the browser checks and the comparison in another, and pins every action by commit", () => {
   const { runs, uses } = workflowSteps("ci.yml");
   assert.deepEqual(runs, [
     "npm ci --prefix dev --ignore-scripts",
@@ -255,16 +311,18 @@ test("the CI workflow runs the suites and the gate in one job and the browser ch
     "node tools/check-browser.ts --fetch --with-deps --engines chromium,firefox,webkit",
     "node tools/check-browser.ts --engines chromium,firefox,webkit",
     "node tools/shots.ts --engines chromium,firefox,webkit",
+    'node tools/compare.ts --base "$BASE"',
   ]);
   assert.deepEqual(
     uses.map((action) => action.split("@")[0]),
-    ["actions/checkout", "actions/setup-node", "actions/checkout", "actions/setup-node", "actions/upload-artifact"],
+    ["actions/checkout", "actions/setup-node", "actions/checkout", "actions/setup-node", "actions/upload-artifact", "actions/upload-artifact"],
   );
   for (const action of uses) assert.match(action, /@[0-9a-f]{40}$/, action);
   const workflow = workflowText("ci.yml");
   assert.equal(workflow.split("contents: read").length - 1, 2, "each job reads the repository and nothing more");
-  assert.equal(workflow.split("if: ${{ !cancelled() }}").length - 1, 2, "the screenshots and the upload also run after a failing gate");
-  assert.match(workflow, /^ {10}retention-days: 14$/m);
+  const [, browser] = workflow.split(/^ {2}browser:$/m);
+  for (const block of BROWSER_STEPS) assert.equal(browser.split(block).length - 1, 1, block);
+  assert.ok(!workflow.includes("if: ${{ !cancelled() }}\n"), "no step runs on a bare !cancelled() any more");
 });
 
 // The same pin for the workflow that publishes the sample report, which no pull request runs: it

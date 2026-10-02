@@ -25,19 +25,36 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
       - run: npm ci --prefix dev --ignore-scripts
       - run: node tools/check-browser.ts --fetch --with-deps --engines chromium,firefox,webkit
-      - run: node tools/check-browser.ts --engines chromium,firefox,webkit
-      - if: ${{ !cancelled() }}
+      - id: gate
+        run: node tools/check-browser.ts --engines chromium,firefox,webkit
+      - id: shots
+        if: ${{ !cancelled() && steps.gate.outcome != 'skipped' }}
         run: node tools/shots.ts --engines chromium,firefox,webkit
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && (steps.gate.outcome == 'failure' || steps.shots.outcome == 'failure') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: browser-checks
           path: |
             build/shots/
             build/browser/
+          retention-days: 7
+      - id: compare
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.gate.outcome != 'skipped' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: node tools/compare.ts --base "$BASE"
+      - if: ${{ !cancelled() && (steps.compare.outcome == 'failure' || (steps.compare.outcome == 'success' && steps.compare.outputs.changed != '0')) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: report-changes
+          path: |
+            build/compare/summary.md
+            build/compare/html/
           retention-days: 14
