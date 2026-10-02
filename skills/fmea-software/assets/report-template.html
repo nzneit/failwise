@@ -57,8 +57,6 @@ abbr { text-decoration:underline dotted; text-underline-offset:2px; cursor:help;
 .mark-stale { background:#fde8cf; }
 .mark-blocker { background:#f6dada; border-color:#b9838a; color:var(--hi); }
 .mark-warning { background:#fff; color:#6b5300; }
-.sev-blocker { font-weight:700; color:var(--hi); }
-.sev-warning { color:#6b5300; }
 
 /* tables */
 table { border-collapse:collapse; width:100%; margin:.5rem 0 0; }
@@ -89,10 +87,8 @@ article.row > header .meta { white-space:nowrap; font-size:.9rem; text-align:rig
 table.index code { overflow-wrap:anywhere; }
 .stale-notice { margin:0 0 .6rem; padding:.3rem .6rem; border-left:4px solid #d9a45b; background:#fff9ec; }
 article.row > header .meta .pri { height:1.2rem; min-width:1.2rem; font-size:.75rem; }
-details { margin: 0; }
-details > summary { cursor: pointer; font-weight: 600; }
 .empty { color: #6b7177; font-style: italic; }
-code + .mark, .mark + .mark { margin-left: 0.25rem; }
+.mark + .mark { margin-left: 0.25rem; }
 
 @media print {
   @page { size: landscape; margin: 12mm; }
