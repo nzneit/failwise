@@ -245,14 +245,26 @@ function workflowSteps(file: string): { runs: string[]; uses: string[] } {
 
 // The workflow's syntax is first proved when it runs on GitHub. Until then this pins what it runs and
 // that every action is pinned to a commit, not to a tag that can be moved.
-test("the CI workflow runs the install, the suites and the gate in order, and pins every action by commit", () => {
+test("the CI workflow runs the suites and the gate in one job and the browser checks in another, and pins every action by commit", () => {
   const { runs, uses } = workflowSteps("ci.yml");
-  assert.deepEqual(runs, ["npm ci --prefix dev --ignore-scripts", "node tools/run-tests.ts", "node tools/check.ts"]);
+  assert.deepEqual(runs, [
+    "npm ci --prefix dev --ignore-scripts",
+    "node tools/run-tests.ts",
+    "node tools/check.ts",
+    "npm ci --prefix dev --ignore-scripts",
+    "node tools/check-browser.ts --fetch --with-deps --engines chromium,firefox,webkit",
+    "node tools/check-browser.ts --engines chromium,firefox,webkit",
+    "node tools/shots.ts --engines chromium,firefox,webkit",
+  ]);
   assert.deepEqual(
     uses.map((action) => action.split("@")[0]),
-    ["actions/checkout", "actions/setup-node"],
+    ["actions/checkout", "actions/setup-node", "actions/checkout", "actions/setup-node", "actions/upload-artifact"],
   );
   for (const action of uses) assert.match(action, /@[0-9a-f]{40}$/, action);
+  const workflow = workflowText("ci.yml");
+  assert.equal(workflow.split("contents: read").length - 1, 2, "each job reads the repository and nothing more");
+  assert.equal(workflow.split("if: ${{ !cancelled() }}").length - 1, 2, "the screenshots and the upload also run after a failing gate");
+  assert.match(workflow, /^ {10}retention-days: 14$/m);
 });
 
 // The same pin for the workflow that publishes the sample report, which no pull request runs: it
