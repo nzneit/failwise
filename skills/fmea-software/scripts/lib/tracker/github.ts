@@ -96,9 +96,9 @@ function refusal(answer: Answer, notFound: NotFound): Error | null {
   return rejected(`the host answered ${status}${messageOf(answer)}`);
 }
 
-/** One `gh api` request. The parsed JSON body of the expected status, or undefined when a 404
- *  means absent; any other answer throws. */
-async function api(ctx: Ctx, request: Request): Promise<unknown> {
+/** One `gh api` request. The parsed JSON body of the expected status with the answer's headers, or
+ *  undefined when a 404 means absent; any other answer throws. */
+async function exchange(ctx: Ctx, request: Request): Promise<{ json: unknown; headers: Map<string, string> } | undefined> {
   const method = request.post === true ? ["--method", "POST"] : [];
   const input = request.body === undefined ? [] : ["--input", "-"];
   const args = ["api", "--hostname", ctx.host, "--include", ...method, request.path, ...input];
@@ -109,10 +109,20 @@ async function api(ctx: Ctx, request: Request): Promise<unknown> {
     return undefined;
   }
   try {
-    return JSON.parse(answer.body) as unknown;
+    return { json: JSON.parse(answer.body) as unknown, headers: answer.headers };
   } catch {
     throw rejected(`the host answered ${answer.status} with a body that is not JSON`);
   }
+}
+
+/** The parsed JSON body of one request, as `exchange` gives it, without the headers. */
+async function api(ctx: Ctx, request: Request): Promise<unknown> {
+  return (await exchange(ctx, request))?.json;
+}
+
+/** Whether a `link` header names a next page. The URL it gives is never followed. */
+function namesNextPage(link: string | undefined): boolean {
+  return (link ?? "").split(",").some((part) => /;\s*rel="?([^";]*)"?/i.exec(part)?.[1].trim().split(/\s+/).includes("next") === true);
 }
 
 function visibilityOf(value: unknown): Visibility {
@@ -157,12 +167,16 @@ async function listMarked(ctx: Ctx): Promise<RemoteItem[]> {
   do {
     page += 1;
     const path = `repos/${ctx.project}/issues?labels=${encodeURIComponent(ctx.label)}&state=all&per_page=${PAGE_SIZE}&sort=created&direction=asc&page=${page}`;
-    const answer = await api(ctx, { path, expect: 200 });
-    if (!Array.isArray(answer)) throw rejected("a page of the listing is not a JSON array");
-    entries = answer;
+    const answer = await exchange(ctx, { path, expect: 200 });
+    if (answer === undefined || !Array.isArray(answer.json)) throw rejected("a page of the listing is not a JSON array");
+    entries = answer.json;
     for (const entry of entries) {
       const remote = remoteOf(ctx, entry, seen);
       if (remote !== null) items.push(remote);
+    }
+    // A short page is the last only when the host does not say that another follows (§6.4).
+    if (entries.length < PAGE_SIZE && namesNextPage(answer.headers.get("link"))) {
+      throw unavailable(`page ${page} of the listing holds fewer than ${PAGE_SIZE} entries and the host says another follows, so the listing is not complete`);
     }
   } while (entries.length >= PAGE_SIZE);
   return items;

@@ -195,6 +195,17 @@ test("listMarked fails with TRACKER_UNAVAILABLE when a later page repeats an id,
   }
 });
 
+test("a page of fewer than 100 entries whose Link header names a next page fails the listing, and no URL of the header is followed", async () => {
+  const next = "<https://api.github.com/repositories/1/issues?labels=failwise&page=2&after=abc>; rel=\"next\"";
+  for (const name of ["Link", "link", "LINK"]) {
+    const { provider, calls } = setup([answer(200, [issue(1), issue(2)], { [name]: next })]);
+    await rejectsWith(provider.listMarked(), "TRACKER_UNAVAILABLE", name);
+    assert.equal(calls.length, 1);
+  }
+  const last = "<https://api.github.com/repositories/1/issues?labels=failwise&page=1>; rel=\"prev\", <https://api.github.com/repositories/1/issues?labels=failwise&page=1>; rel=\"first\"";
+  assert.equal((await setup([answer(200, [issue(1)], { Link: last })]).provider.listMarked()).length, 1);
+});
+
 test("listMarked gives each issue its link and the marker read from its body", async () => {
   const body = "The action\n\n<!-- failwise:key=fmea-min/ch-1/act-1 text=0123456789ab -->\n";
   const { provider } = setup([answer(200, [issue(7, { body }), issue(8)])]);
