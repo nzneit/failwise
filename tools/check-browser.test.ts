@@ -258,7 +258,7 @@ test("the stale results file the fake starts with sits where the runner reads it
 });
 
 test("the phone-width layout checks are expected failures, and the tablet-width ones are measured and not asserted", () => {
-  assert.deepEqual(EXPECTED_FAILURES.map((known) => `${known.width} ${known.check}`), ["375 scroll", "375 edge"]);
+  assert.deepEqual(EXPECTED_FAILURES.map((known) => `${known.width} ${known.check}`), ["320 scroll", "320 edge", "375 scroll", "375 edge"]);
   assert.deepEqual(NOT_ASSERTED.map((open) => `${open.width} ${open.check}`), ["768 scroll", "768 edge"]);
   for (const entry of [...EXPECTED_FAILURES, ...NOT_ASSERTED]) {
     assert.match(entry.reason, /narrow-screen design/, `${entry.check} at ${entry.width}`);

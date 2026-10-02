@@ -1,8 +1,8 @@
 export const ENGINES = ["chromium", "firefox", "webkit"] as const;
 export type Engine = (typeof ENGINES)[number];
 
-/** The viewport widths every layout check runs at: a phone, a tablet, a laptop and a desktop. */
-export const WIDTHS = [375, 768, 1280, 1920] as const;
+/** The viewport widths every layout check runs at: a small phone (320 px, the width of the reflow criterion), a phone, a tablet, a laptop and a desktop. */
+export const WIDTHS = [320, 375, 768, 1280, 1920] as const;
 export type View = (typeof WIDTHS)[number] | "print";
 /** Every view the comparison photographs a part at: each width, then print. */
 export const VIEWS: readonly View[] = [...WIDTHS, "print"];
@@ -15,6 +15,8 @@ export interface ExpectedFailure { check: CheckId; width: number; reason: string
 
 /** The checks known to fail on today's report, each with the reason it fails. */
 export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [
+  { check: "scroll", width: 320, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
+  { check: "edge", width: 320, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
   { check: "scroll", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
   { check: "edge", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
 ];
