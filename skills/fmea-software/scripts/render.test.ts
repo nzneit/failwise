@@ -608,6 +608,11 @@ test("the template lets a long element id break inside the index", () => {
   assert.ok(template.includes("table.index code { overflow-wrap:anywhere; }"));
 });
 
+test("the template styles the stale notice and shrinks the post-action badge in a row header", () => {
+  assert.ok(template.includes(".stale-notice { margin:0 0 .6rem; padding:.3rem .6rem; border-left:4px solid #d9a45b; background:#fff9ec; }"));
+  assert.ok(template.includes("article.row > header .meta .pri { height:1.2rem; min-width:1.2rem; font-size:.75rem; }"));
+});
+
 test("the CLI writes the report and exits 0", () => {
   withTempDir((dir) => {
     const out = join(dir, "report.html");
