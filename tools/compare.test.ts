@@ -19,7 +19,9 @@ const N = PARTS.length * VIEWS.length; // views owed on one engine
 /** Recorded from Playwright 1.63.0 on 2026-10-02 (spec section 3.3). */
 const RECORDED_WITH = "1.63.0";
 const SIZED = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  Expected an image 327px by 2957px, received 351px by 1930px. 57668 pixels (ratio 0.06 of all image pixels) are different.\n\n  Snapshot: 375--header.png\n";
-const SAME_SIZE = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  2524 pixels (ratio 0.01 of all image pixels) are different.\n\n  Snapshot: 1280--header.png\n";
+/** A size change with no pixel count, as Playwright 1.63.0 wrote it on 2026-10-02 (its call log left off). */
+const SIZE_ONLY = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#reviews')\n  Expected an image 327px by 230px, received 327px by 231px. \n\n  Snapshot: 375/reviews.png\n";
+const SAME_SIZE ="Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  2524 pixels (ratio 0.01 of all image pixels) are different.\n\n  Snapshot: 1280--header.png\n";
 
 /** Every owed view of the default report on chromium, each an "expected" test. */
 function owedTests(): ViewTest[] {
@@ -267,6 +269,41 @@ test("the pixel count and sizes are read from the message Playwright 1.63.0 wrot
   assert.equal(manifest.devDependencies["@playwright/test"], RECORDED_WITH, "Playwright changed: record its message again and check the wording");
   const result = run([], { passes: { 2: second({ view: "375", stem: "header", changed: true, message: SIZED }) } });
   assert.ok((result.read("/repo/build/compare/summary.md") ?? "").includes("- chromium 375 header: 57668 pixels differ, 327×2957 px before, 351×1930 px after\n"));
+});
+
+test("a message with the two sizes and no pixel count: the summary line keeps the sizes", () => {
+  const result = run([], { passes: { 2: second({ view: "375", stem: "reviews", changed: true, message: SIZE_ONLY }) } });
+  assert.equal(result.status, 0);
+  assert.ok((result.read("/repo/build/compare/summary.md") ?? "").includes("- chromium 375 reviews: 327×230 px before, 327×231 px after\n"));
+});
+
+// The fix round
+test("no part on both sides: UNVERIFIED, exit 1, no pass started, the summary written with the parts added and removed", () => {
+  const env = { GITHUB_OUTPUT: "/gh/output" };
+  const result = run([], { env, rendered: { before: '<section id="header"></section>', after: '<section id="actions"></section>' } });
+  assert.deepEqual([result.status, result.errors], [1, ["error UNVERIFIED: no part of the report is on both sides, so nothing was compared"]]);
+  assert.ok(!result.calls.some((call) => call.startsWith(`${PW} test`)));
+  assert.ok(!result.lines.some((line) => line.startsWith("## compare:")));
+  assert.equal(result.read("/gh/output"), null);
+  const summary = result.read("/repo/build/compare/summary.md") ?? "";
+  assert.ok(summary.includes("- Views compared: 0\n"));
+  assert.ok(summary.includes("## Parts added\n\n- actions\n"));
+  assert.ok(summary.includes("## Parts removed\n\n- header\n"));
+  assert.ok(summary.includes("The comparison is incomplete."));
+});
+
+test("every owed part collided: each view UNVERIFIED with its reason, and no pass started with an empty list", () => {
+  const html = '<article class="row" id="row-a/b"></article><article class="row" id="row-a b"></article>';
+  const result = run([], { rendered: { before: html, after: html } });
+  assert.equal(result.status, 1);
+  assert.equal(result.errors.length, VIEWS.length);
+  assert.ok(result.errors.every((line) => line.endsWith("row-a-b: more than one row id reduces to this file name (row-a/b, row-a b)")));
+  assert.ok(!result.calls.some((call) => call.startsWith(`${PW} test`)));
+});
+
+test("a view the first pass reports as expected but whose reference file is absent: UNVERIFIED, even when its second test passed", () => {
+  const result = run([], { unreferenced: ["1280 header"] });
+  assert.deepEqual([result.status, result.errors], [1, ["error UNVERIFIED: chromium 1280 header: the first pass wrote no reference"]]);
 });
 
 // The Review Focus

@@ -68,6 +68,13 @@ interface OwedView {
   part: string;
 }
 
+/** What the summary is written from: the before commit, both reports and the plan of their parts. */
+interface Compared {
+  base: Base;
+  sides: Sides;
+  plan: PartPlan;
+}
+
 /** The lines of the summary's two lists that decide the verdict. */
 interface Classes {
   changed: string[];
@@ -192,10 +199,12 @@ function classOf(session: Session, plan: PartPlan, passes: [ReportedTest[], Repo
 }
 
 /** Step 10: each owed view's class, with an UNVERIFIED line for each view that is neither same nor changed;
- *  when a pass left no JSON report, one line and every owed view unverified. */
+ *  when a pass left no JSON report, one line and every owed view unverified. With nothing photographed no
+ *  pass ran, and every owed view is a collided one, unverified before any result is looked for. */
 function classify(session: Session, plan: PartPlan): Classes {
   const views = owedViews(session.engines, plan.owed);
-  const passes = PASSES.map(({ pass }) => session.readTests(`${OUT}/pass${pass}/results.json`));
+  const ran = plan.photographed.length > 0;
+  const passes = PASSES.map(({ pass }) => (ran ? session.readTests(`${OUT}/pass${pass}/results.json`) : []));
   const absent = passes.findIndex((tests) => tests === null);
   if (absent !== -1) {
     const reason = `${OUT}/pass${absent + 1}/results.json is absent or is not Playwright's JSON report`;
@@ -218,10 +227,10 @@ function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** Steps 11 and 12: the summary, then the verdict line; true when no view is unverified. */
-function conclude(session: Session, base: Base, sides: Sides, plan: PartPlan, classes: Classes): boolean {
+/** Step 11: writes the summary, and appends it to GITHUB_STEP_SUMMARY when that is set; the number of owed views. */
+function writeSummary(session: Session, compared: Compared, classes: Classes): number {
   const { machine, engines } = session;
-  const { files, host } = machine;
+  const { base, sides, plan } = compared;
   const views = plan.owed.length * VIEWS.length * engines.length;
   const summary = summaryText({
     base: session.base,
@@ -234,29 +243,46 @@ function conclude(session: Session, base: Base, sides: Sides, plan: PartPlan, cl
     added: plan.added,
     removed: plan.removed,
   });
-  files.writeText(join(machine.root, OUT, "summary.md"), summary);
-  if (host.env.GITHUB_STEP_SUMMARY) files.appendText(host.env.GITHUB_STEP_SUMMARY, summary);
+  machine.files.writeText(join(machine.root, OUT, "summary.md"), summary);
+  const stepSummary = machine.host.env.GITHUB_STEP_SUMMARY;
+  if (stepSummary) machine.files.appendText(stepSummary, summary);
+  return views;
+}
+
+/** Steps 11 and 12: the summary, then the verdict line; true when no view is unverified. */
+function conclude(session: Session, compared: Compared, classes: Classes): boolean {
+  const views = writeSummary(session, compared, classes);
   if (classes.unverified.length > 0) return false;
-  const short = base.sha.slice(0, 7);
+  const { machine } = session;
+  const short = compared.base.sha.slice(0, 7);
   const count = classes.changed.length;
   machine.write(
     count === 0
       ? `## compare: no view of ${views} changed against ${short}`
       : `## compare: ${count} of ${views} views changed against ${short} (${OUT}/summary.md)`,
   );
-  if (host.env.GITHUB_OUTPUT) files.appendText(host.env.GITHUB_OUTPUT, `changed=${count}\n`);
+  const output = machine.host.env.GITHUB_OUTPUT;
+  if (output) machine.files.appendText(output, `changed=${count}\n`);
   return true;
 }
 
-/** Steps 6 to 10 of the runner, for the comparison: build/compare was removed before the browsers were checked. */
+/** Steps 6 to 10 of the runner, for the comparison: build/compare was removed before the browsers were checked.
+ *  A comparison with no owed view compared nothing, so it is unverified and starts no pass; one whose owed parts
+ *  all collided starts none either, since every view of them is unverified without a photograph. */
 function compareViews(session: Session): boolean {
   const base = findBase(session);
   if (base === null || !renderBefore(session, base.sha) || !renderSide(session, "after")) return false;
   const sides = readSides(session);
   if (sides === null) return false;
-  const plan = planParts(partsOf(sides.before), partsOf(sides.after));
-  if (!runPasses(session, plan.photographed)) return false;
-  return conclude(session, base, sides, plan, classify(session, plan));
+  const compared: Compared = { base, sides, plan: planParts(partsOf(sides.before), partsOf(sides.after)) };
+  const { plan } = compared;
+  if (plan.owed.length === 0) {
+    session.machine.writeError("error UNVERIFIED: no part of the report is on both sides, so nothing was compared");
+    writeSummary(session, compared, { changed: [], unverified: [] });
+    return false;
+  }
+  if (plan.photographed.length > 0 && !runPasses(session, plan.photographed)) return false;
+  return conclude(session, compared, classify(session, plan));
 }
 
 const COMPARE: Run = {

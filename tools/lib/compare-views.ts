@@ -109,15 +109,19 @@ export function judge(referenced: boolean, second: ReportedTest | undefined): Ve
   return { kind: "unverified", reason: `status ${second.status}` };
 }
 
-/** "57668 pixels differ, 327×2957 px before, 351×1930 px after", "2524 pixels differ", or "changed",
- *  read from Playwright's message with its ANSI codes removed. Not exported: judge is its one user. */
+/** "57668 pixels differ, 327×2957 px before, 351×1930 px after", "2524 pixels differ",
+ *  "327×230 px before, 327×231 px after" (Playwright gives the sizes without a count when only the size
+ *  differs), or "changed", read from Playwright's message with its ANSI codes removed. Not exported: judge
+ *  is its one user. */
 function changeDetail(message: string): string {
   const plain = message.replace(ANSI, "");
   const count = /(\d+) pixels \(ratio [\d.]+ of all image pixels\) are different/.exec(plain);
-  if (count === null) return "changed";
   const sizes = /Expected an image (\d+)px by (\d+)px, received (\d+)px by (\d+)px/.exec(plain);
-  if (sizes === null) return `${count[1]} pixels differ`;
-  return `${count[1]} pixels differ, ${sizes[1]}×${sizes[2]} px before, ${sizes[3]}×${sizes[4]} px after`;
+  const parts = [
+    ...(count === null ? [] : [`${count[1]} pixels differ`]),
+    ...(sizes === null ? [] : [`${sizes[1]}×${sizes[2]} px before, ${sizes[3]}×${sizes[4]} px after`]),
+  ];
+  return parts.length === 0 ? "changed" : parts.join(", ");
 }
 
 export interface Summary {
@@ -157,6 +161,7 @@ export function summaryText(summary: Summary): string {
     listed("Parts added", summary.added),
     listed("Parts removed", summary.removed),
     listed(`Unverified views: ${summary.unverified.length}`, summary.unverified, ["The comparison is incomplete."]),
+    summary.views === 0 ? "## Nothing compared\n\nThe comparison is incomplete.\n\nNo part of the report is on both sides, so nothing was compared." : null,
   ];
   return sections.filter((section) => section !== null).join("\n\n") + "\n";
 }

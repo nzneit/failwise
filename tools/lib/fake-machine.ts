@@ -99,6 +99,7 @@ export interface FakeOptions {
   passes?: { 1?: string | null; 2?: string | null }; // what each compare pass writes; null writes nothing
   // Default: one "expected" test per project named, view of VIEWS and stem of FAILWISE_COMPARE_PARTS.
   lost?: string[]; // attachment paths a pass reports but leaves off the disk
+  unreferenced?: string[]; // titles "<view> <stem>" pass 1 reports "expected" without writing their reference
   env?: Record<string, string>; // added to the host's environment
 }
 
@@ -208,11 +209,12 @@ function attachmentPaths(test: Record<string, unknown>): string[] {
   return results.flatMap((result) => (result.attachments ?? []).flatMap((one) => (typeof one.path === "string" ? [one.path] : [])));
 }
 
-/** What a compare pass leaves beside its JSON report: in pass 1, the reference of each "expected" test;
- *  in either, every attachment path but those `lost`. */
+/** What a compare pass leaves beside its JSON report: in pass 1, the reference of each "expected" test not
+ *  `unreferenced`; in either, every attachment path but those `lost`. */
 function passFiles(fake: Fake, pass: string, results: string): void {
+  const unreferenced = fake.options.unreferenced ?? [];
   for (const { title, test } of testsIn(JSON.parse(results))) {
-    if (pass === "1" && test.status === "expected") {
+    if (pass === "1" && test.status === "expected" && !unreferenced.includes(title)) {
       const [view, stem] = title.split(" ");
       fake.disk.set(join(fake.root, "build/compare/refs", String(test.projectName), view, `${stem}.png`), "reference");
     }
