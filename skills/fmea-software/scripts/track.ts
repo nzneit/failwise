@@ -100,7 +100,7 @@ async function call<T>(ctx: Ctx, request: () => Promise<T>): Promise<T> {
   }
 }
 
-function publicTarget(t: Target): Omit<Target, "write_gap_ms"> {
+function publicTarget(t: Target): Omit<Target, "write_gap_ms" | "no_create"> {
   return { provider: t.provider, host: t.host, project: t.project, label: t.label, visibility: t.visibility };
 }
 
@@ -116,8 +116,11 @@ function checkedLink(link: Link): Link {
   return plainLink(link);
 }
 
+/** The plan as it now stands. A target that cannot take a new item refuses here, before the listing;
+ *  `refresh` does not come through here, since reading back needs none of that. */
 async function currentPlan(ctx: Ctx): Promise<{ target: Target; plan: Plan }> {
   const target = await call(ctx, () => ctx.provider.describe());
+  if (target.no_create !== undefined) throw new ScriptError("TRACKER_REJECTED", target.no_create);
   const marked = await call(ctx, () => ctx.provider.listMarked());
   return { target, plan: computePlan(ctx.doc, target, marked) };
 }

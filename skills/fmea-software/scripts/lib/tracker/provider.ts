@@ -11,7 +11,8 @@ export interface ItemContent { title: string; action: string; facts: Fact[]; ori
 export interface TrackedItem { key: string; text: string; label: string; due: string; content: ItemContent }
 
 export type Visibility = "public" | "internal" | "private" | "unknown";
-export interface Target { provider: TrackerProvider; host: string; project: string; label: string; visibility: Visibility; write_gap_ms: number }
+/** `no_create`, when present, says why this target cannot take a new item from this person; reading back needs none of it. */
+export interface Target { provider: TrackerProvider; host: string; project: string; label: string; visibility: Visibility; write_gap_ms: number; no_create?: string }
 /** `id` is the tracker's stable id; `key` is its own short name for the item, such as `owner/repo#12`. */
 export interface Link { provider: TrackerProvider; id: string; key: string; url: string }
 export interface Marker { key: string; text: string }

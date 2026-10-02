@@ -209,6 +209,22 @@ test("plan prints the result of §6.6 and leaves the file byte for byte as it wa
   assert.equal(s.text(), before);
 });
 
+const NO_CREATE = ["acme/checkout has issues turned off", "acme/checkout is archived, so nothing can be created in it", "this account cannot push to acme/checkout"];
+
+test("plan and apply on a target that cannot take a new item are TRACKER_REJECTED with its reason, before the listing, and nothing is written", async (t) => {
+  for (const reason of NO_CREATE) {
+    const s = session(t, docWith(act(1)), { target: { no_create: reason } });
+    const before = s.text();
+    for (const argv of [["plan"], ["apply", "--plan", "0".repeat(64)]]) {
+      s.fake.calls.length = 0;
+      await assert.rejects(s.track(argv[0], ...argv.slice(1)), { code: "TRACKER_REJECTED", message: reason }, `${argv[0]}: ${reason}`);
+      assert.deepEqual(s.fake.calls, ["describe"]);
+    }
+    assert.deepEqual(s.fake.created, []);
+    assert.equal(s.text(), before);
+  }
+});
+
 // apply
 
 test("apply without --plan is USAGE", async (t) => {
@@ -403,6 +419,16 @@ test("refresh prints an item per linked action with its observed state and its p
     { key: key(2), pointer: "/chains/0/actions/1", status: "Completed", link: linkOf(2), observed: { state: "open", detail: "open", date: TODAY }, finding: "still-open" },
     { key: key(3), pointer: "/chains/0/actions/2", status: "Open", link: linkOf(3), observed: { state: "unreachable", detail: "not found", date: TODAY }, finding: "unreachable" },
   ]);
+  assert.deepEqual(s.fake.calls, ["describe", "read"]);
+});
+
+test("refresh reads states back from a target that cannot take a new item, and prints the target without the reason", async (t) => {
+  const s = session(t, docWith(linked(act(1), 1)), { target: { no_create: NO_CREATE[1] }, observations: [observation(1, "done", "completed", "2026-09-30")] });
+  const { status, result } = await s.track("refresh", "--write");
+  assert.equal(status, 0);
+  assert.deepEqual(result.target, { provider: "github", host: "github.com", project: "acme/checkout", label: "failwise", visibility: "private" });
+  assert.deepEqual(result.items.map((i) => [i.key, i.observed.state, i.proposal]), [[key(1), "done", { status: "Completed", completed_date: "2026-09-30" }]]);
+  assert.equal(linksIn(s.doc())[0]?.observed?.state, "done");
   assert.deepEqual(s.fake.calls, ["describe", "read"]);
 });
 

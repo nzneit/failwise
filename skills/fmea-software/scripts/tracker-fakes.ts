@@ -13,7 +13,8 @@ function linkFor(n: number, options: FakeOptions): Link {
   return { provider: "github", id: `N${n}`, key: `acme/checkout#${n}`, url };
 }
 
-/** A private github.com target unless `target` says otherwise. `create` numbers its items from 1;
+/** A private github.com target that can take new items, unless `target` says otherwise (a `no_create`
+ *  among its fields makes one that cannot). `create` numbers its items from 1;
  *  a call answered with a wait takes no number. */
 export function fakeProvider(options: FakeOptions = {}): FakeProvider {
   const waits = [...(options.waitOnCreate ?? [])];

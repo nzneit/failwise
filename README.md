@@ -71,7 +71,7 @@ A new analysis runs in seven steps: plan the scope, break the system into elemen
 
 ## Tracking actions as GitHub issues
 
-Once an analysis has actions, you can ask Claude to create a GitHub issue for each one and, later, to read the issues' state back. This happens only when you ask, never as part of a run. It needs the GitHub CLI, `gh`, installed and signed in to the host (`gh auth login`), with an account that can push to the repository.
+Once an analysis has actions, you can ask Claude to create a GitHub issue for each one and, later, to read the issues' state back. This happens only when you ask, never as part of a run. It needs the GitHub CLI, `gh`, installed and signed in to the host (`gh auth login`). `plan` and `apply` need an account that can push to the repository, with issues turned on and the repository not archived; `refresh` needs only to read the issues.
 
 Claude first asks where the issues go: the repository, as `owner/repo`, and the label every issue carries, `failwise` unless you choose another. It writes them into the analysis as `meta.tracker`, with the host when it is not github.com and, if the report is published, its address so that each issue links to its row. Then the script `track.ts` does the work in three commands:
 

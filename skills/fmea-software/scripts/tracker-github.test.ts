@@ -147,17 +147,17 @@ test("describe maps public, internal and private, and anything else to unknown",
   }
 });
 
-test("describe refuses issues disabled, an archived repository and no push access, each with its own message", async () => {
-  const messages = new Set<string>();
-  for (const fields of [{ has_issues: false }, { archived: true }, { permissions: { push: false, pull: true } }]) {
-    const { provider } = setup([answer(200, repository(fields))]);
-    await assert.rejects(provider.describe(), (err: Error & { code?: string }) => {
-      assert.equal(err.code, "TRACKER_REJECTED");
-      messages.add(err.message);
-      return true;
-    });
+test("describe gives issues disabled, an archived repository and no push access as no_create, each with its own message", async () => {
+  const cases: [object, RegExp][] = [
+    [{ has_issues: false }, /^acme\/checkout has issues turned off$/],
+    [{ archived: true }, /^acme\/checkout is archived, so nothing can be created in it$/],
+    [{ permissions: { push: false, pull: true } }, /^this account cannot push to acme\/checkout, and without push GitHub drops the label of a new issue$/],
+  ];
+  for (const [fields, message] of cases) {
+    const target = await setup([answer(200, repository(fields))]).provider.describe();
+    assert.match(target.no_create ?? "", message);
+    assert.equal(target.visibility, "private");
   }
-  assert.equal(messages.size, 3);
 });
 
 test("describe maps gh missing, exit 4, no status line, 401 and 404 to TRACKER_UNAVAILABLE", async () => {

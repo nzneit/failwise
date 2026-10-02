@@ -129,14 +129,22 @@ function visibilityOf(value: unknown): Visibility {
   return value === "public" || value === "internal" || value === "private" ? value : "unknown";
 }
 
+/** Why this account cannot create a labelled issue in the repository, or undefined when it can. */
+function noCreate(ctx: Ctx, repo: Json): string | undefined {
+  if (repo.has_issues !== true) return `${ctx.project} has issues turned off`;
+  if (repo.archived !== false) return `${ctx.project} is archived, so nothing can be created in it`;
+  if (!isRecord(repo.permissions) || repo.permissions.push !== true) {
+    return `this account cannot push to ${ctx.project}, and without push GitHub drops the label of a new issue`;
+  }
+  return undefined;
+}
+
+/** The target, with `no_create` when an issue cannot be created in it; reading back needs none of the three. */
 async function describe(ctx: Ctx): Promise<Target> {
   const repo = recordOf(await api(ctx, { path: `repos/${ctx.project}`, expect: 200, notFound: "unavailable" }), "the repository");
-  if (repo.has_issues !== true) throw rejected(`${ctx.project} has issues turned off`);
-  if (repo.archived !== false) throw rejected(`${ctx.project} is archived, so nothing can be created in it`);
-  if (!isRecord(repo.permissions) || repo.permissions.push !== true) {
-    throw rejected(`this account cannot push to ${ctx.project}, and without push GitHub drops the label of a new issue`);
-  }
-  return { provider: "github", host: ctx.host, project: ctx.project, label: ctx.label, visibility: visibilityOf(repo.visibility), write_gap_ms: WRITE_GAP_MS };
+  const target: Target = { provider: "github", host: ctx.host, project: ctx.project, label: ctx.label, visibility: visibilityOf(repo.visibility), write_gap_ms: WRITE_GAP_MS };
+  const reason = noCreate(ctx, repo);
+  return reason === undefined ? target : { ...target, no_create: reason };
 }
 
 /** The link of an issue as the REST API gives it. */
