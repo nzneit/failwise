@@ -2,7 +2,7 @@
 
 failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report.
 
-It is version 0.1.0, a pre-release whose own evaluations did not pass. Read [Status and limitations](#status-and-limitations) before relying on it.
+It is version 0.2.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions as GitHub issues, new in 0.2.0, has no evaluation. Read [Status and limitations](#status-and-limitations) before relying on it.
 
 ## What an FMEA is
 
@@ -32,7 +32,7 @@ node skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/
 
 ## Install
 
-Requirements: Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that Node runs directly, so there is nothing else to install.
+Requirements: Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that Node runs directly, so there is nothing else to install, except the GitHub CLI, `gh`, if you track actions as GitHub issues.
 
 From a shell:
 
@@ -69,9 +69,21 @@ The skill works from the inputs listed in [`design-inputs.md`](skills/fmea-softw
 
 A new analysis runs in seven steps: plan the scope, break the system into elements, state each element's functions, derive the failure chains, rate them, plan actions, and write the report. It ends with the JSON document, the rendered report, and a request that you re-score each rating in the session, one at a time, with your name and the date recorded on it. Expect several dozen for one service: each failure chain carries three ratings, and the four test runs of a new analysis wrote between 12 and 18 chains.
 
+## Tracking actions as GitHub issues
+
+Once an analysis has actions, you can ask Claude to create a GitHub issue for each one and, later, to read the issues' state back. This happens only when you ask, never as part of a run. It needs the GitHub CLI, `gh`, installed and signed in to the host (`gh auth login`), with an account that can push to the repository.
+
+Claude first asks where the issues go: the repository, as `owner/repo`, and the label every issue carries, `failwise` unless you choose another. It writes them into the analysis as `meta.tracker`, with the host when it is not github.com and, if the report is published, its address so that each issue links to its row. Then the script `track.ts` does the work in three commands:
+
+- **`plan`** changes nothing. It shows the repository and whether it is public, the text of every issue it would create, each existing issue it would link instead, and anything that needs your attention, such as two issues for one action.
+- **`apply`** creates the issues of that plan, or links the existing ones it found, and records each issue's link on its action. Nothing is created before you agree to the plan shown: `apply` takes the plan's digest and refuses if the analysis or the repository changed since. A repository that is public, or whose visibility cannot be established, is refused unless you agree to that as well.
+- **`refresh`** reads each linked issue's state. An issue closed as completed proposes Completed, and one closed as not planned proposes Not Implemented; Claude changes a status only when you confirm it. When the analysis says an action is finished and its issue is still open, close the issue yourself.
+
+Text taken from the analysis is written into an issue's body so that GitHub interprets nothing in it, which puts invisible characters into it, so text copied from an issue, or searched for on GitHub, will not match the analysis exactly. GitHub's listing of labelled issues can lag a new issue by some seconds, so after an `apply` that was interrupted, wait a moment before running `plan` again, and if `plan` reports a duplicate, remove the label from the extra issue.
+
 ## Status and limitations
 
-0.1.0 is a pre-release that did not pass its own acceptance gate. The skill was tested on four prompts, each at two model capabilities, high (filled by glm-5.3) and medium (glm-5.3-flash), and three of the eight combinations passed: converting a legacy RPN sheet at both, and updating an analysis after an architecture change at high. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md); both call this release v1.
+0.2.0 is a pre-release. Its skill was evaluated as 0.1.0, which did not pass its own acceptance gate, and the tracking of actions as GitHub issues that 0.2.0 adds has no evaluation. The skill was tested on four prompts, each at two model capabilities, high (filled by glm-5.3) and medium (glm-5.3-flash), and three of the eight combinations passed: converting a legacy RPN sheet at both, and updating an analysis after an architecture change at high. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md); both call that release v1.
 
 The other six acceptance criteria pass, with one caveat: the check that each cited record supports its statement predates the edits of 2026-09-29. Four reference files have open findings from it, none about licensing, and two were not re-checked (see the acceptance note's addendum).
 
@@ -92,15 +104,16 @@ Not in this version:
 
 ## The scripts
 
-The skill has Claude run three scripts during a session and take every priority from them instead of working one out itself. You can also run them directly with `node`; they have no dependencies. All three are in `skills/fmea-software/scripts/`.
+The skill has Claude run four scripts during a session and take every priority from them instead of working one out itself. You can also run them directly with `node`. The first three have no dependencies; `track.ts` needs `gh` installed and signed in. All four are in `skills/fmea-software/scripts/`.
 
 | Script | What it does |
 |---|---|
 | `validate.ts <analysis.json> [--write]` | Runs the schema checks, the document invariants and the lint rules, recomputes the priorities, and computes the quality score. On a clean run, `--write` stores the results in the document, which `render.ts` requires. |
 | `priority.ts <analysis.json> --write` | Writes each row's priority from its ratings, and its post-action priority where the row has post-action ratings. Records the priority table's id in the document. |
 | `render.ts <analysis.json> --out <report.html> [--force]` | Renders a validated document to one HTML file. `--force` overwrites an existing file. |
+| `track.ts plan <analysis.json>`<br>`track.ts apply <analysis.json> --plan <digest> [--only <key>,<key>] [--public-ok]`<br>`track.ts refresh <analysis.json> [--write]` | Tracks the actions as GitHub issues, as described [above](#tracking-actions-as-github-issues). `plan` writes nothing and prints the plan with its digest; `apply` carries out that plan, or only the actions `--only` names, and records each link in the document; `refresh` prints each linked issue's state with any proposal, and `--write` stores what it saw. |
 
-The priority table the plugin ships, `skills/fmea-software/data/priority-fmea-software-v1.json`, is the skill's own and carries no cell value from any standard. To use a different table, such as a licensed one you hold, pass the same `--table-file <path>` to all three scripts: `priority.ts --write` records the table's id in the document, and `validate.ts` and `render.ts` refuse a document whose recorded table differs from the one loaded (`TABLE_ID_MISMATCH`).
+The priority table the plugin ships, `skills/fmea-software/data/priority-fmea-software-v1.json`, is the skill's own and carries no cell value from any standard. To use a different table, such as a licensed one you hold, pass the same `--table-file <path>` to all four scripts: `priority.ts --write` records the table's id in the document, and `validate.ts` and `render.ts` refuse a document whose recorded table differs from the one loaded (`TABLE_ID_MISMATCH`).
 
 ## Provenance
 

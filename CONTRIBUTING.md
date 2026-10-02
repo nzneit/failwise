@@ -92,7 +92,7 @@ they are not verified until their entries are removed.
 ## Scripts and tools
 
 - The TypeScript scripts and tools run directly under Node 24.2 or later and take no
-  runtime dependencies; keep it that way.
+  runtime dependencies, except that `track.ts` starts `gh`, the GitHub CLI; keep it that way.
 - Keep the one-line coded error contract: each failure is one line on stderr,
   `error <CODE>: <message>`, and exits 1 for usage, 2 for validation, 3 for I/O (design spec §9).
   The skill's codes come from the one list in `skills/fmea-software/scripts/lib/codes.ts`.
