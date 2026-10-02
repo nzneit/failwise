@@ -104,6 +104,49 @@ export const MACHINE_RULES: MachineRule[] = [
       return out;
     },
   },
+  {
+    // A link the document holds with no target to explain it is stale or pasted from another analysis.
+    id: "tracker-link-without-config",
+    severity: "warning",
+    check(doc) {
+      const out: Lint[] = [];
+      for (let i = 0; i < doc.chains.length; i++) {
+        const actions = doc.chains[i].actions;
+        for (let j = 0; j < actions.length; j++) {
+          const link = actions[j].tracker;
+          if (link !== undefined && doc.meta.tracker?.provider !== link.provider) {
+            out.push(lint("tracker-link-without-config", "warning", ptr("chains", i, "actions", j, "tracker"),
+              `the action carries a ${link.provider} link but meta.tracker is absent or names another provider`));
+          }
+        }
+      }
+      return out;
+    },
+  },
+  {
+    // One tracker item standing for two actions means a refresh would move both on one item's state.
+    id: "tracker-link-shared",
+    severity: "warning",
+    check(doc) {
+      const out: Lint[] = [];
+      const first = new Map<string, string>();
+      for (let i = 0; i < doc.chains.length; i++) {
+        const c = doc.chains[i];
+        for (let j = 0; j < c.actions.length; j++) {
+          const link = c.actions[j].tracker;
+          if (link === undefined) continue;
+          const holder = first.get(link.id);
+          if (holder === undefined) {
+            first.set(link.id, `${c.id}/${c.actions[j].id}`);
+          } else {
+            out.push(lint("tracker-link-shared", "warning", ptr("chains", i, "actions", j, "tracker"),
+              `the tracker item ${link.key} is already linked from action ${holder}`));
+          }
+        }
+      }
+      return out;
+    },
+  },
 ];
 
 export function runLints(doc: FmeaDocument, rules: MachineRule[] = MACHINE_RULES): Lint[] {

@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MACHINE_RULES, runLints } from "./lib/lints.ts";
+import { loadTable } from "./lib/table.ts";
+import { validateDocument } from "./validate.ts";
 import { loadFixture, minimalDoc, rating } from "./test-helpers.ts";
-import type { Control, FmeaDocument, Lint } from "./lib/types.ts";
+import type { Control, FmeaDocument, Lint, TrackerLink } from "./lib/types.ts";
 
 function ruleById(id: string) {
   const rule = MACHINE_RULES.find((r) => r.id === id);
@@ -35,6 +37,8 @@ test("MACHINE_RULES lists every rule with its severity, in order", () => {
     ["rating-provisional", "warning"],
     ["seeded-action-without-incident", "warning"],
     ["metadata-without-ground-rules", "blocker"],
+    ["tracker-link-without-config", "warning"],
+    ["tracker-link-shared", "warning"],
   ]);
 });
 
@@ -153,6 +157,53 @@ test("metadata-without-ground-rules fires once per empty list, ground_rules firs
   const lints = fired(doc, "metadata-without-ground-rules");
   assert.deepEqual(lints.map((l) => l.pointer), ["/meta/ground_rules", "/meta/assumptions"]);
   assert.deepEqual(lints.map((l) => l.severity), ["blocker", "blocker"]);
+});
+
+function link(id: string, provider: TrackerLink["provider"] = "github"): TrackerLink {
+  return { provider, id, key: `acme/risk#${id}`, url: `https://github.com/acme/risk/issues/${id}`, linked: "2026-10-02" };
+}
+
+function linkedDoc(ids: string[]): FmeaDocument {
+  const doc = documentedDoc();
+  doc.meta.tracker = { provider: "github", project: "acme/risk", label: "failwise" };
+  doc.chains[0].actions = ids.map((id, j) => ({
+    id: `act-${j + 1}`, description: "fix it", owner: "T. Tester", status: "Open", target_date: "2026-10-01", tracker: link(id),
+  }));
+  return doc;
+}
+
+test("tracker-link-without-config fires on a link when meta.tracker is absent", () => {
+  const doc = linkedDoc(["1"]);
+  delete doc.meta.tracker;
+  const lints = fired(doc, "tracker-link-without-config");
+  assert.equal(lints.length, 1);
+  assert.equal(lints[0].pointer, "/chains/0/actions/0/tracker");
+  assert.equal(lints[0].severity, "warning");
+});
+
+test("tracker-link-without-config stays silent when meta.tracker names the same provider", () => {
+  assert.deepEqual(fired(linkedDoc(["1", "2"]), "tracker-link-without-config"), []);
+  assert.deepEqual(fired(documentedDoc(), "tracker-link-without-config"), []);
+});
+
+test("tracker-link-shared fires on every action after the first that carries the same tracker id", () => {
+  const doc = linkedDoc(["1", "7", "1"]);
+  const second = structuredClone(doc.chains[0]);
+  second.id = "ch-2";
+  second.actions = [{ ...second.actions[0], id: "act-9", tracker: link("1") }];
+  doc.chains.push(second);
+  const lints = fired(doc, "tracker-link-shared");
+  assert.deepEqual(lints.map((l) => l.pointer), ["/chains/0/actions/2/tracker", "/chains/1/actions/0/tracker"]);
+  assert.ok(lints.every((l) => l.severity === "warning" && l.message.includes(`${doc.chains[0].id}/act-1`)));
+});
+
+test("neither tracker lint fails validation: validateDocument stays ok with both firing", () => {
+  const doc = linkedDoc(["1", "1"]);
+  delete doc.meta.tracker;
+  assert.equal(fired(doc, "tracker-link-without-config").length, 2);
+  assert.equal(fired(doc, "tracker-link-shared").length, 1);
+  const result = validateDocument(doc, loadTable());
+  assert.equal(result.ok, true);
 });
 
 test("runLints returns rules in MACHINE_RULES order and then in document order", () => {
