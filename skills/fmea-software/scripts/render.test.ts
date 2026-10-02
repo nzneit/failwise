@@ -633,6 +633,11 @@ test("the template styles the stale notice and shrinks the post-action badge in 
   assert.ok(template.includes("article.row > header .meta .pri { height:1.2rem; min-width:1.2rem; font-size:.75rem; }"));
 });
 
+test("the effects arrow takes the muted grey, which meets AA contrast on white", () => {
+  assert.ok(template.includes(".fx .arrow { align-self:center; color:var(--muted); }"));
+  assert.ok(!template.includes("#8a9199"), "the old arrow colour, 3.19 to 1 on white, is gone");
+});
+
 test("the CLI writes the report and exits 0", () => {
   withTempDir((dir) => {
     const out = join(dir, "report.html");
