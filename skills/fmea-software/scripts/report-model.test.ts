@@ -184,3 +184,81 @@ test("a group's locations: rows by first appearance, factor labels in factor ord
     { severity: "warning", rule: "r", message: "other", count: 1, locations: [{ kind: "row", chainId: "ch-0", labels: [] }] },
   ]);
 });
+
+test("the fixture's rows carry their element, statement and badge styles in the index order", () => {
+  const doc = fixture();
+  const rows = modelOf(doc).rows;
+  assert.deepEqual(rows.map((r) => [r.chain.id, r.element, r.style, r.postStyle]), [
+    ["ch-2", "checkout", "top", null],
+    ["ch-1", "checkout.payment-gateway", "top", null],
+    ["ch-5", "checkout.session-auth", "top", null],
+    ["ch-7", "checkout", "top", null],
+    ["ch-4", "checkout.order-store", "mid", null],
+    ["ch-8", "checkout.payment-gateway", "mid", null],
+    ["ch-6", "checkout.api", "mid", null],
+    ["ch-3", "pricing", "mid", "mid"],
+  ]);
+  assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
+});
+
+test("the fixture's row marks: provisional on ch-2, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
+  assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]],
+    ["ch-4", ["provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
+  ]);
+});
+
+test("the fixture's row findings leave out rating-provisional", () => {
+  const rows = modelOf(fixture()).rows.filter((r) => r.findings.length > 0);
+  assert.deepEqual(rows.map((r) => [r.chain.id, r.findings]), [
+    ["ch-7", [{ severity: "blocker", rule: "detection-1-without-evidenced-control", message: "Detection is 1 with no existing detection control carrying evidence",
+      where: { kind: "row", chainId: "ch-7", label: "D", raw: false } }]],
+    ["ch-8", [{ severity: "warning", rule: "seeded-action-without-incident", message: "action on a chain seeded from INC-2026-0314 carries no source_incident",
+      where: { kind: "row", chainId: "ch-8", label: "act-2", raw: false } }]],
+    ["ch-6", [{ severity: "warning", rule: "occurrence-estimate-without-trigger", message: "Occurrence is 7 or more on an estimate with no trigger recorded",
+      where: { kind: "row", chainId: "ch-6", label: "O", raw: false } }]],
+  ]);
+});
+
+test("a row's marks come in the order stale, handoff, provisional, blocker", () => {
+  const doc = minimalDoc();
+  const chain = doc.chains[0];
+  chain.stale = { flag: true, reason: "element-changed", since_version: 1 };
+  chain.handoff = { to: "threat-model", reason: "an attacker", adversary_cause: "process crash" };
+  chain.post_ratings = { S: rating(8), O: rating(2, "provisional"), D: rating(4) };
+  assert.deepEqual(modelOf(withComputed(doc, [finding("/chains/0/ratings/D", "blocker")])).rows[0].marks,
+    ["stale", "handoff", "provisional", "blocker"]);
+});
+
+test("only a blocker that points into the row marks it", () => {
+  const doc = withComputed(minimalDoc(), [finding("/chains/0"), finding("/meta/ground_rules", "blocker"), finding("/chains/3", "blocker")]);
+  assert.deepEqual(modelOf(doc).rows[0].marks, []);
+});
+
+test("a row's findings are blockers first, then the order of computed.lints, without rating-provisional", () => {
+  const doc = withComputed(minimalDoc(), [
+    finding("/chains/0/ratings/O"), finding("/chains/0/ratings/S", "warning", "rating-provisional", PROVISIONAL),
+    finding("/chains/0/ratings/D", "blocker"), finding("/chains/0"),
+  ]);
+  assert.deepEqual(modelOf(doc).rows[0].findings.map((f) => [f.severity, f.where]), [
+    ["blocker", { kind: "row", chainId: "ch-1", label: "D", raw: false }],
+    ["warning", { kind: "row", chainId: "ch-1", label: "O", raw: false }],
+    ["warning", { kind: "row", chainId: "ch-1", label: null, raw: false }],
+  ]);
+});
+
+test("a chain whose function is missing has an empty element and statement", () => {
+  const doc = minimalDoc();
+  doc.chains[0].function = "fn-missing";
+  const row = modelOf(doc).rows[0];
+  assert.deepEqual([row.element, row.statement], ["", ""]);
+});
+
+test("two chains with the same id keep their own marks, findings and locations", () => {
+  const model = modelOf(withComputed(docOf({}, { id: "ch-1", failure_mode: "second" }), [finding("/chains/1/ratings/D", "blocker")]));
+  assert.deepEqual(model.rows.map((r) => [r.chain.failure_mode, r.marks, r.findings.length]), [
+    ["stops serving", [], 0],
+    ["second", ["blocker"], 1],
+  ]);
+  assert.deepEqual(model.groups[0].locations, [{ kind: "row", chainId: "ch-1", labels: [{ text: "D", raw: false }] }]);
+});

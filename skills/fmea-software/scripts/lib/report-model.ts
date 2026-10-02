@@ -28,12 +28,25 @@ export interface Tiles {
 // Where a finding points: into a row (its chain's id and a label for the spot within the row,
 // null for the row as a whole; `raw` when the label is the rest of the pointer as it stands), at a
 // chain index with no chain (§5.5), or outside `chains[]`.
-type Where =
+export type Where =
   | { kind: "row"; chainId: string; label: string | null; raw: boolean }
   | { kind: "unknown-row"; pointer: string }
   | { kind: "document"; pointer: string };
 
-interface PlacedFinding { severity: Severity; rule: string; message: string; where: Where }
+export interface PlacedFinding { severity: Severity; rule: string; message: string; where: Where }
+
+export type RowMark = "stale" | "handoff" | "provisional" | "blocker";
+
+// One row of the index, in the index order (§5.7, §5.8).
+export interface RowModel {
+  chain: Chain;
+  element: string;                 // the element id of the chain's function; "" when the function is missing
+  statement: string;               // the function's statement; "" when the function is missing
+  style: RankStyle;                // the badge style of chain.priority.value
+  postStyle: RankStyle | null;     // the badge style of chain.post_priority.value; null without post_priority
+  marks: RowMark[];                // §5.7 order: stale, handoff, provisional, blocker
+  findings: PlacedFinding[];       // row findings pointing into this chain, without rule "rating-provisional", in §5.8 order
+}
 
 export type GroupLocation =
   | { kind: "row"; chainId: string; labels: { text: string; raw: boolean }[] }   // labels empty = the row alone
@@ -46,6 +59,7 @@ export interface CheckGroup { severity: Severity; rule: string; message: string;
 export interface ReportModel {
   tiles: Tiles;
   vocabulary: { value: string; style: RankStyle }[];   // the loaded table's vocabulary in order, for the key
+  rows: RowModel[];                                    // the index order of sortChains
   groups: CheckGroup[];                                // blocker groups first, then by first finding
 }
 
@@ -205,6 +219,36 @@ function groupFindings(located: Located[]): CheckGroup[] {
     .sort((a, b) => Number(b.severity === "blocker") - Number(a.severity === "blocker"));
 }
 
+// A row's marks, in the order of §5.7. `own` is every finding that points into the row.
+function rowMarks(chain: Chain, own: PlacedFinding[]): RowMark[] {
+  const marks: RowMark[] = [];
+  if (chain.stale.flag) marks.push("stale");
+  if (chain.handoff) marks.push("handoff");
+  if (provisionalCount(chain) > 0) marks.push("provisional");
+  if (own.some((f) => f.severity === "blocker")) marks.push("blocker");
+  return marks;
+}
+
+// The rows in the index order. A row's findings are found by its chain's position in
+// `doc.chains` (object identity), never by its id.
+function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]): RowModel[] {
+  return sortChains(doc, table).map((chain) => {
+    const index = doc.chains.indexOf(chain);
+    const own = located.filter((l) => l.index === index).map((l) => l.finding);
+    const fn = doc.functions.find((f) => f.id === chain.function);
+    const shown = own.filter((f) => f.rule !== "rating-provisional");
+    return {
+      chain,
+      element: fn?.element ?? "",
+      statement: fn?.statement ?? "",
+      style: rankStyle(table.vocabulary, chain.priority.value),
+      postStyle: chain.post_priority ? rankStyle(table.vocabulary, chain.post_priority.value) : null,
+      marks: rowMarks(chain, own),
+      findings: [...shown.filter((f) => f.severity === "blocker"), ...shown.filter((f) => f.severity !== "blocker")],
+    };
+  });
+}
+
 export function buildReportModel(doc: FmeaDocument, table: PriorityTable): ReportModel {
   const tiles: Tiles = {
     priorities: priorityCounts(doc, table.vocabulary),
@@ -214,9 +258,11 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     actions: actionsTile(doc),
     qualityScore: doc.computed ? doc.computed.quality_score : null,
   };
+  const located = placeFindings(doc);
   return {
     tiles,
     vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })),
-    groups: groupFindings(placeFindings(doc)),
+    rows: buildRows(doc, table, located),
+    groups: groupFindings(located),
   };
 }
