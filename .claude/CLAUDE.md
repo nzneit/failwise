@@ -25,8 +25,8 @@ declares on every user's machine.
 
 ## Browser checks
 
-Run these before a commit that changes `skills/fmea-software/assets/report-template.html` or
-`skills/fmea-software/scripts/render.ts`:
+Run these before a commit that changes `skills/fmea-software/assets/report-template.html` or the
+renderer (`skills/fmea-software/scripts/render.ts` and the modules it imports):
 
 ```
 node tools/check-browser.ts
