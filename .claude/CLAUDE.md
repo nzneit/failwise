@@ -23,6 +23,37 @@ The checkers are development tools declared in `dev/package.json`. Install them 
 lockfile or a dependency to the root `package.json`: Claude Code installs whatever a plugin's root
 declares on every user's machine.
 
+## Browser checks
+
+Run these before a commit that changes `skills/fmea-software/assets/report-template.html` or the
+renderer (`skills/fmea-software/scripts/render.ts` and the modules it imports):
+
+```
+node tools/check-browser.ts
+node tools/shots.ts
+```
+
+The first renders the checkout fixture and opens it in Chromium at four widths (375, 768, 1280 and
+1920 px) and under print emulation. It fails on a page that scrolls sideways, on an element past
+the right edge, on a WCAG A or AA violation that axe-core finds, and on a print rule that does not
+take effect. The second writes a screenshot of every part of the report, at every width, to
+`build/shots/`, with the print PDF. Look at the parts your change touches, at every width, before
+calling the change done: the gate cannot judge page breaks or whether the report reads well. A part
+image is cut at its element's box, so content that spills sideways shows only in `page.png`.
+
+Fetch the browser once with `node tools/check-browser.ts --fetch`, and again when
+`dev/package-lock.json` changes Playwright's version. Both commands take
+`--engines chromium,firefox,webkit` and `--report <file.html>` for a report that already exists, and
+both are the same in bash and fish. A local run names the engines it did not run. CI runs all three
+on every pull request and uploads the screenshots as the `browser-checks` artifact.
+
+A check listed in `EXPECTED_FAILURES` of `dev/browser/matrix.ts` is a known gap with its reason. The
+run fails when such a check starts to pass, so a change that closes a gap removes its entry.
+
+A check listed in `NOT_ASSERTED` there is measured but cannot fail the run, because its result
+depends on the reader's fonts. Every passing run names these checks in a `## not asserted` line;
+they are not verified until their entries are removed.
+
 ## Non-negotiables
 
 - **Never add AI attribution to a commit.** No `Co-Authored-By` trailer naming an AI, no

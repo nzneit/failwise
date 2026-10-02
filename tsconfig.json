@@ -11,5 +11,5 @@
     "types": ["node"],
     "typeRoots": ["dev/node_modules/@types"]
   },
-  "include": ["skills/**/*.ts", "tools/**/*.ts"]
+  "include": ["skills/**/*.ts", "tools/**/*.ts", "dev/browser/**/*.ts"]
 }

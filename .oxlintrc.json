@@ -6,5 +6,5 @@
       ]
     }]
   },
-  "ignorePatterns": ["tools/workflows/**", "dev/**"]
+  "ignorePatterns": ["tools/workflows/**", "dev/node_modules/**"]
 }
