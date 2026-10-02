@@ -50,6 +50,10 @@ on every pull request and uploads the screenshots as the `browser-checks` artifa
 A check listed in `EXPECTED_FAILURES` of `dev/browser/matrix.ts` is a known gap with its reason. The
 run fails when such a check starts to pass, so a change that closes a gap removes its entry.
 
+A check listed in `NOT_ASSERTED` there is measured but cannot fail the run, because its result
+depends on the reader's fonts. Every passing run names these checks in a `## not asserted` line;
+they are not verified until their entries are removed.
+
 ## Non-negotiables
 
 - **Never add AI attribution to a commit.** No `Co-Authored-By` trailer naming an AI, no
