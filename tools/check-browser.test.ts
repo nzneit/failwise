@@ -93,6 +93,7 @@ test("an engine's build absent: BROWSER with the fetch command, Playwright's tes
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error BROWSER: /cache/chromium-1 is absent; run node tools/check-browser.ts --fetch --engines chromium"]);
   assert.deepEqual(result.calls, [`${PLAYWRIGHT} install --dry-run chromium`]);
+  assert.ok(result.removed.includes("/repo/build/browser/gate"), "an earlier run's results do not survive a BROWSER line");
 });
 
 test("a dry run of three blocks, as Playwright 1.63 prints it, with the second build absent: one BROWSER line for it", () => {

@@ -225,11 +225,16 @@ function verdict(machine: Machine, run: Run, engines: Engine[], exitStatus: numb
   return unrun.length === 0 && skipped === 0 && unknown === 0 && !failed && exitStatus === 0;
 }
 
-/** Steps 7 to 9: prepares the run, starts `playwright test`, and gives the verdict. */
-function testRun(ctx: Context, run: Run, engines: Engine[], report: string, version: string): boolean {
-  const { machine } = ctx;
+/** After step 4, before step 5: prepares the run and removes build/browser/<run>, so an earlier
+ *  run's output survives no failure from here on and cannot stand in for this run's. */
+function clearEarlierRun(machine: Machine, run: Run): void {
   run.prepare?.(machine);
   machine.files.remove(join(machine.root, OUT, run.name));
+}
+
+/** Steps 7 to 9: starts `playwright test` and gives the verdict. */
+function testRun(ctx: Context, run: Run, engines: Engine[], report: string, version: string): boolean {
+  const { machine } = ctx;
   machine.write(`## ${run.name}: playwright test over ${engines.join(", ")} (node v${version})`);
   const projects = engines.flatMap((engine) => ["--project", engine]);
   const status = playwright(ctx, ["test", "--config", run.config, ...projects], { FAILWISE_REPORT: report });
@@ -247,6 +252,7 @@ export function runBrowser(run: Run, argv: string[], machine: Machine): number {
   if (!toolingPresent(machine)) return 1;
   const ctx: Context = { machine, node: node.path };
   if (flags.fetch) return fetchBrowsers(ctx, flags);
+  clearEarlierRun(machine, run);
   if (!browsersPresent(ctx, flags.engines)) return 1;
   const report = flags.report === null ? renderFixture(ctx) : givenReport(machine, flags.report);
   if (report === null) return 1;

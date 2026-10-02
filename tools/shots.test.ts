@@ -69,6 +69,15 @@ test("build/shots is removed before the run, so an earlier run's files cannot st
   assert.ok(run([]).removed.includes("/repo/build/shots"));
 });
 
+test("a run that ends in a BROWSER line has removed the earlier run's files; a TOOLING line removes nothing", () => {
+  const browser = run([], { missing: ["/cache/chromium-1"] });
+  assert.equal(browser.status, 1);
+  assert.match(browser.errors[0], /^error BROWSER: /);
+  assert.ok(browser.removed.includes("/repo/build/shots"));
+  assert.ok(browser.removed.includes("/repo/build/browser/shots"));
+  assert.deepEqual(run([], { missing: ["dev/node_modules"] }).removed, []);
+});
+
 test("a missing part, a missing row and a missing PDF are each UNVERIFIED, exit 1", () => {
   const result = run([], { drop: ["chromium/375/key.png", "chromium/768/row-02-ch-2.png", "chromium/print.pdf"] });
   assert.equal(result.status, 1);
