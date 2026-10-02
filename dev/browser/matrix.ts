@@ -17,12 +17,12 @@ export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [
   {
     check: "scroll",
     width: 768,
-    reason: "the contents line cannot wrap between its links, so its last link, Provenance, widens the page by 33 px; left to the narrow-screen design",
+    reason: "the contents line cannot wrap between its links, so its last link, Provenance, widens the page by an amount that depends on the reader's fonts; left to the narrow-screen design",
   },
   {
     check: "edge",
     width: 768,
-    reason: "the contents line cannot wrap between its links, so its last link, Provenance, passes the right edge; left to the narrow-screen design",
+    reason: "the contents line cannot wrap between its links, so its last link, Provenance, passes the right edge by an amount that depends on the reader's fonts; left to the narrow-screen design",
   },
 ];
 
