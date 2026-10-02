@@ -130,6 +130,13 @@ test("the fixture cannot be rendered: TOOLING, Playwright's tests not started", 
   assert.equal(result.calls.length, 2);
 });
 
+test("render.ts ends without an exit status: TOOLING, Playwright's tests not started", () => {
+  const result = run([], { statuses: { render: null } });
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, ["error TOOLING: render.ts exited without a status; the checkout fixture could not be rendered"]);
+  assert.ok(!result.calls.some((call) => call.startsWith(`${PLAYWRIGHT} test`)));
+});
+
 test("Playwright ends without an exit status: TOOLING", () => {
   const result = run([], { statuses: { test: null }, results: null });
   assert.equal(result.status, 1);
