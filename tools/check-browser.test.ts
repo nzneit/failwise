@@ -78,6 +78,11 @@ test("an unknown flag, an unknown engine, a flag without its value, --with-deps 
   }
 });
 
+test("--base belongs to the comparison: USAGE, nothing started", () => {
+  const result = run(["--base", "main"]);
+  assert.deepEqual([result.status, result.errors, result.calls], [1, ["error USAGE: unknown flag --base"], []]);
+});
+
 test("no Node 24.2 or later: NODE, nothing started", () => {
   const result = run([], { noNode: true });
   assert.deepEqual([result.status, result.errors, result.calls], [1, [NOT_FOUND], []]);

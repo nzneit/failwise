@@ -126,6 +126,10 @@ test("--fetch belongs to the gate's runner: USAGE", () => {
   assert.deepEqual(run(["--fetch"]).errors, ["error USAGE: unknown flag --fetch"]);
 });
 
+test("--base belongs to the comparison: USAGE", () => {
+  assert.deepEqual(run(["--base", "main"]).errors, ["error USAGE: unknown flag --base"]);
+});
+
 test("a row's file stem carries its position and its id reduced to file-name characters", () => {
   assert.equal(rowFileStem(1, "row-ch-2"), "row-01-ch-2");
   assert.equal(rowFileStem(12, "row-a/b c"), "row-12-a-b-c");

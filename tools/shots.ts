@@ -78,7 +78,8 @@ function verifyShots(machine: Machine, engines: readonly Engine[], report: strin
 const SHOTS_RUN: Run = {
   name: "shots",
   config: "dev/browser/shots.config.ts",
-  fetch: false,
+  out: "build/browser/shots",
+  accepts: { fetch: false, report: true, base: false },
   prepare: (machine) => machine.files.remove(join(machine.root, SHOTS)),
   after: verifyShots,
 };
