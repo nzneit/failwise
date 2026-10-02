@@ -7,8 +7,8 @@
 // matrix.ts. Everything it touches goes through an injected `Machine`, so the tests stand in for
 // the machine (tools/lib/fake-machine.ts).
 
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { ENGINES, type Engine } from "../../dev/browser/matrix.ts";
 import { defaultHost, findNode, MIN_LABEL, type Host } from "./host.ts";
 
@@ -26,6 +26,9 @@ export interface Files {
   readText: (path: string) => string | null; // null when the file is absent or unreadable
   remove: (path: string) => void; // recursive; an absent path is not an error
   makeDir: (path: string) => void; // recursive
+  writeText: (path: string, text: string) => void; // creates the parent folder
+  appendText: (path: string, text: string) => void; // creates the file when absent
+  copy: (from: string, to: string) => boolean; // creates the parent folder; false when `from` cannot be copied
 }
 
 export interface Machine {
@@ -49,7 +52,7 @@ export interface Run {
 }
 
 /** What `execute` works with. Every child is started from the repository root. */
-interface Session {
+export interface Session {
   machine: Machine;
   engines: readonly Engine[];
   base: string; // --base; "main" when not given
@@ -61,12 +64,17 @@ interface Session {
   playwright: (args: string[], env: Record<string, string>) => number | null;
   /** The tests of the Playwright JSON report at `results` (repository-relative); null when absent or not one. */
   readTests: (results: string) => ReportedTest[] | null;
+  /** Starts `command ...args` from the root with stdio "pipe": git and tar. */
+  exec: (command: string, args: string[]) => { status: number | null; stdout: string };
 }
 
 /** One test of a JSON report. */
-interface ReportedTest {
+export interface ReportedTest {
+  title: string; // the spec's title
   projectName: string;
   status: string; // String(field), so "undefined" when absent
+  attachments: { name: string; path: string }[]; // of the last result; one without a string path is left out
+  message: string; // the first error message of the last result; "" when none
 }
 
 interface Flags {
@@ -214,10 +222,27 @@ function items(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
+/** The value when it is a string, else "". */
+function stringOf(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** One `specs[].tests[]` entry of the spec titled `title`, as the runners read it. */
+function reportedTest(title: string, one: unknown): ReportedTest {
+  const last = items(field(one, "results")).at(-1);
+  const attachments = items(field(last, "attachments"))
+    .filter((attachment) => typeof field(attachment, "path") === "string")
+    .map((attachment) => ({ name: stringOf(field(attachment, "name")), path: stringOf(field(attachment, "path")) }));
+  const message = stringOf(field(items(field(last, "errors"))[0], "message"));
+  return { title, projectName: stringOf(field(one, "projectName")), status: String(field(one, "status")), attachments, message };
+}
+
 /** Every `specs[].tests[]` entry under `suites`, walked recursively; a missing list is empty. */
-function testsOf(suites: unknown[]): unknown[] {
+function testsOf(suites: unknown[]): ReportedTest[] {
   return suites.flatMap((suite) => [
-    ...items(field(suite, "specs")).flatMap((spec) => items(field(spec, "tests"))),
+    ...items(field(suite, "specs")).flatMap((spec) =>
+      items(field(spec, "tests")).map((one) => reportedTest(stringOf(field(spec, "title")), one)),
+    ),
     ...testsOf(items(field(suite, "suites"))),
   ]);
 }
@@ -233,10 +258,7 @@ function reportedTests(text: string | null): ReportedTest[] | null {
   }
   const suites = field(parsed, "suites");
   if (!Array.isArray(suites)) return null;
-  return testsOf(suites).map((one) => {
-    const projectName = field(one, "projectName");
-    return { projectName: typeof projectName === "string" ? projectName : "", status: String(field(one, "status")) };
-  });
+  return testsOf(suites);
 }
 
 /** Step 9: whether the report at `<out>/results.json` proves every engine asked for ran, nothing was
@@ -281,6 +303,11 @@ function openSession(ctx: Context, run: Run, flags: Flags, nodeVersion: string):
     render: (renderer, input, out) => start(ctx, renderer, [input, "--out", out, "--force"], "inherit").status,
     playwright: (args, env) => playwright(ctx, ["test", "--config", run.config, ...projects, ...args], env),
     readTests: (results) => reportedTests(machine.files.readText(join(machine.root, results))),
+    exec: (command, args) => {
+      const { root, host } = machine;
+      const { status, stdout } = host.spawn(command, args, { cwd: root, stdio: "pipe", env: { ...host.env } });
+      return { status, stdout: String(stdout ?? "") };
+    },
   };
 }
 
@@ -332,6 +359,20 @@ export function defaultMachine(): Machine {
       remove: (path) => rmSync(path, { recursive: true, force: true }),
       makeDir: (path) => {
         mkdirSync(path, { recursive: true });
+      },
+      writeText: (path, text) => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, text);
+      },
+      appendText: (path, text) => appendFileSync(path, text),
+      copy: (from, to) => {
+        try {
+          mkdirSync(dirname(to), { recursive: true });
+          copyFileSync(from, to);
+          return true;
+        } catch {
+          return false;
+        }
       },
     },
     write: (line) => process.stdout.write(line + "\n"),
