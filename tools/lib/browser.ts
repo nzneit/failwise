@@ -1,10 +1,11 @@
 // The runner both browser commands share: tools/check-browser.ts (the gate) and the screenshot
 // command. It starts Playwright's CLI, the entry under dev/node_modules/.bin, as a child process
 // through the Node 24.2 or later that tools/lib/host.ts finds, and turns Playwright's JSON report
-// into a verdict that fails closed: an engine asked for that ran no test, a skipped test, or a
-// report that is absent or unreadable each make the run exit 1 with an UNVERIFIED line. It imports
-// no package; the one file of dev/browser/ it reads is matrix.ts. Everything it touches goes
-// through an injected `Machine`, so the tests stand in for the machine (tools/lib/fake-machine.ts).
+// into a verdict that fails closed: an engine asked for that ran no test, a skipped test, a test
+// with a status it does not know, or a report that is absent or unreadable each make the run exit 1
+// with an UNVERIFIED line. It imports no package; the one file of dev/browser/ it reads is
+// matrix.ts. Everything it touches goes through an injected `Machine`, so the tests stand in for
+// the machine (tools/lib/fake-machine.ts).
 
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -18,6 +19,8 @@ const OUT = "build/browser";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
 const ENGINE_LIST = ENGINES.join(", ");
 const NEEDS_ENGINES = `--engines needs a comma-separated list of ${ENGINE_LIST}`;
+/** The statuses Playwright's JSON report gives a test; any other, or none, is UNVERIFIED. */
+const KNOWN_STATUSES = ["expected", "unexpected", "flaky", "skipped"];
 
 export interface Files {
   readText: (path: string) => string | null; // null when the file is absent or unreadable
@@ -212,12 +215,14 @@ function verdict(machine: Machine, run: Run, engines: Engine[], exitStatus: numb
   }
   const unrun = engines.filter((engine) => !tests.some((one) => field(one, "projectName") === engine));
   for (const engine of unrun) machine.writeError(`error UNVERIFIED: no test ran on ${engine}`);
-  const skipped = tests.filter((one) => field(one, "status") === "skipped").length;
+  const statuses = tests.map((one) => String(field(one, "status")));
+  const skipped = statuses.filter((status) => status === "skipped").length;
   if (skipped > 0) machine.writeError(`error UNVERIFIED: ${skipped} test(s) were skipped`);
-  // Anything but `expected` or `skipped` (`unexpected`, `flaky`, or a status this runner does not
-  // know) is a failure; Playwright has printed it.
-  const failed = tests.some((one) => !["expected", "skipped"].includes(String(field(one, "status"))));
-  return unrun.length === 0 && skipped === 0 && !failed && exitStatus === 0;
+  const unknown = statuses.filter((status) => !KNOWN_STATUSES.includes(status)).length;
+  if (unknown > 0) machine.writeError(`error UNVERIFIED: ${unknown} test(s) have a status the runner does not know`);
+  // `unexpected` and `flaky` are failures with no coded line; Playwright has printed them.
+  const failed = statuses.some((status) => status === "unexpected" || status === "flaky");
+  return unrun.length === 0 && skipped === 0 && unknown === 0 && !failed && exitStatus === 0;
 }
 
 /** Steps 7 to 9: prepares the run, starts `playwright test`, and gives the verdict. */

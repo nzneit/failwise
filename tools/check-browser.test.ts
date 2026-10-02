@@ -169,6 +169,15 @@ test("no report, an unreadable report, an engine with no test, a skipped test: U
   }
 });
 
+test("a test whose status the runner does not know, or that has none: UNVERIFIED", () => {
+  const unknown = "error UNVERIFIED: 1 test(s) have a status the runner does not know";
+  const noStatus = JSON.stringify({ suites: [{ specs: [{ tests: [{ projectName: "chromium", status: "expected" }, { projectName: "chromium" }] }] }] });
+  for (const results of [report(["chromium", "expected"], ["chromium", "interrupted"]), noStatus]) {
+    const result = run([], { results });
+    assert.deepEqual([result.status, result.errors], [1, [unknown]]);
+  }
+});
+
 test("a file's suite with no suites key and a spec list nested as Playwright 1.63 writes it is read", () => {
   const results = JSON.stringify({
     config: {},
