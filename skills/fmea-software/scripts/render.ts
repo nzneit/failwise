@@ -2,13 +2,16 @@ import { join } from "node:path";
 import { ScriptError, formatError } from "./lib/codes.ts";
 import type { Action, Chain, Element, FmeaDocument, Lint, Priority, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
-import { loadTable, vocabularyRank } from "./lib/table.ts";
+import { loadTable } from "./lib/table.ts";
 import { checkSchema } from "./lib/schema.ts";
 import { checkPriorities } from "./lib/invariants.ts";
 import { escapeHtml, escapeJsonForScript } from "./lib/escape.ts";
 import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
+import { provisionalCount, ratingBlocks, sortChains } from "./lib/report-model.ts";
+
+export { sortChains } from "./lib/report-model.ts";
 
 export const TEMPLATE_PATH: string = join(import.meta.dirname, "..", "assets", "report-template.html");
 
@@ -53,22 +56,6 @@ function structureHtml(elements: Element[]): string {
   return `<ul class="tree">${roots.map(node).join("")}</ul>`;
 }
 
-// The rating blocks a row carries: `ratings` always, and `post_ratings` once the row has been
-// re-scored after a completed action. Both count, for the header's provisional line and for the
-// row's provisional mark alike, so a post-action priority is never shown without the caveat that
-// the ratings under it are unreviewed (§5 step 5, §9).
-function ratingBlocks(chain: Chain): Ratings[] {
-  return chain.post_ratings ? [chain.ratings, chain.post_ratings] : [chain.ratings];
-}
-
-function provisionalCount(chain: Chain): number {
-  let n = 0;
-  for (const ratings of ratingBlocks(chain)) {
-    for (const f of FACTORS) if (ratings[f].review.status === "provisional") n++;
-  }
-  return n;
-}
-
 function marksHtml(chain: Chain): string {
   let out = "";
   if (chain.stale.flag) out += `<span class="mark mark-stale">stale</span>`;
@@ -105,16 +92,6 @@ function chainDetailHtml(chain: Chain): string {
     chain.handoff ? `<h3>Handoff</h3><p>${e(chain.handoff.to)} &mdash; ${e(chain.handoff.reason)} <span class="empty">(adversary cause: ${e(chain.handoff.adversary_cause)})</span></p>` : "",
     `<h3>Row history</h3>${history}`,
   ].join("");
-}
-
-export function sortChains(doc: FmeaDocument, table: PriorityTable): Chain[] {
-  return [...doc.chains].sort((a, b) => {
-    const rank = vocabularyRank(table, a.priority.value) - vocabularyRank(table, b.priority.value);
-    if (rank !== 0) return rank;
-    const sev = b.ratings.S.value - a.ratings.S.value;
-    if (sev !== 0) return sev;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
 }
 
 function chainsHtml(doc: FmeaDocument, table: PriorityTable): string {
