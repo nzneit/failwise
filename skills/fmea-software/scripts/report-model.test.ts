@@ -5,7 +5,7 @@ import { sortChains as renderSortChains } from "./render.ts";
 import { computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { clone, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
-import type { Action, ActionStatus, Chain, FmeaDocument, Lint, Severity } from "./lib/types.ts";
+import type { Action, ActionStatus, Chain, FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
 const fixture = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
@@ -510,4 +510,38 @@ test("attention: the checkout fixture's block", () => {
     rows: [{ chainId: "ch-5", failureMode: "A session token that this component did not issue for the current session is accepted" }],
   });
   assert.deepEqual(a.nextActions.map((r) => `${r.chainId} ${r.action.id}`), ["ch-4 act-1", "ch-1 act-1", "ch-8 act-1"]);
+});
+
+const trackerLink = (url = "https://github.example.com/acme/checkout/issues/12", observed?: TrackerLink["observed"]): TrackerLink =>
+  ({ provider: "github", id: "12", key: "acme/checkout#12", url, linked: "2026-10-01", ...(observed ? { observed } : {}) });
+
+function linkedDoc(link: TrackerLink): FmeaDocument {
+  const doc = minimalDoc();
+  doc.chains[0].actions = [{ ...action("act-1", "Open", "2026-11-01"), tracker: link }, action("act-2", "Open", "2026-11-02")];
+  return doc;
+}
+
+test("an action with no link has a null tracker, and a document with no link is not tracked", () => {
+  const model = modelOf(fixture());
+  assert.ok(model.actions.every((a) => a.tracker === null));
+  assert.equal(model.tracked, false);
+});
+
+test("a link with observed gives its key, its url and '<state>, seen <date>'", () => {
+  const model = modelOf(linkedDoc(trackerLink(undefined, { state: "open", detail: "", date: "2026-10-02" })));
+  assert.equal(model.tracked, true);
+  assert.deepEqual(model.actions[0].tracker, { key: "acme/checkout#12", url: "https://github.example.com/acme/checkout/issues/12", seen: "open, seen 2026-10-02" });
+  assert.equal(model.actions[1].tracker, null);
+});
+
+test("a link with no observed gives 'not yet read'", () => {
+  assert.equal(modelOf(linkedDoc(trackerLink())).actions[0].tracker?.seen, "not yet read");
+});
+
+test("a url that does not begin https:// gives a null url", () => {
+  for (const url of ["http://github.example.com/x", "javascript:alert(1)", "HTTPS://x.example.com", " https://x.example.com"]) {
+    const tracker = modelOf(linkedDoc(trackerLink(url))).actions[0].tracker;
+    assert.equal(tracker?.url, null, url);
+    assert.equal(tracker?.key, "acme/checkout#12");
+  }
 });

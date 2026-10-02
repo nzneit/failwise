@@ -4,10 +4,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TEMPLATE_PATH, renderHtml, sortChains } from "./render.ts";
 import { escapeHtml } from "./lib/escape.ts";
+import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
-import type { FmeaDocument, Lint, Severity } from "./lib/types.ts";
+import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
 const template = readFileSync(TEMPLATE_PATH, "utf8");
@@ -790,4 +791,63 @@ test("a chain id holding an injection vector is escaped in the row's id and in e
   for (const [id, next] of LINKED_SECTIONS) {
     assert.ok(sectionOf(html, id, next).includes(`href="#row-${escaped}"`), `#${id} does not link the row`);
   }
+});
+
+const LINK_URL = "https://github.example.com/acme/checkout/issues/12";
+const TABLE_HEAD = "<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th>";
+
+function linkedAction(overrides: Partial<TrackerLink> = {}): FmeaDocument {
+  const doc = minimalDoc();
+  doc.chains[0].actions = [
+    { id: "act-1", description: "add a retry", owner: "T. Tester", status: "Open", target_date: "2026-11-01",
+      tracker: { provider: "github", id: "12", key: "acme/checkout#12", url: LINK_URL, linked: "2026-10-01", observed: { state: "open", detail: "", date: "2026-10-02" }, ...overrides } },
+    { id: "act-2", description: "add a probe", owner: "T. Tester", status: "Open", target_date: "2026-11-02" },
+  ];
+  return doc;
+}
+
+test("the Actions table has no Tracker column when no action is linked: the report is what it was", () => {
+  const html = renderHtml(golden(), table, template);
+  const actions = sectionOf(html, "actions", "lints");
+  assert.ok(actions.includes(`${TABLE_HEAD}</tr></thead>`));
+  assert.ok(!html.includes("Tracker"), "no tracker text anywhere");
+  assert.ok(!html.includes("seen "), "no seen text anywhere");
+});
+
+test("with a link, the Actions table gains a Tracker heading and a cell per row, a dash where there is no link", () => {
+  const actions = sectionOf(renderHtml(linkedAction(), table, template), "actions", "lints");
+  assert.ok(actions.includes(`${TABLE_HEAD}<th>Tracker</th></tr></thead>`));
+  const rows = actions.match(/<tr[ >].*?<\/tr>/g) ?? [];
+  assert.equal(rows.length, 3, "head and two body rows");
+  assert.ok(rows[2].endsWith("<td>&mdash;</td></tr>"), "the unlinked row ends in a dash cell");
+});
+
+test("a tracker cell is the key as a link, then the seen text", () => {
+  const actions = sectionOf(renderHtml(linkedAction(), table, template), "actions", "lints");
+  assert.ok(actions.includes(`<td><a href="${LINK_URL}">acme/checkout#12</a> <span class="muted">open, seen 2026-10-02</span></td></tr>`));
+});
+
+test("a null url renders the key as text, with no anchor", () => {
+  const html = renderHtml(linkedAction({ url: "http://github.example.com/x" }), table, template);
+  const actions = sectionOf(html, "actions", "lints");
+  assert.ok(actions.includes(`<td>acme/checkout#12 <span class="muted">open, seen 2026-10-02</span></td></tr>`));
+  assert.ok(!html.slice(0, html.indexOf('id="fmea-data"')).includes("http://github.example.com/x"), "the url is not printed in the report");
+});
+
+test("a detail holding markup is entity-escaped wherever it is printed", () => {
+  const evil = `<img src=x onerror="alert(1)">&'`;
+  const html = renderHtml(linkedAction({ key: evil, observed: { state: "open", detail: evil, date: "2026-10-02" } }), table, template);
+  assert.ok(!html.includes("<img src=x"), "no raw markup");
+  assert.ok(html.includes(escapeHtml(evil)), "the key is escaped");
+  const model = buildReportModel(linkedAction({ observed: { state: "open", detail: evil, date: "2026-10-02" } }), table);
+  assert.ok(!JSON.stringify(model.actions[0].tracker).includes("<img"), "the detail is not in the tracker text");
+});
+
+test("a row section's action line ends with the same tracker text when the action is linked", () => {
+  const html = renderHtml(linkedAction(), table, template);
+  const section = between(html, 'id="row-ch-1"', "</article>");
+  const text = `<a href="${LINK_URL}">acme/checkout#12</a> <span class="muted">open, seen 2026-10-02</span>`;
+  assert.ok(section.includes(`target 2026-11-01)</span> ${text}</li>`), "the linked action line");
+  assert.ok(section.includes("add a probe <span"), "the unlinked action");
+  assert.ok(!section.includes("add a probe") || !/add a probe[^]*?<\/li>/.exec(section)?.[0].includes("seen"), "no tracker text on the unlinked line");
 });
