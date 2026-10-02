@@ -102,9 +102,9 @@ function isOpen(action: Action): boolean {
 }
 
 // The rating blocks a row carries: `ratings` always, and `post_ratings` once the row has been
-// re-scored after a completed action. Both count, for the header's provisional line and for the
-// row's provisional mark alike, so a post-action priority is never shown without the caveat that
-// the ratings under it are unreviewed (§5 step 5, §9).
+// re-scored after a completed action. Both count, for the "Ratings not yet reviewed" tile, the
+// "Needs attention" block and the row's provisional mark alike, so a post-action priority is never
+// shown without the caveat that the ratings under it are unreviewed (§5 step 5, §9).
 function ratingBlocks(chain: Chain): Ratings[] {
   return chain.post_ratings ? [chain.ratings, chain.post_ratings] : [chain.ratings];
 }
