@@ -21,6 +21,15 @@ export function clone<T>(v: T): T {
   return structuredClone(v);
 }
 
+/** The document with the tracker target and every action's link removed: what the checkout fixture
+ *  was before it gained them, for a test of how the report looks when nothing is tracked. */
+export function withoutTracker(doc: FmeaDocument): FmeaDocument {
+  const bare = clone(doc);
+  delete bare.meta.tracker;
+  for (const chain of bare.chains) for (const action of chain.actions) delete action.tracker;
+  return bare;
+}
+
 /** Run `fn` against a fresh temporary directory and remove it afterwards, so a test that writes
  *  files never touches the repository. */
 export function withTempDir<T>(fn: (dir: string) => T): T {

@@ -7,7 +7,7 @@ import { escapeHtml } from "./lib/escape.ts";
 import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
-import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
+import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir, withoutTracker } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
@@ -604,7 +604,10 @@ test("the report loads nothing from the network and runs no script", () => {
   assert.equal(occurrences(html, '<article class="row"'), doc.chains.length);
   assert.ok(!html.includes("<script src"));
   assert.ok(!html.includes("http://"));
-  assert.ok(!html.includes("https://"));
+  // The fixture now links three actions, so https:// appears in each link's href and in the data block;
+  // nothing else may carry it, and the links are anchors, not loads.
+  const rest = html.replace(dataBlock(html), "").replace(/<a href="https:\/\/[^"]*">/g, "<a>");
+  assert.ok(!rest.includes("https://"), "https:// outside a link's href and the data block");
   assert.equal(html.split("<script").length - 1, 1);
   assert.ok(html.includes('<script type="application/json" id="fmea-data">'));
 });
@@ -732,7 +735,8 @@ test("the structure tree and the actions table carry the document's rows", () =>
 test("the actions table is in the order of section 5.2, open actions first and each row id a link", () => {
   const actions = sectionOf(renderHtml(golden(), table, template), "actions", "lints");
   assert.ok(actions.includes("<caption>Open actions first, by target date; closed actions last.</caption>"));
-  assert.ok(actions.includes("<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th></tr></thead>"));
+  // The fixture links three actions, so the head ends in the Tracker column.
+  assert.ok(actions.includes("<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th><th>Tracker</th></tr></thead>"));
   const rows = [...actions.matchAll(/<td class="nw">([0-9-]+)<\/td><td><a href="#row-([^"]+)"><code>[^<]+<\/code><\/a><\/td><td><code>([^<]+)<\/code>/g)]
     .map((m) => `${m[1]} ${m[2]} ${m[3]}`);
   assert.deepEqual(rows, [
@@ -807,7 +811,8 @@ function linkedAction(overrides: Partial<TrackerLink> = {}): FmeaDocument {
 }
 
 test("the Actions table has no Tracker column when no action is linked: the report is what it was", () => {
-  const html = renderHtml(golden(), table, template);
+  // The fixture is linked now, so the unlinked report is the fixture with its links removed.
+  const html = renderHtml(withoutTracker(golden()), table, template);
   const actions = sectionOf(html, "actions", "lints");
   assert.ok(actions.includes(`${TABLE_HEAD}</tr></thead>`));
   assert.ok(!html.includes("Tracker"), "no tracker text anywhere");

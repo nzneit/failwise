@@ -4,7 +4,7 @@ import { buildReportModel, sortChains } from "./lib/report-model.ts";
 import { sortChains as renderSortChains } from "./render.ts";
 import { computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
-import { clone, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
+import { clone, loadFixture, minimalDoc, rating, withoutTracker } from "./test-helpers.ts";
 import type { Action, ActionStatus, Chain, FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
@@ -522,7 +522,8 @@ function linkedDoc(link: TrackerLink): FmeaDocument {
 }
 
 test("an action with no link has a null tracker, and a document with no link is not tracked", () => {
-  const model = modelOf(fixture());
+  // The fixture is linked now, so the unlinked case is the fixture with its links removed.
+  const model = modelOf(withoutTracker(fixture()));
   assert.ok(model.actions.every((a) => a.tracker === null));
   assert.equal(model.tracked, false);
 });
