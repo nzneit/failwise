@@ -32,8 +32,9 @@ export function withTempDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-export function runCli(script: string, args: string[]): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8" });
+/** Runs a script under the current Node; `env`, when given, replaces the inherited environment. */
+export function runCli(script: string, args: string[], options: { env?: NodeJS.ProcessEnv } = {}): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8", env: options.env });
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 

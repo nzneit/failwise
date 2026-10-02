@@ -111,6 +111,15 @@ async function applyPlanned(s: Session, ...flags: string[]): Promise<Run> {
   return s.track("apply", "--plan", await planDigest(s), ...flags);
 }
 
+/** Runs track.ts as a subprocess with the default provider and a PATH that is an empty folder, so
+ *  no run can find gh, whatever the run reaches. Node itself is started by its absolute path. Every
+ *  subprocess run of track.ts goes through here. */
+function runTrack(t: TestContext, argv: string[]): { status: number; stdout: string; stderr: string } {
+  const empty = mkdtempSync(join(tmpdir(), "fmea-no-gh-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  return runCli("track.ts", argv, { env: { ...process.env, PATH: empty } });
+}
+
 const linksIn = (doc: FmeaDocument): (TrackerLink | undefined)[] => doc.chains[0].actions.map((a) => a.tracker);
 const createdKeys = (s: Session): string[] => s.fake.created.map((i) => i.key);
 
@@ -146,9 +155,10 @@ test("an invalid document prints what validate.ts prints and exits 2, and the pr
   const s = session(t, doc);
   const validate = runCli("validate.ts", [s.path]);
   assert.equal(validate.status, 2);
-  // The default provider factory throws TRACKER_UNAVAILABLE, so building it would show on stderr.
+  // Every command asks the provider to describe the target as soon as it is built, and with gh
+  // unfindable that fails TRACKER_UNAVAILABLE, so its absence on stderr shows it was never built.
   for (const argv of [["plan", s.path], ["refresh", s.path], ["apply", s.path, "--plan", "0".repeat(64)]]) {
-    const track = runCli("track.ts", argv);
+    const track = runTrack(t, argv);
     assert.equal(track.status, 2);
     assert.equal(track.stdout, validate.stdout);
     assert.equal(track.stderr, validate.stderr);
@@ -160,10 +170,21 @@ test("a document with no meta.tracker is TRACKER_CONFIG at /meta/tracker, exit 2
   const s = session(t, minimalDoc());
   await assert.rejects(s.track("plan"), { code: "TRACKER_CONFIG", pointer: "/meta/tracker" });
   assert.equal(s.built(), 0);
-  const cli = runCli("track.ts", ["plan", s.path]);
+  const cli = runTrack(t, ["plan", s.path]);
   assert.equal(cli.status, 2);
   assert.equal(cli.stdout, "");
   assert.equal(cli.stderr, "error TRACKER_CONFIG: the document has no meta.tracker at /meta/tracker\n");
+});
+
+test("a subprocess run of track.ts cannot find gh: a valid document stops at TRACKER_UNAVAILABLE", (t) => {
+  const s = session(t, docWith(act(1)));
+  for (const argv of [["plan", s.path], ["refresh", s.path]]) {
+    const cli = runTrack(t, argv);
+    assert.equal(cli.status, 3);
+    assert.equal(cli.stdout, "");
+    assert.equal(cli.stderr, "error TRACKER_UNAVAILABLE: gh was not found: install the GitHub CLI and sign in with gh auth login\n");
+  }
+  assert.equal(s.built(), 0);
 });
 
 // plan
