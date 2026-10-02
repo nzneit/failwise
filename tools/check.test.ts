@@ -8,8 +8,13 @@ import { runChecks } from "./check.ts";
 const ROOT = "/repo";
 const BIN = "dev/node_modules/.bin";
 const LIST = JSON.stringify({
-  file_count: 3,
-  files: ["skills/fmea-software/assets/report-template.html", "skills/fmea-software/scripts/lib/args.ts", "tools/check.ts"],
+  file_count: 4,
+  files: [
+    "skills/fmea-software/assets/report-template.html",
+    "skills/fmea-software/scripts/lib/args.ts",
+    "tools/check.ts",
+    "dev/browser/matrix.ts",
+  ],
 });
 
 /** A tool call as the fake tells them apart: `fallow list` and the bare `fallow` separately. */
@@ -76,12 +81,12 @@ test("all three steps pass: three headings, each tool once in order, exit 0", ()
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.lines, [
     "## types: tsc -p tsconfig.json (node v24.17.0)",
-    "## lint: oxlint --type-aware --deny-warnings skills tools (node v24.17.0)",
+    "## lint: oxlint --type-aware --deny-warnings skills tools dev/browser (node v24.17.0)",
     "## analysis: fallow list --files --format json, then fallow (node v24.17.0)",
   ]);
   assert.deepEqual(toolCalls(calls), [
     "tsc -p tsconfig.json",
-    "oxlint --type-aware --deny-warnings skills tools",
+    "oxlint --type-aware --deny-warnings skills tools dev/browser",
     "fallow list --files --format json",
     "fallow",
   ]);
@@ -151,7 +156,7 @@ test("fallow list prints something that is not its JSON file list: TOOLING, exit
 
 test("fallow list names no .ts file under tools/ while fallow exits 0: EMPTY, the bare fallow still runs, exit 1", () => {
   const calls: Call[] = [];
-  const list = JSON.stringify({ file_count: 1, files: ["skills/fmea-software/scripts/lib/args.ts"] });
+  const list = JSON.stringify({ file_count: 2, files: ["skills/fmea-software/scripts/lib/args.ts", "dev/browser/matrix.ts"] });
   const result = run(fakeHost({ calls, list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under tools/"]);
@@ -159,19 +164,27 @@ test("fallow list names no .ts file under tools/ while fallow exits 0: EMPTY, th
 });
 
 test("fallow list names no .ts file under skills/: EMPTY, exit 1", () => {
-  const list = JSON.stringify({ file_count: 1, files: ["tools/check.ts"] });
+  const list = JSON.stringify({ file_count: 2, files: ["tools/check.ts", "dev/browser/matrix.ts"] });
   const result = run(fakeHost({ list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under skills/"]);
 });
 
-test("a list that holds only the HTML template is EMPTY for both folders", () => {
+test("fallow list names no .ts file under dev/browser/: EMPTY, exit 1", () => {
+  const list = JSON.stringify({ file_count: 2, files: ["skills/fmea-software/scripts/lib/args.ts", "tools/check.ts"] });
+  const result = run(fakeHost({ list }));
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under dev/browser/"]);
+});
+
+test("a list that holds only the HTML template is EMPTY for every folder", () => {
   const list = JSON.stringify({ file_count: 1, files: ["skills/fmea-software/assets/report-template.html"] });
   const result = run(fakeHost({ list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, [
     "error EMPTY: fallow analysed no TypeScript file under skills/",
     "error EMPTY: fallow analysed no TypeScript file under tools/",
+    "error EMPTY: fallow analysed no TypeScript file under dev/browser/",
   ]);
 });
 

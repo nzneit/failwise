@@ -1,8 +1,16 @@
 {
-  "entry": ["skills/fmea-software/scripts/*.ts", "tools/*.ts"],
+  "entry": ["skills/fmea-software/scripts/*.ts", "tools/*.ts", "dev/browser/*.ts"],
   "includeEntryExports": true,
   "ignorePatterns": ["tools/workflows/**"],
   "failOnParseError": true,
+  "framework": [
+    {
+      "name": "playwright-dev-browser",
+      "enablers": ["@playwright/test"],
+      "configPatterns": ["dev/browser/*.config.ts"],
+      "usedExports": [{ "pattern": "dev/browser/*.config.ts", "exports": ["default"] }]
+    }
+  ],
   "health": { "maxCyclomatic": 20, "maxCognitive": 15 },
   "rules": {
     "complexity-crap": "off",

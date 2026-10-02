@@ -4,17 +4,17 @@
 //   bun tools/check.ts         # a shell where only Bun is on PATH
 //
 // 1. types:    tsc -p tsconfig.json
-// 2. lint:     oxlint --type-aware --deny-warnings skills tools
+// 2. lint:     oxlint --type-aware --deny-warnings skills tools dev/browser
 // 3. analysis: fallow list --files --format json, then a bare fallow
 //
 // Each tool is the Node script under dev/node_modules/.bin, started from the repository root with
 // the Node 24.2 or later that tools/lib/host.ts finds, so the gate never reaches the network and
 // does not depend on which `node` is first on PATH, or on there being one. The verdict is each
 // tool's exit status and nothing else; `fallow list` only proves that fallow analysed TypeScript
-// under both skills/ and tools/, since fallow exits 0 when it analyses nothing. Every step runs even
-// after a failure. Exit status 0 when all three pass, 1 otherwise, with three coded lines of its
-// own: NODE (no Node 24.2 or later found), TOOLING (a tool absent, unstartable, or a `fallow list`
-// that failed) and EMPTY (no TypeScript file analysed under a folder).
+// under each of skills/, tools/ and dev/browser/, since fallow exits 0 when it analyses nothing.
+// Every step runs even after a failure. Exit status 0 when all three pass, 1 otherwise, with three
+// coded lines of its own: NODE (no Node 24.2 or later found), TOOLING (a tool absent, unstartable,
+// or a `fallow list` that failed) and EMPTY (no TypeScript file analysed under a folder).
 
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { isEntry } from "./lib/entry.ts";
@@ -22,7 +22,7 @@ import { defaultHost, findNode, MIN_LABEL, type Host } from "./lib/host.ts";
 
 const BIN = "dev/node_modules/.bin";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
-const ANALYSED_FOLDERS = ["skills", "tools"] as const;
+const ANALYSED_FOLDERS = ["skills", "tools", "dev/browser"] as const;
 
 interface Context {
   root: string;
@@ -129,8 +129,8 @@ export function runChecks(root: string, host: Host, write = printLine, writeErro
   const version = `(node v${node.version.join(".")})`;
   write(`## types: tsc -p tsconfig.json ${version}`);
   const types = passes(ctx, "tsc", ["-p", "tsconfig.json"]);
-  write(`## lint: oxlint --type-aware --deny-warnings skills tools ${version}`);
-  const lint = passes(ctx, "oxlint", ["--type-aware", "--deny-warnings", "skills", "tools"], {
+  write(`## lint: oxlint --type-aware --deny-warnings skills tools dev/browser ${version}`);
+  const lint = passes(ctx, "oxlint", ["--type-aware", "--deny-warnings", "skills", "tools", "dev/browser"], {
     OXLINT_TSGOLINT_PATH: `${BIN}/tsgolint`,
   });
   write(`## analysis: fallow list --files --format json, then fallow ${version}`);
