@@ -988,49 +988,49 @@
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/1/ratings/S",
-        "message": "S is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/1/ratings/O",
-        "message": "O is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/1/ratings/D",
-        "message": "D is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/3/ratings/O",
-        "message": "O is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/3/ratings/D",
-        "message": "D is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/7/ratings/S",
-        "message": "S is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/7/ratings/O",
-        "message": "O is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/7/ratings/D",
-        "message": "D is still provisional and needs re-scoring"
+        "message": "The rating is still provisional and needs re-scoring"
       },
       {
         "rule": "seeded-action-without-incident",
@@ -1039,7 +1039,7 @@
         "message": "action on a chain seeded from INC-2026-0314 carries no source_incident"
       }
     ],
-    "validated_at": "2026-09-11T14:12:02.509Z",
+    "validated_at": "2026-10-02T06:33:53.564Z",
     "validator_version": "0.1.0"
   }
 }
