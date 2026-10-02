@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ScriptError, formatError } from "./lib/codes.ts";
-import type { Action, Chain, Element, FmeaDocument, Lint, Ratings, Factor } from "./lib/types.ts";
+import type { Action, Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import { checkSchema } from "./lib/schema.ts";
@@ -10,7 +10,7 @@ import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { buildReportModel } from "./lib/report-model.ts";
-import type { ActionRow, Attention, PlacedFinding, RankStyle, ReportModel, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
+import type { ActionRow, Attention, CheckGroup, GroupLocation, PlacedFinding, RankStyle, ReportModel, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
@@ -316,13 +316,35 @@ function actionsHtml(doc: FmeaDocument): string {
   return `<table><tr><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Target</th><th>Completed</th></tr>${rows.join("")}</table>`;
 }
 
-function lintsHtml(doc: FmeaDocument): string {
-  const computed = doc.computed;
-  if (!computed) return `<p class="empty">No computed block.</p>`;
-  const head = `<p><strong>Quality score: ${computed.quality_score}</strong> <span class="empty">(the share of chain rows with no blocker lint, or 0 when a blocker sits outside the chain rows; the weighting is the skill's own)</span></p>`;
-  if (computed.lints.length === 0) return `${head}<p class="empty">No lint findings.</p>`;
-  const rows = computed.lints.map((l: Lint) => `<tr><td><code>${e(l.rule)}</code></td><td class="sev-${e(l.severity)}">${e(l.severity)}</td><td><code>${e(l.pointer)}</code></td><td>${e(l.message)}</td></tr>`).join("");
-  return `${head}<table><tr><th>Rule</th><th>Severity</th><th>Pointer</th><th>Message</th></tr>${rows}</table>`;
+const CHECKS_INTRO: [string, string, string] = [
+  "Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A ",
+  " must be fixed before the row it names, or the analysis as a whole, can be relied on. A ",
+  " is for a reviewer to judge and may be acceptable as it stands.",
+];
+const SCORE_NOTE = "— the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.";
+const CHECKS_CAPTION = "Blockers first. Findings with the same rule and message share a line; each row location links to its row.";
+
+function locationHtml(location: GroupLocation): string {
+  if (location.kind === "unknown-row") return `unknown row <code>${e(location.pointer)}</code>`;
+  if (location.kind === "document") return `document <code>${e(location.pointer)}</code>`;
+  if (location.labels.length === 0) return rowLinkHtml(location.chainId);
+  return `${rowLinkHtml(location.chainId)} ${location.labels.map((l) => labelHtml(l.text, l.raw)).join(", ")}`;
+}
+
+function checkRowHtml(group: CheckGroup): string {
+  const count = group.count > 1 ? ` <span class="muted">${e(`×${group.count}`)}</span>` : "";
+  return `<tr><td>${markHtml(group.severity)}</td><td><code>${e(group.rule)}</code>${count}</td>` +
+    `<td class="nw">${group.locations.map(locationHtml).join("<br>")}</td><td>${e(group.message)}</td></tr>`;
+}
+
+function checksHtml(groups: CheckGroup[], qualityScore: number | null): string {
+  if (qualityScore === null) return `<p class="empty">No computed block.</p>`;
+  const [before, middle, after] = CHECKS_INTRO;
+  const intro = `<p>${e(before)}${markHtml("blocker")}${e(middle)}${markHtml("warning")}${e(after)}</p>`;
+  const score = `<p><strong>Quality score: ${qualityScore} of 100</strong> <span class="muted">${e(SCORE_NOTE)}</span></p>`;
+  if (groups.length === 0) return `${intro}${score}<p class="empty">No findings.</p>`;
+  const head = `<thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th>Finding</th></tr></thead>`;
+  return `${intro}${score}<table><caption>${e(CHECKS_CAPTION)}</caption>${head}<tbody>${groups.map(checkRowHtml).join("")}</tbody></table>`;
 }
 
 function provenanceHtml(doc: FmeaDocument): string {
@@ -348,7 +370,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     structure: structureHtml(doc.elements),
     chains: chainsHtml(model),
     actions: actionsHtml(doc),
-    lints: lintsHtml(doc),
+    lints: checksHtml(model.groups, model.tiles.qualityScore),
     provenance: provenanceHtml(doc),
     data: escapeJsonForScript(JSON.stringify(doc, null, 2)),
   };

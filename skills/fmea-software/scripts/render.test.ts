@@ -111,6 +111,7 @@ const RPN_TEXT = "S × O × D, kept for comparison with older sheets. It is not 
 const indexTable = (html: string): string => between(html, '<table class="index">', "</table>");
 const rowSection = (html: string, id: string): string => between(html, `<article class="row" id="row-${id}">`, "</article>");
 const lint = (severity: Severity, rule: string, pointer: string, message: string): Lint => ({ rule, severity, pointer, message });
+const stripTags = (html: string): string => html.replace(/<[^>]+>/g, "");
 
 // A supplied table: the shipped bands, every cell the vocabulary's first value, shape-checked as --table-file is.
 function suppliedTable(vocabulary: string[]): PriorityTable {
@@ -156,7 +157,7 @@ test("the report carries every section id, in the order section 9 fixes", () => 
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
 });
 
-test("the ground-rules, assumptions, review-record and lint sections carry the document's content", () => {
+test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
   const doc = golden();
   const html = renderHtml(doc, table, template);
   const section = (id: string, next: string): string =>
@@ -181,23 +182,59 @@ test("the ground-rules, assumptions, review-record and lint sections carry the d
     reviews.includes(`2026-09-03 &mdash; A. Reviewer, B. Owner &mdash; ${escapeHtml(doc.meta.reviews[0].outcome)}`),
     "the review record is missing its date, its reviewers or its outcome",
   );
+});
 
-  const lints = section("lints", "provenance");
-  assert.ok(lints.includes("<strong>Quality score: 88</strong>"), "the lint section is missing the quality score");
-  // The caption states both of `lib/quality.ts`'s rules, so a reader can reconcile a printed 0 with
-  // a lint table whose blockers all point outside `chains[]` (added 2026-09-11 after the Task 33
-  // correction review; the caption stopped at "the share of chain rows with no blocker lint").
-  assert.ok(
-    lints.includes(
-      '<span class="empty">(the share of chain rows with no blocker lint, or 0 when a blocker sits outside the chain rows; the weighting is the skill\'s own)</span>',
-    ),
-    "the lint section's caption does not state the rule the printed score follows",
-  );
-  assert.equal(count(lints, "<tr>"), doc.computed!.lints.length + 1);
-  assert.ok(
-    lints.includes('<td><code>detection-1-without-evidenced-control</code></td><td class="sev-blocker">blocker</td>'),
-    "the lint table is missing the blocker row",
-  );
+test("the automated checks section explains the checks, states the score and groups the findings", () => {
+  const checks = sectionOf(renderHtml(golden(), table, template), "lints", "provenance");
+  assert.ok(checks.includes("<h2>Automated checks and quality score</h2>"));
+  const text = stripTags(checks);
+  assert.ok(text.includes(escapeHtml("Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A blocker must be fixed before the row it names, or the analysis as a whole, can be relied on. A warning is for a reviewer to judge and may be acceptable as it stands.")));
+  assert.ok(text.includes(escapeHtml("Quality score: 88 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
+  assert.ok(checks.includes("<strong>Quality score: 88 of 100</strong>"));
+  // the intro's two marks, then one per group: one blocker group and three warning groups
+  assert.equal(occurrences(checks, 'class="mark mark-blocker"'), 2);
+  assert.equal(occurrences(checks, 'class="mark mark-warning"'), 4);
+  assert.ok(checks.includes("<caption>Blockers first. Findings with the same rule and message share a line; each row location links to its row.</caption>"));
+  assert.ok(checks.includes("<thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th>Finding</th></tr></thead>"));
+  assert.equal(occurrences(checks, "<tr>"), 5, "a head row and four groups");
+  const order = ["detection-1-without-evidenced-control", "occurrence-estimate-without-trigger", "rating-provisional", "seeded-action-without-incident"]
+    .map((rule) => checks.indexOf(`<code>${rule}</code>`));
+  assert.ok(order.every((at) => at !== -1));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b));
+  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×8</span>'));
+  assert.equal(occurrences(checks, "×"), 1, "a group of one finding shows no count");
+  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D'));
+  assert.ok(checks.includes("<td>The rating is still provisional and needs re-scoring</td>"));
+  assert.ok(checks.includes('<a href="#row-ch-7"><code>ch-7</code></a> D</td><td>Detection is 1 with no existing detection control carrying evidence</td>'));
+  assert.ok(checks.includes('<a href="#row-ch-8"><code>ch-8</code></a> act-2</td>'));
+
+  const missing = sectionOf(renderHtml(minimalDoc(), table, template), "lints", "provenance");
+  assert.ok(missing.includes('<p class="empty">No computed block.</p>'));
+  assert.ok(!missing.includes("Quality score"), "a document without computed has no score to state");
+  const clean = sectionOf(renderHtml(withComputed(minimalDoc(), [], 100), table, template), "lints", "provenance");
+  assert.ok(clean.includes("<strong>Quality score: 100 of 100</strong>"));
+  assert.ok(clean.includes('<p class="empty">No findings.</p>'));
+  assert.ok(!clean.includes("<table"));
+});
+
+test("a computed block whose rule id and pointer hold markup is escaped in the block, the row section and the checks table", () => {
+  const rule = "<img src=x onerror=alert(1)>";
+  const html = renderHtml(withComputed(minimalDoc(), [
+    { rule, severity: "blocker", pointer: "/chains/0/<b>row</b>", message: "row finding" },
+    { rule, severity: "blocker", pointer: "/meta/<i>doc</i>", message: "document finding" },
+    { rule, severity: "warning", pointer: "/chains/9/<u>gone</u>", message: "unknown-row finding" },
+  ]), table, template);
+  for (const raw of ["<img", "<b>row</b>", "<i>doc</i>", "<u>gone</u>"]) assert.ok(!html.includes(raw), `raw markup printed: ${raw}`);
+  const code = (s: string): string => `<code>${escapeHtml(s)}</code>`;
+  const attention = between(html, 'class="attn"', 'class="toc"');
+  assert.ok(attention.includes(code("/<b>row</b>")) && attention.includes(code("/meta/<i>doc</i>")));
+  const row = between(html, 'id="row-ch-1"', "</article>");
+  assert.ok(row.includes(code("/<b>row</b>")) && row.includes(code(rule)));
+  const checks = sectionOf(html, "lints", "provenance");
+  assert.ok(checks.includes(`<a href="#row-ch-1"><code>ch-1</code></a> ${code("/<b>row</b>")}</td>`));
+  assert.ok(checks.includes(`document ${code("/meta/<i>doc</i>")}</td>`));
+  assert.ok(checks.includes(`unknown row ${code("/chains/9/<u>gone</u>")}</td>`));
+  assert.equal(occurrences(checks, code(rule)), 3, "three groups, each printing the rule escaped");
 });
 
 test("the header carries every field section 9 requires, and the provisional count", () => {
