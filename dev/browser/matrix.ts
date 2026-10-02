@@ -33,3 +33,15 @@ export function expectedFailure(check: CheckId, width: number): ExpectedFailure 
 
 /** Selectors of elements that may scroll sideways inside themselves; empty until the narrow-screen design. */
 export const SCROLL_CONTAINERS: readonly string[] = [];
+
+/** The ids of the report's sections photographed one by one: every <section> but the chains. */
+export const SECTION_PARTS = ["header", "ground-rules", "assumptions", "reviews", "structure", "actions", "lints", "provenance"] as const;
+/** The tallest a part image may be, in pixels; a taller part is written in consecutive pieces. */
+export const MAX_PART_HEIGHT = 1600;
+
+/** The file stem of a row section: its 1-based position, two digits, then its element id without "row-",
+ *  every character outside A-Z a-z 0-9 . _ - replaced by "-". rowFileStem(1, "row-ch-2") is "row-01-ch-2". */
+export function rowFileStem(position: number, id: string): string {
+  const name = id.replace(/^row-/, "").replace(/[^A-Za-z0-9._-]/g, "-");
+  return `row-${String(position).padStart(2, "0")}-${name}`;
+}

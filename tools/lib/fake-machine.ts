@@ -2,8 +2,10 @@
 // /opt/node/bin/node, every path present unless named as missing, and children that answer as
 // Playwright and render.ts would without starting anything. Files live in an in-memory disk, a map
 // of absolute path to text, which `Files` reads and removes from and `host.exists` and
-// `host.listDir` consult; the fake `playwright test` call writes its JSON report there and any
-// further files a test names. It holds no test and no entry point.
+// `host.listDir` consult; the disk may start with files a test names (a report's HTML), and the
+// fake `playwright test` call writes its JSON report there and any further files a test names.
+// `host.listDir` throws for a folder with nothing under it, as the real one does for an absent
+// folder. It holds no test and no entry point.
 
 import { isAbsolute, join } from "node:path";
 import type { Spawn } from "./host.ts";
@@ -26,6 +28,7 @@ export interface FakeOptions {
   stale?: string; // what the results file holds before the run
   cwd?: string; // default: the root
   written?: Record<string, string>; // further files `playwright test` leaves, by absolute path
+  present?: Record<string, string>; // files on the disk before the run, by absolute path
 }
 
 /** One child process as the runner started it. */
@@ -62,7 +65,8 @@ function resultsOf(options: FakeOptions, args: string[]): string | null {
 export function fakeMachine(run: Run["name"], root: string, options: FakeOptions = {}): { machine: Machine } & Recorded {
   const recorded: Recorded = { calls: [], lines: [], errors: [], removed: [] };
   const resultsPath = join(root, "build", "browser", run, "results.json");
-  const disk = new Map<string, string>(options.stale === undefined ? [] : [[resultsPath, options.stale]]);
+  const disk = new Map<string, string>(Object.entries(options.present ?? {}));
+  if (options.stale !== undefined) disk.set(resultsPath, options.stale);
   const under = (path: string, dir: string): boolean => path === dir || path.startsWith(dir + "/");
   const onDisk = (path: string): boolean => [...disk.keys()].some((key) => under(key, path));
   const missing = (path: string): boolean =>
@@ -92,7 +96,11 @@ export function fakeMachine(run: Run["name"], root: string, options: FakeOptions
       isNode: true,
       env: { PATH: "/usr/bin:/bin" },
       exists: (path) => onDisk(path) || !(missing(path) || removed(path)),
-      listDir: (path) => [...new Set([...disk.keys()].filter((key) => key.startsWith(path + "/")).map((key) => key.slice(path.length + 1).split("/")[0]))],
+      listDir: (path) => {
+        const below = [...disk.keys()].filter((key) => key.startsWith(path + "/"));
+        if (below.length === 0) throw new Error(`ENOENT: no such directory, scandir '${path}'`);
+        return [...new Set(below.map((key) => key.slice(path.length + 1).split("/")[0]))];
+      },
       spawn,
       home: "/home/u",
     },

@@ -6,6 +6,9 @@ import { join } from "node:path";
 import type { PlaywrightTestConfig } from "@playwright/test";
 import { ENGINES } from "./matrix.ts";
 
+/** Where the screenshot command writes its images and the print PDF. */
+export const SHOTS_DIR = join(import.meta.dirname, "..", "..", "build", "shots");
+
 /** The configuration of one run: one project per engine, nothing retried, no `.only` allowed. */
 export function browserConfig(run: "gate" | "shots", testMatch: string): PlaywrightTestConfig {
   const out = join(import.meta.dirname, "..", "..", "build", "browser", run);
