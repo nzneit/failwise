@@ -71,15 +71,17 @@ A new analysis runs in seven steps: plan the scope, break the system into elemen
 
 ## Tracking actions as GitHub issues
 
-Once an analysis has actions, you can ask Claude to create a GitHub issue for each one and, later, to read the issues' state back. This happens only when you ask, never as part of a run. It needs the GitHub CLI, `gh`, installed and signed in to the host (`gh auth login`). `plan` and `apply` need an account that can push to the repository, with issues turned on and the repository not archived; `refresh` needs only to read the issues.
+Once an analysis has actions, you can ask Claude to create a GitHub issue for each one and, later, to read the issues' state back. This happens only when you ask, never as part of a run. It needs the GitHub CLI, `gh`, installed and signed in to the host: `gh auth login` for github.com, `gh auth login --hostname <host>` for another host. `plan` and `apply` need an account that can push to the repository, with issues turned on and the repository not archived; `refresh` needs only to read the issues.
 
 Claude first asks where the issues go: the repository, as `owner/repo`, and the label every issue carries, `failwise` unless you choose another. It writes them into the analysis as `meta.tracker`, with the host when it is not github.com and, if the report is published, its address so that each issue links to its row. Then the script `track.ts` does the work in three commands:
 
 - **`plan`** changes nothing. It shows the repository and whether it is public, the text of every issue it would create, each existing issue it would link instead, and anything that needs your attention, such as two issues for one action.
-- **`apply`** creates the issues of that plan, or links the existing ones it found, and records each issue's link on its action. Nothing is created before you agree to the plan shown: `apply` takes the plan's digest and refuses if the analysis or the repository changed since. A repository that is public, or whose visibility cannot be established, is refused unless you agree to that as well.
+- **`apply`** creates the issues of that plan, or links the existing ones it found, and records each issue's link on its action. Before it creates the first issue, it creates the label in the repository if the label is missing. Nothing is created before you agree to the plan shown: `apply` takes the plan's digest and refuses if what the plan would do has changed since it was shown, and Claude then shows you the new plan and asks again. A repository that is public, or whose visibility cannot be established, is refused unless you agree to that as well.
 - **`refresh`** reads each linked issue's state. An issue closed as completed proposes Completed, and one closed as not planned proposes Not Implemented; Claude changes a status only when you confirm it. When the analysis says an action is finished and its issue is still open, close the issue yourself.
 
 Text taken from the analysis is written into an issue's body so that GitHub interprets nothing in it, which puts invisible characters into it, so text copied from an issue, or searched for on GitHub, will not match the analysis exactly. GitHub's listing of labelled issues can lag a new issue by some seconds, so after an `apply` that was interrupted, wait a moment before running `plan` again, and if `plan` reports a duplicate, remove the label from the extra issue.
+
+An analysis that carries a tracker target or a link is refused by the validator of 0.1.0, so people who share an analysis need to share the plugin version too.
 
 ## Status and limitations
 

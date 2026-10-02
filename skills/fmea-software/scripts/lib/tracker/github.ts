@@ -48,10 +48,15 @@ function recordOf(value: unknown, what: string): Json {
   return value;
 }
 
+/** The command that signs gh in to the host: github.com is its default, any other host is named. */
+function signIn(host: string): string {
+  return host === "github.com" ? "gh auth login" : `gh auth login --hostname ${host}`;
+}
+
 /** The status, headers and body of what gh printed, or the failure of gh itself (§8.1's table). */
-function parseAnswer(result: ProcessResult): Answer {
+function parseAnswer(result: ProcessResult, host: string): Answer {
   if (result.missing) throw unavailable("gh was not found: install the GitHub CLI and sign in with gh auth login");
-  if (result.status === 4) throw unavailable("gh is not signed in to the host: run gh auth login");
+  if (result.status === 4) throw unavailable(`gh is not signed in to ${host}: run ${signIn(host)}`);
   const blank = /\r?\n\r?\n/.exec(result.stdout);
   const head = (blank === null ? result.stdout : result.stdout.slice(0, blank.index)).split(/\r?\n/);
   const statusLine = STATUS_LINE.exec(head[0]);
@@ -85,11 +90,11 @@ function messageOf(answer: Answer): string {
 
 /** What an answer other than the expected status means: a wait, a failure, or, for a 404 that
  *  means absent, null. */
-function refusal(answer: Answer, notFound: NotFound): Error | null {
+function refusal(answer: Answer, notFound: NotFound, host: string): Error | null {
   const { status } = answer;
   const wait = status === 403 || status === 429 ? retryAfter(answer) : undefined;
   if (wait !== undefined) return new TrackerWait(wait);
-  if (status === 401) return unavailable("the host answered 401: gh is not signed in to it; run gh auth login");
+  if (status === 401) return unavailable(`${host} answered 401: gh is not signed in to it; run ${signIn(host)}`);
   if (status === 429 || status >= 500) return unavailable(`the host answered ${status}${messageOf(answer)}`);
   if (status === 404 && notFound === "absent") return null;
   if (status === 404 && notFound === "unavailable") return unavailable("the repository was not found, or this account cannot see it");
@@ -102,9 +107,9 @@ async function exchange(ctx: Ctx, request: Request): Promise<{ json: unknown; he
   const method = request.post === true ? ["--method", "POST"] : [];
   const input = request.body === undefined ? [] : ["--input", "-"];
   const args = ["api", "--hostname", ctx.host, "--include", ...method, request.path, ...input];
-  const answer = parseAnswer(await ctx.gh(args, request.body === undefined ? undefined : JSON.stringify(request.body)));
+  const answer = parseAnswer(await ctx.gh(args, request.body === undefined ? undefined : JSON.stringify(request.body)), ctx.host);
   if (answer.status !== request.expect) {
-    const failure = refusal(answer, request.notFound ?? "rejected");
+    const failure = refusal(answer, request.notFound ?? "rejected", ctx.host);
     if (failure !== null) throw failure;
     return undefined;
   }

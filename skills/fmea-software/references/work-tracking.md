@@ -7,7 +7,9 @@ Everything here is the skill's own behaviour, and nothing in it describes any tr
 ## The three commands
 
 `track.ts plan` writes nothing, in the document or in the tracker; it prints the target with its visibility, an outcome for each action, the findings and a digest. [skill-authored]
-`track.ts apply` recomputes the plan, refuses with `TRACKER_PLAN` when its digest is not the one given, and carries out each `create` and `adopt`, writing each link into its action as soon as the item exists. [skill-authored]
+`track.ts apply` recomputes the plan, refuses with `TRACKER_PLAN` when its digest is not the one given, creates the label in the tracker, when it is missing, before the first item it creates, and carries out each `create` and `adopt`, writing each link into its action as soon as the item exists. [skill-authored]
+A yes covers the one plan whose digest was shown: every new plan, after a stop, after a `TRACKER_PLAN` refusal or after any change, is shown again and needs its own explicit yes before `apply`, under rules 5 and 6. [skill-authored]
+`apply` prints nothing until it ends and can take more than a second for each item and one wait of up to two minutes, so run it with a long command timeout. [skill-authored] If the command is cut off, do not run `apply` again: wait a moment and run `plan`, which shows what exists. [skill-authored]
 `track.ts refresh` reads every linked item and prints, for each, the state it saw and a proposal or a finding where there is one; it never changes a status, and with `--write` it stores what it saw in each link. [skill-authored]
 Each command first validates the document as `validate.ts` does, and refuses a document with no `meta.tracker` with `TRACKER_CONFIG`. [skill-authored]
 The script writes `actions[].tracker` and nothing else in the document. [skill-authored]
@@ -16,11 +18,11 @@ An item's key is `<meta.id>/<chain id>/<action id>`, and the item carries it in 
 ## The rules
 
 1. Ask the person for the target, the project the items go in and the label they carry, offering `failwise` as the label, and write `meta.tracker`; never guess a project. [skill-authored] Ask too whether the rendered report is published at an `https://` address, and if it is, write it as `record_url` so that each item links to its row. [skill-authored]
-2. When the document already held a `meta.tracker` that this session did not write, show its provider, host and project and get a yes before the first command that reaches the network, `plan` and `refresh` included. [skill-authored] A `host` the document names, other than the provider's default, is confirmed the same way, whoever wrote it. [skill-authored]
-3. Run `plan` and show its result: the target and its visibility; each item that would be created, with its title, the action, the facts and the origin, which is the text that would be published; each adoption, apart from the creations, with its URL and whether its text differs from the action's; and every finding. [skill-authored]
+2. When the document already held a `meta.tracker` that this session did not write, show its provider, host, project and label, and its `record_url` when it has one, since that address becomes a link in every item, and get a yes before the first command that reaches the network, `plan` and `refresh` included. [skill-authored] A `host` the document names, other than the provider's default, is confirmed the same way, whoever wrote it. [skill-authored]
+3. Run `plan` and show its result: the target and its visibility; the label that will be used, and that it is created in the tracker if absent; each item that would be created, with its title, the action, the facts and the origin, which is the text that would be published; each adoption, apart from the creations, with its URL and whether its text differs from the action's; and every finding. [skill-authored]
 4. Before asking, name in plain words a target that is public or whose visibility is unknown, and name the actions on rows that carry a threat-model handoff. [skill-authored]
-5. Run `apply` only on an explicit yes to that plan, passing its digest with `--plan`, with `--only` and the keys the person kept when they left items out, and with `--public-ok` only when the person agreed to it. [skill-authored]
-6. When `apply` stops, run `plan` again and show it before continuing; the result of the stopped run lists what was done and what remains, and the new plan is smaller and has a new digest. [skill-authored]
+5. Run `apply` only on an explicit yes to that plan, passing its digest with `--plan`, with `--only` and the keys the person kept when they left items out, and with `--public-ok` only when the person agreed to it. [skill-authored] A yes covers one plan, identified by its digest: every new plan, after a stop, after a `TRACKER_PLAN` refusal or after any change, is shown again and needs its own explicit yes before `apply`. [skill-authored]
+6. When `apply` stops or refuses with `TRACKER_PLAN`, run `plan` again, show it, and run `apply` on it only after a new explicit yes to it, under rule 5; the result of a stopped run lists what was done and what remains, and the new plan has a new digest. [skill-authored] When a stopped run's `failure` carries a link, show the person that item's address and say that the document does not yet record it, before running `plan` again. [skill-authored]
 7. After `apply` or `refresh --write`, run `validate.ts --write` and `render.ts`, so that the report shows the links. [skill-authored]
 8. Present each `refresh` proposal on its own, and change a status only when the person confirms it. [skill-authored] Never record Completed because an item is closed: Completed permits a post-action re-rating. [skill-authored]
 9. After a confirmed Completed, the rules of step 6 apply: set `completed_date`, from the proposal when it carries one and from the person when it does not, and offer the post-action re-rating. [skill-authored]
@@ -47,7 +49,7 @@ A finding names keys and URLs only, never a title or a body read from the tracke
 
 | Finding | When | What it asks of the person | Provenance |
 |---|---|---|---|
-| `duplicate` | Two or more items of this analysis carry one key. | Removing the label from the extra items; the action of that key stays `blocked` until then. | [skill-authored] |
+| `duplicate` | Two or more items of this analysis carry one key. | Removing the label from the extra items; its action, if it has one with no link, stays `blocked` until then. | [skill-authored] |
 | `orphan` | An item of this analysis carries a key that belongs to no action without a link. | A decision about the item, which `track.ts` leaves alone. | [skill-authored] |
 | `unmarked` | An item carries the label and no readable marker. | A decision about the item, which `track.ts` leaves alone. | [skill-authored] |
 | `link-mismatch` | An action links to an item whose marker does not carry the action's key. | A check of the link: this is what a copied analysis, or a renamed row, looks like. | [skill-authored] |
@@ -74,9 +76,10 @@ Every other pairing gives neither a proposal nor a finding. [skill-authored]
 
 ## Refusals and failures
 
-`apply` refuses with `TRACKER_PLAN` when the document or the tracker changed after the plan was shown, and the answer is rule 6: run `plan` again and show it. [skill-authored]
-`apply` refuses with `TRACKER_PUBLIC` on a target that is public or whose visibility is unknown, unless `--public-ok` is given under rule 5. [skill-authored]
+`apply` refuses with `TRACKER_PLAN` when what the plan would do has changed since the plan was shown, and the answer is rule 6: run `plan` again, show it, and wait for a new yes. [skill-authored]
+`apply` refuses with `TRACKER_PUBLIC` on a target that is public or whose visibility is unknown, unless `--public-ok` records the person's agreement under rule 5. [skill-authored]
+`plan` and `apply` refuse with `TRACKER_REJECTED`, saying why, a target that cannot take a new item from this person; `refresh` still reads states back from it, since reading back needs only read access. [skill-authored]
 `TRACKER_CONFIG` means the document's `meta.tracker` is missing or its project does not have the form its provider needs, and the person corrects it under rule 1. [skill-authored]
 `TRACKER_UNAVAILABLE` means the tracker or its client could not be reached, and `TRACKER_REJECTED` that the tracker refused a request or answered without what the script needs; each message says why. [skill-authored]
 A command refused or failed before it carries anything out prints the coded line only, except that an invalid document prints what `validate.ts` prints. [skill-authored]
-An `apply` that fails once it has begun carrying out the plan exits with status 3 and prints its result too: what was done, and what remains, the key whose request failed included, so rule 6 applies. [skill-authored]
+An `apply` that fails once it has begun carrying out the plan exits with status 3 and prints its result too, so rule 6 applies: `done` lists what was carried out and `remaining` what was not. [skill-authored] The key whose request failed is in `done` when its item was created and its link recorded before the fault was found, and in `remaining` when nothing was recorded for it; when its item was created and the link could not be written, the key stays in `remaining` and `failure` carries the link. [skill-authored]

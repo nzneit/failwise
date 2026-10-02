@@ -173,6 +173,19 @@ test("describe maps gh missing, exit 4, no status line, 401 and 404 to TRACKER_U
   await assert.rejects(setup([offline]).provider.describe(), { message: /error connecting to api\.github\.com check your internet connection$/ });
 });
 
+test("the not-signed-in messages of exit 4 and of a 401 name the host and the sign-in for it", async () => {
+  const exit4: ProcessResult = { status: 4, stdout: "", stderr: "To get started with GitHub CLI, please run:  gh auth login\n", missing: false };
+  const cases: [string | undefined, string, string][] = [
+    [undefined, "github.com", "gh auth login"],
+    ["github.example.com", "github.example.com", "gh auth login --hostname github.example.com"],
+  ];
+  for (const [host, named, signIn] of cases) {
+    const cfg = host === undefined ? config : { ...config, host };
+    await assert.rejects(setup([exit4], cfg).provider.describe(), { code: "TRACKER_UNAVAILABLE", message: `gh is not signed in to ${named}: run ${signIn}` });
+    await assert.rejects(setup([answer(401, { message: "Requires authentication" })], cfg).provider.describe(), { code: "TRACKER_UNAVAILABLE", message: `${named} answered 401: gh is not signed in to it; run ${signIn}` });
+  }
+});
+
 // listMarked
 
 test("listMarked asks for pages until one holds fewer than 100 entries, and leaves pull requests out", async () => {
