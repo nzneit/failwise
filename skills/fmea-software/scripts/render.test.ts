@@ -696,6 +696,20 @@ test("the structure tree and the actions table carry the document's rows", () =>
   assert.ok(actions.includes("<code>ch-3</code>"), "the actions table is missing ch-3's actions");
 });
 
+test("the actions table is in the order of section 5.2, open actions first and each row id a link", () => {
+  const actions = sectionOf(renderHtml(golden(), table, template), "actions", "lints");
+  assert.ok(actions.includes("<caption>Open actions first, by target date; closed actions last.</caption>"));
+  assert.ok(actions.includes("<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th></tr></thead>"));
+  const rows = [...actions.matchAll(/<td class="nw">([0-9-]+)<\/td><td><a href="#row-([^"]+)"><code>[^<]+<\/code><\/a><\/td><td><code>([^<]+)<\/code>/g)]
+    .map((m) => `${m[1]} ${m[2]} ${m[3]}`);
+  assert.deepEqual(rows, [
+    "2026-10-09 ch-4 act-1", "2026-10-15 ch-1 act-1", "2026-10-16 ch-8 act-1", "2026-10-23 ch-6 act-1", "2026-10-30 ch-3 act-2",
+    "2026-11-02 ch-2 act-1", "2026-11-06 ch-8 act-2", "2026-11-20 ch-7 act-1", "2026-08-14 ch-3 act-1",
+  ]);
+  assert.equal(occurrences(actions, '<tr class="done">'), 1);
+  assert.ok(actions.includes('<tr class="done"><td class="nw">2026-08-14</td>'));
+});
+
 test("slot filling never re-expands a $ pattern from a field value", () => {
   const doc = minimalDoc();
   doc.meta.name = "Cost $& rises $1 and $` here";

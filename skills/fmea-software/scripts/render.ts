@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ScriptError, formatError } from "./lib/codes.ts";
-import type { Action, Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
+import type { Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import { checkSchema } from "./lib/schema.ts";
@@ -305,15 +305,18 @@ function chainsHtml(model: ReportModel): string {
   return keyHtml(model.vocabulary) + indexHtml(model.rows) + model.rows.map(rowSectionHtml).join("");
 }
 
-function actionsHtml(doc: FmeaDocument): string {
-  const rows: string[] = [];
-  for (const chain of doc.chains) {
-    for (const a of chain.actions as Action[]) {
-      rows.push(`<tr><td><code>${e(chain.id)}</code></td><td><code>${e(a.id)}</code></td><td>${e(a.description)}</td><td>${e(a.owner)}</td><td>${e(a.status)}</td><td>${e(a.target_date)}</td><td>${a.completed_date ? e(a.completed_date) : "&mdash;"}</td></tr>`);
-    }
-  }
-  if (rows.length === 0) return `<p class="empty">No actions.</p>`;
-  return `<table><tr><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Target</th><th>Completed</th></tr>${rows.join("")}</table>`;
+const ACTIONS_CAPTION = "Open actions first, by target date; closed actions last.";
+
+function actionRowHtml({ chainId, action, open }: ActionRow): string {
+  const completed = action.completed_date ? `<td class="nw">${e(action.completed_date)}</td>` : "<td>&mdash;</td>";
+  return `${open ? "<tr>" : '<tr class="done">'}<td class="nw">${e(action.target_date)}</td><td>${rowLinkHtml(chainId)}</td><td><code>${e(action.id)}</code></td>` +
+    `<td>${e(action.description)}</td><td>${e(action.owner)}</td><td>${e(action.status)}</td>${completed}</tr>`;
+}
+
+function actionsHtml(actions: ActionRow[]): string {
+  if (actions.length === 0) return `<p class="empty">No actions.</p>`;
+  const head = `<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th></tr></thead>`;
+  return `<table><caption>${e(ACTIONS_CAPTION)}</caption>${head}<tbody>${actions.map(actionRowHtml).join("")}</tbody></table>`;
 }
 
 const CHECKS_INTRO: [string, string, string] = [
@@ -369,7 +372,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),
     structure: structureHtml(doc.elements),
     chains: chainsHtml(model),
-    actions: actionsHtml(doc),
+    actions: actionsHtml(model.actions),
     lints: checksHtml(model.groups, model.tiles.qualityScore),
     provenance: provenanceHtml(doc),
     data: escapeJsonForScript(JSON.stringify(doc, null, 2)),
