@@ -355,11 +355,11 @@ function provenanceHtml(doc: FmeaDocument): string {
   for (const chain of doc.chains) {
     for (const ref of chain.catalog_refs) {
       const record = /C[0-9]{3}/.exec(ref.provenance);
-      rows.push(`<tr><td><code>${e(chain.id)}</code></td><td><code>${e(ref.id)}</code></td><td><code>${e(ref.provenance)}</code></td><td>${record ? `<code>${e(record[0])}</code>` : "&mdash;"}</td></tr>`);
+      rows.push(`<tr><td>${rowLinkHtml(chain.id)}</td><td><code>${e(ref.id)}</code></td><td><code>${e(ref.provenance)}</code></td><td>${record ? `<code>${e(record[0])}</code>` : "&mdash;"}</td></tr>`);
     }
   }
   if (rows.length === 0) return `<p class="empty">No catalog references.</p>`;
-  return `<table><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr>${rows.join("")}</table>`;
+  return `<table><thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
 }
 
 export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string): string {

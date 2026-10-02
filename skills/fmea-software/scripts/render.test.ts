@@ -112,6 +112,8 @@ const indexTable = (html: string): string => between(html, '<table class="index"
 const rowSection = (html: string, id: string): string => between(html, `<article class="row" id="row-${id}">`, "</article>");
 const lint = (severity: Severity, rule: string, pointer: string, message: string): Lint => ({ rule, severity, pointer, message });
 const stripTags = (html: string): string => html.replace(/<[^>]+>/g, "");
+/** The sections whose row ids are links (§4.3, §4.4, §4.5), each with the id of the section after it. */
+const LINKED_SECTIONS: [string, string][] = [["actions", "lints"], ["lints", "provenance"], ["provenance", "fmea-data"]];
 
 // A supplied table: the shipped bands, every cell the vocabulary's first value, shape-checked as --table-file is.
 function suppliedTable(vocabulary: string[]): PriorityTable {
@@ -715,4 +717,47 @@ test("slot filling never re-expands a $ pattern from a field value", () => {
   doc.meta.name = "Cost $& rises $1 and $` here";
   const html = renderHtml(doc, table, template);
   assert.ok(html.includes("<title>Cost $&amp; rises $1 and $` here</title>"), "a $ pattern in a field value was re-expanded by the slot filler");
+});
+
+test("the provenance appendix has a head row, and a chain named like a section keeps its own anchor", () => {
+  const provenance = sectionOf(renderHtml(golden(), table, template), "provenance", "fmea-data");
+  assert.ok(provenance.includes("<thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>"));
+  const doc = minimalDoc();
+  doc.chains[0].id = "actions";
+  const html = renderHtml(doc, table, template);
+  assert.equal(occurrences(html, 'id="actions"'), 1);
+  assert.equal(occurrences(html, 'id="row-actions"'), 1);
+});
+
+test("every href in the report resolves to exactly one id, and the actions, checks and provenance sections link every row id", () => {
+  for (const doc of [golden(), staleRows()]) {
+    const html = renderHtml(doc, table, template);
+    const targets = new Set([...html.matchAll(/href="#([^"]*)"/g)].map((m) => m[1]));
+    assert.ok(targets.size > 0);
+    for (const target of targets) assert.equal(occurrences(html, `id="${target}"`), 1, `#${target} does not resolve to exactly one id`);
+    for (const [id, next] of LINKED_SECTIONS) {
+      const part = sectionOf(html, id, next);
+      for (const m of part.matchAll(/<code>(ch-[^<]*)<\/code>/g)) {
+        assert.ok(part.slice(0, m.index).endsWith(`<a href="#row-${m[1]}">`), `${m[1]} is printed without a link in #${id}`);
+      }
+    }
+  }
+});
+
+test("a chain id holding an injection vector is escaped in the row's id and in every href that targets it", () => {
+  const vector = 'ch-1"><img src=x onerror=alert(1)>';
+  const doc = withComputed(minimalDoc(), [{ rule: "detection-1-without-evidenced-control", severity: "blocker", pointer: "/chains/0/ratings/D", message: "Detection is 1" }]);
+  doc.chains[0].id = vector;
+  doc.chains[0].actions = [{ id: "act-1", description: "add alerting", owner: "T. Tester", status: "Open", target_date: "2026-10-01" }];
+  doc.chains[0].catalog_refs = [{ id: "cat-service-01", provenance: "cites:C036" }];
+  const html = renderHtml(doc, table, template);
+  const escaped = escapeHtml(vector);
+  assert.ok(!html.includes("<img"), "the vector opened a tag");
+  assert.equal(occurrences(html, `id="row-${escaped}"`), 1);
+  const rowTargets = [...html.matchAll(/href="#(row-[^"]*)"/g)].map((m) => m[1]);
+  assert.ok(rowTargets.length > 0);
+  for (const target of rowTargets) assert.equal(target, `row-${escaped}`);
+  for (const [id, next] of LINKED_SECTIONS) {
+    assert.ok(sectionOf(html, id, next).includes(`href="#row-${escaped}"`), `#${id} does not link the row`);
+  }
 });
