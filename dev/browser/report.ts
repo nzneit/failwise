@@ -2,8 +2,8 @@
 // absolute path in FAILWISE_REPORT.
 
 import { pathToFileURL } from "node:url";
-import type { Page } from "@playwright/test";
-import { SCROLL_CONTAINERS, VIEWPORT_HEIGHT } from "./matrix.ts";
+import { test, type Page } from "@playwright/test";
+import { notAsserted, SCROLL_CONTAINERS, VIEWPORT_HEIGHT, type CheckId } from "./matrix.ts";
 
 /** Sets the viewport to `width` by VIEWPORT_HEIGHT and loads the report. Throws when FAILWISE_REPORT is unset,
  *  and when the page loaded has no <main> with an element in it, so neither measurement can pass on
@@ -42,4 +42,13 @@ export async function pastRightEdge(page: Page): Promise<string[]> {
     };
     return [...document.querySelectorAll("main *")].filter(passes).slice(0, 10).map(label);
   }, [...SCROLL_CONTAINERS]);
+}
+
+/** Whether `check` at `width` is measured but not asserted. When it is, records the entry's reason and
+ *  the measurement as a "not asserted" annotation, and the test ends without comparing. */
+export function recordNotAsserted(check: CheckId, width: number, measured: unknown): boolean {
+  const open = notAsserted(check, width);
+  if (open === undefined) return false;
+  test.info().annotations.push({ type: "not asserted", description: `${open.reason}; measured: ${JSON.stringify(measured)}` });
+  return true;
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runGate } from "./check-browser.ts";
-import { EXPECTED_FAILURES } from "../dev/browser/matrix.ts";
+import { EXPECTED_FAILURES, expectedFailure, NOT_ASSERTED } from "../dev/browser/matrix.ts";
 import { fakeMachine, report, type Call, type FakeOptions } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
@@ -9,6 +9,8 @@ const PLAYWRIGHT = "dev/node_modules/.bin/playwright";
 const RESULTS = "/repo/build/browser/gate/results.json";
 const NOT_FOUND = "error NODE: no Node 24.2 or later found on PATH, in NVM_BIN, or under nvm's versions directory";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
+/** The line a passing gate run prints for the checks measured and not asserted, built from the matrix. */
+const NOT_ASSERTED_LINE = `## not asserted: ${NOT_ASSERTED.map((open) => `${open.width}px ${open.check}`).join(", ")} (reasons in dev/browser/matrix.ts)`;
 
 /** The options of the fake machine, unchanged for the gate: see tools/lib/fake-machine.ts. */
 type Fake = FakeOptions;
@@ -41,7 +43,7 @@ test("the default run: dry run, render, Playwright on chromium, the other engine
     "skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out build/browser/report.html --force",
     `${PLAYWRIGHT} test --config dev/browser/playwright.config.ts --project chromium`,
   ]);
-  assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", "## not run here: firefox, webkit"]);
+  assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", NOT_ASSERTED_LINE, "## not run here: firefox, webkit"]);
   assert.equal(result.env[2], "/repo/build/browser/report.html");
 });
 
@@ -49,7 +51,7 @@ test("all three engines: one --project each, and no line about engines not run",
   const result = run(["--engines", "webkit,chromium,firefox"]);
   assert.equal(result.status, 0);
   assert.match(result.calls[2], /--project chromium --project firefox --project webkit$/);
-  assert.deepEqual(result.lines, ["## gate: playwright test over chromium, firefox, webkit (node v24.17.0)"]);
+  assert.deepEqual(result.lines, ["## gate: playwright test over chromium, firefox, webkit (node v24.17.0)", NOT_ASSERTED_LINE]);
 });
 
 test("a repeated engine is run once; an empty item is USAGE", () => {
@@ -161,6 +163,12 @@ test("a failing gate run prints no line about engines not run", () => {
   assert.ok(!result.lines.some((line) => line.startsWith("## not run here")), result.lines.join("\n"));
 });
 
+test("a failing gate run prints no line about checks not asserted", () => {
+  const result = run([], { statuses: { test: 1 } });
+  assert.equal(result.status, 1);
+  assert.ok(!result.lines.some((line) => line.startsWith("## not asserted")), result.lines.join("\n"));
+});
+
 test("no report, an unreadable report, an engine with no test, a skipped test: UNVERIFIED", () => {
   const absent = "error UNVERIFIED: build/browser/gate/results.json is absent or is not Playwright's JSON report";
   const cases: [string[], Fake, string[]][] = [
@@ -244,9 +252,14 @@ test("the stale results file the fake starts with sits where the runner reads it
   assert.equal(machine.files.readText(RESULTS), "{}");
 });
 
-test("the phone-width layout checks are expected failures, each naming the narrow-screen design", () => {
-  for (const check of ["scroll", "edge"] as const) {
-    assert.ok(EXPECTED_FAILURES.some((known) => known.check === check && known.width === 375), check);
+test("the phone-width layout checks are expected failures, and the tablet-width ones are measured and not asserted", () => {
+  assert.deepEqual(EXPECTED_FAILURES.map((known) => `${known.width} ${known.check}`), ["375 scroll", "375 edge"]);
+  assert.deepEqual(NOT_ASSERTED.map((open) => `${open.width} ${open.check}`), ["768 scroll", "768 edge"]);
+  for (const entry of [...EXPECTED_FAILURES, ...NOT_ASSERTED]) {
+    assert.match(entry.reason, /narrow-screen design/, `${entry.check} at ${entry.width}`);
   }
-  for (const known of EXPECTED_FAILURES) assert.match(known.reason, /narrow-screen design/, `${known.check} at ${known.width}`);
+  for (const open of NOT_ASSERTED) {
+    assert.match(open.reason, /fonts/, `${open.check} at ${open.width}`);
+    assert.equal(expectedFailure(open.check, open.width), undefined, "a check is an expected failure or not asserted, never both");
+  }
 });

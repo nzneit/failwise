@@ -14,6 +14,18 @@ export interface ExpectedFailure { check: CheckId; width: number; reason: string
 export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [
   { check: "scroll", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
   { check: "edge", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
+];
+
+/** The expected failure of `check` at `width`, or undefined when that check must pass. */
+export function expectedFailure(check: CheckId, width: number): ExpectedFailure | undefined {
+  return EXPECTED_FAILURES.find((known) => known.check === check && known.width === width);
+}
+
+/** A check whose result depends on the reader's fonts, so it is measured and reported but cannot fail the run. */
+export type NotAsserted = ExpectedFailure;
+
+/** The checks measured and named on every passing run but not asserted, each with the reason. */
+export const NOT_ASSERTED: readonly NotAsserted[] = [
   {
     check: "scroll",
     width: 768,
@@ -26,9 +38,9 @@ export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [
   },
 ];
 
-/** The expected failure of `check` at `width`, or undefined when that check must pass. */
-export function expectedFailure(check: CheckId, width: number): ExpectedFailure | undefined {
-  return EXPECTED_FAILURES.find((known) => known.check === check && known.width === width);
+/** The not-asserted entry of `check` at `width`, or undefined when the check is asserted. */
+export function notAsserted(check: CheckId, width: number): NotAsserted | undefined {
+  return NOT_ASSERTED.find((open) => open.check === check && open.width === width);
 }
 
 /** Selectors of elements that may scroll sideways inside themselves; empty until the narrow-screen design. */

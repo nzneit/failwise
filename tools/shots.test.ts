@@ -63,6 +63,7 @@ test("everything owed is there, one part in two pieces: the count, exit 0", () =
   assert.equal(result.status, 0);
   assert.equal(result.lines.at(-2), "## shots: 57 files under build/shots/"); // 4 widths × 14 files, and the PDF
   assert.equal(result.lines.at(-1), "## not run here: firefox, webkit");
+  assert.ok(!result.lines.some((line) => line.startsWith("## not asserted")), result.lines.join("\n"));
 });
 
 test("build/shots is removed before the run, so an earlier run's files cannot stand in", () => {
