@@ -25,10 +25,10 @@ const WRITTEN = [
   "row-02-ch-2.png",
 ];
 
-/** The fake machine's options, and the brief's three additions: the report's text, the file names
- *  `playwright test` leaves in each build/shots/<engine>/<width>/ folder (and print.pdf when chromium
- *  is among the engines), and the files then taken away again, as paths under build/shots/. A null
- *  `html` leaves the report off the disk, so it cannot be read. */
+/** The fake machine's options, and three for the screenshot command: the report's text, the file
+ *  names `playwright test` leaves in each build/shots/<engine>/<width>/ folder (and print.pdf when
+ *  chromium is among the engines), and the files then taken away again, as paths under build/shots/.
+ *  A null `html` leaves the report off the disk, so it cannot be read. */
 type Fake = Omit<FakeOptions, "written"> & { html?: string | null; written?: string[]; drop?: string[] };
 
 /** The value of `flag` in `argv`, or undefined. */

@@ -10,7 +10,7 @@ const RESULTS = "/repo/build/browser/gate/results.json";
 const NOT_FOUND = "error NODE: no Node 24.2 or later found on PATH, in NVM_BIN, or under nvm's versions directory";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
 
-/** The brief's options of the fake machine: see tools/lib/fake-machine.ts. */
+/** The options of the fake machine, unchanged for the gate: see tools/lib/fake-machine.ts. */
 type Fake = FakeOptions;
 
 /** Runs the gate on a fake machine. `calls` holds every child but `--version`, as its arguments
