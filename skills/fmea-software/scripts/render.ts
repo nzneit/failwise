@@ -9,7 +9,8 @@ import { escapeHtml, escapeJsonForScript } from "./lib/escape.ts";
 import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
-import { provisionalCount, ratingBlocks, sortChains } from "./lib/report-model.ts";
+import { buildReportModel, provisionalCount, sortChains } from "./lib/report-model.ts";
+import type { ActionRow, Attention, PlacedFinding, RankStyle, ReportModel, RowMark, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
@@ -18,6 +19,33 @@ export const TEMPLATE_PATH: string = join(import.meta.dirname, "..", "assets", "
 const FACTORS: Factor[] = ["S", "O", "D"];
 const SLOTS = ["title", "header", "ground-rules", "assumptions", "reviews", "structure", "chains", "actions", "lints", "provenance", "data"] as const;
 
+const KEY_TEXT: Record<"sod" | "priority" | "rpn" | RowMark | "warning", string> = {
+  sod: "Severity, Occurrence and Detection, each rated 1 to 10 against the scales. Higher is worse: more harm, more likely, caught later or not at all.",
+  priority: "Priority, highest first, looked up from S, O and D in the priority table. Rows are sorted by it.",
+  rpn: "S × O × D, kept for comparison with older sheets. It is not used to rank rows.",
+  provisional: "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final.",
+  stale: "The design or the scales changed after the row was rated; the row is due to be rated again.",
+  handoff: "A cause is an attacker; the row is handed to threat modelling.",
+  blocker: "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks.",
+  warning: "An automated check found something for a reviewer to judge; it may be acceptable as it stands.",
+};
+const TILE_LABEL = { priorities: "Rows by priority", ratings: "Ratings not yet reviewed", checks: "Automated checks", actions: "Actions", score: "Quality score" };
+const SCORE_LINE = "share of rows with no blocker";
+const ATTENTION_TITLE = "Needs attention";
+const NEXT_ACTIONS_LABEL = "Next actions due";
+const ATTENTION_WHY = {
+  blockers: "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again.",
+  stale: "A stale row was rated before the design or the scales changed. Its ratings describe the earlier state until it is rated again.",
+  provisional: "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does.",
+  handoffs: "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure.",
+  nextActions: "The open actions with the earliest target dates, three at most. All actions are listed under Actions.",
+};
+const NOTHING_NEEDS_ATTENTION = "Nothing needs attention: no blocker, no stale row, no provisional rating, no handoff and no open action.";
+const CONTENTS: [string, string][] = [
+  ["ground-rules", "Ground rules"], ["assumptions", "Assumptions"], ["reviews", "Review record"], ["structure", "Structure"],
+  ["chains", "Failure chains"], ["actions", "Actions"], ["lints", "Automated checks"], ["provenance", "Provenance"],
+];
+
 function e(s: string): string { return escapeHtml(s); }
 
 function list(items: string[], emptyText: string): string {
@@ -25,7 +53,91 @@ function list(items: string[], emptyText: string): string {
   return `<ul>${items.map((i) => `<li>${i}</li>`).join("")}</ul>`;
 }
 
-function headerHtml(doc: FmeaDocument, provisional: number, total: number): string {
+function badgeHtml(value: string, style: RankStyle): string {
+  return `<span class="pri pri-${style}">${e(value)}</span>`;
+}
+
+function markHtml(name: RowMark | "warning" | "trigger" | "adversarial"): string {
+  if (name === "trigger" || name === "adversarial") return `<span class="mark mark-${name}">${name}</span>`;
+  return `<span class="mark mark-${name}" title="${e(KEY_TEXT[name])}">${name}</span>`;
+}
+
+function rowLinkHtml(chainId: string): string {
+  return `<a href="#row-${e(chainId)}"><code>${e(chainId)}</code></a>`;
+}
+
+function labelHtml(label: string, raw: boolean): string {
+  return raw ? `<code>${e(label)}</code>` : e(label);
+}
+
+function whereHtml(where: Where): string {
+  if (where.kind === "unknown-row") return `unknown row <code>${e(where.pointer)}</code>`;
+  if (where.kind === "document") return `document <code>${e(where.pointer)}</code>`;
+  return where.label === null ? rowLinkHtml(where.chainId) : `${rowLinkHtml(where.chainId)} ${labelHtml(where.label, where.raw)}`;
+}
+
+function tilesHtml(t: Tiles): string {
+  const counts = t.priorities.map((p) => `<span class="pcount">${badgeHtml(p.value, p.style)}${p.count}</span>`).join("");
+  const actionsBig = t.actions.of === null ? e(t.actions.headline) : `${e(t.actions.headline)} <small>${e(t.actions.of)}</small>`;
+  const actionsSub = t.actions.line === null ? "" : `<span class="sub">${e(t.actions.line)}</span>`;
+  const score = t.qualityScore === null ? "&mdash;" : `${t.qualityScore} <small>of 100</small>`;
+  return `<div class="tiles">` +
+    `<a class="tile" href="#chains"><span class="lbl">${e(TILE_LABEL.priorities)}</span><span class="pcounts">${counts}</span><span class="sub">${e(t.chainsLine)}</span></a>` +
+    `<a class="tile" href="#chains"><span class="lbl">${e(TILE_LABEL.ratings)}</span><span class="big">${t.ratings.provisional} <small>of ${t.ratings.total}</small></span><span class="sub">${e(t.ratings.line)}</span></a>` +
+    `<a class="tile${t.checks.alert ? " alert" : ""}" href="#lints"><span class="lbl">${e(TILE_LABEL.checks)}</span><span class="big">${e(t.checks.blockers)}</span><span class="sub">${e(t.checks.warnings)}</span></a>` +
+    `<a class="tile" href="#actions"><span class="lbl">${e(TILE_LABEL.actions)}</span><span class="big">${actionsBig}</span>${actionsSub}</a>` +
+    `<a class="tile" href="#lints"><span class="lbl">${e(TILE_LABEL.score)}</span><span class="big">${score}</span><span class="sub">${e(SCORE_LINE)}</span></a>` +
+    `</div>`;
+}
+
+function attentionItemHtml(what: string, mark: RowMark | null, entries: string[], separator: string, why: string): string {
+  const markPart = mark === null ? "" : `<br>${markHtml(mark)}`;
+  return `<div class="attn-item"><div class="what">${e(what)}${markPart}</div><div>${entries.join(separator)} <span class="why">${e(why)}</span></div></div>`;
+}
+
+const DOT = " &middot; ";
+
+function blockerEntries(lines: PlacedFinding[]): string[] {
+  return lines.map((f) => `${whereHtml(f.where)} &mdash; ${e(f.message)}`);
+}
+
+function staleEntries(rows: { chainId: string; reason: string | null }[]): string[] {
+  return rows.map((r) => (r.reason === null ? rowLinkHtml(r.chainId) : `${rowLinkHtml(r.chainId)} ${e(r.reason)}`));
+}
+
+function provisionalEntries(rows: { chainId: string; factors: string[] }[]): string[] {
+  return rows.map((r) => `${rowLinkHtml(r.chainId)} ${e(r.factors.join(", "))}`);
+}
+
+function handoffEntries(rows: { chainId: string; failureMode: string }[]): string[] {
+  return rows.map((r) => `${rowLinkHtml(r.chainId)} ${e(r.failureMode)}`);
+}
+
+function nextActionEntries(rows: ActionRow[]): string[] {
+  return rows.map(({ chainId, action }) => `${e(action.target_date)} ${rowLinkHtml(chainId)} ${e(action.id)}, ${e(action.owner)}`);
+}
+
+function attentionItems(a: Attention): string[] {
+  const items: string[] = [];
+  if (a.blockers) items.push(attentionItemHtml(a.blockers.label, "blocker", blockerEntries(a.blockers.lines), "<br>", ATTENTION_WHY.blockers));
+  if (a.stale) items.push(attentionItemHtml(a.stale.label, "stale", staleEntries(a.stale.rows), DOT, ATTENTION_WHY.stale));
+  if (a.provisional) items.push(attentionItemHtml(a.provisional.label, "provisional", provisionalEntries(a.provisional.rows), DOT, ATTENTION_WHY.provisional));
+  if (a.handoffs) items.push(attentionItemHtml(a.handoffs.label, "handoff", handoffEntries(a.handoffs.rows), DOT, ATTENTION_WHY.handoffs));
+  if (a.nextActions.length > 0) items.push(attentionItemHtml(NEXT_ACTIONS_LABEL, null, nextActionEntries(a.nextActions), DOT, ATTENTION_WHY.nextActions));
+  return items;
+}
+
+function attentionHtml(a: Attention): string {
+  const items = attentionItems(a);
+  const body = items.length === 0 ? `<p class="attn-none">${e(NOTHING_NEEDS_ATTENTION)}</p>` : items.join("");
+  return `<div class="attn"><h2 class="attn-title">${e(ATTENTION_TITLE)}</h2>${body}</div>`;
+}
+
+function contentsHtml(): string {
+  return `<p class="toc"><b>Contents</b>&nbsp; ${CONTENTS.map(([id, label]) => `<a href="#${e(id)}">${e(label)}</a>`).join("")}</p>`;
+}
+
+function headerHtml(doc: FmeaDocument, model: ReportModel): string {
   const m = doc.meta;
   const rows: [string, string][] = [
     ["Version", String(m.version)],
@@ -39,7 +151,7 @@ function headerHtml(doc: FmeaDocument, provisional: number, total: number): stri
     ["Created", e(m.created)],
     ["Updated", e(m.updated)],
   ];
-  return `<h1>${e(m.name)}</h1>\n<dl class="header">${rows.map(([k, v]) => `<dt>${e(k)}</dt><dd>${v}</dd>`).join("")}</dl>\n<p class="provisional-count">${provisional} of ${total} ratings provisional</p>`;
+  return `<h1>${e(m.name)}</h1>\n<dl class="header">${rows.map(([k, v]) => `<dt>${e(k)}</dt><dd>${v}</dd>`).join("")}</dl>\n${tilesHtml(model.tiles)}\n${attentionHtml(model.attention)}\n${contentsHtml()}`;
 }
 
 function structureHtml(elements: Element[]): string {
@@ -144,15 +256,10 @@ function provenanceHtml(doc: FmeaDocument): string {
 }
 
 export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string): string {
-  let total = 0;
-  let provisional = 0;
-  for (const chain of doc.chains) {
-    total += ratingBlocks(chain).length * FACTORS.length;
-    provisional += provisionalCount(chain);
-  }
+  const model = buildReportModel(doc, table);
   const values: Record<(typeof SLOTS)[number], string> = {
     title: e(doc.meta.name),
-    header: headerHtml(doc, provisional, total),
+    header: headerHtml(doc, model),
     "ground-rules": list(doc.meta.ground_rules.map(e), "No ground rules recorded."),
     assumptions: list(doc.meta.assumptions.map((a) => `${e(a.text)} <span class="empty">(${e(a.owner)}, ${e(a.status)})</span>`), "No assumptions recorded."),
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),

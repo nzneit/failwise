@@ -6,7 +6,7 @@ import { TEMPLATE_PATH, renderHtml, sortChains } from "./render.ts";
 import { escapeHtml } from "./lib/escape.ts";
 import { computePriority, loadTable } from "./lib/table.ts";
 import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
-import type { FmeaDocument } from "./lib/types.ts";
+import type { FmeaDocument, Lint } from "./lib/types.ts";
 
 const table = loadTable();
 const template = readFileSync(TEMPLATE_PATH, "utf8");
@@ -79,6 +79,32 @@ function dataBlock(html: string): string {
   return html.slice(start + open.length, end);
 }
 
+const MARK_TITLES = new Map<string, string>([
+  ["provisional", "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final."],
+  ["stale", "The design or the scales changed after the row was rated; the row is due to be rated again."],
+  ["handoff", "A cause is an attacker; the row is handed to threat modelling."],
+  ["blocker", "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks."],
+  ["warning", "An automated check found something for a reviewer to judge; it may be acceptable as it stands."],
+]);
+const mark = (name: string): string => `<span class="mark mark-${name}" title="${escapeHtml(MARK_TITLES.get(name) ?? "")}">${name}</span>`;
+const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
+
+function between(html: string, open: string, close: string): string {
+  const start = html.indexOf(open);
+  assert.notEqual(start, -1, `missing ${open}`);
+  return html.slice(start, html.indexOf(close, start));
+}
+const sectionOf = (html: string, id: string, next: string): string => between(html, `id="${id}"`, `id="${next}"`);
+const headerOf = (doc: FmeaDocument): string => sectionOf(renderHtml(doc, table, template), "header", "ground-rules");
+
+function withComputed(doc: FmeaDocument, lints: Lint[], quality_score = 0): FmeaDocument {
+  doc.computed = { quality_score, lints, validated_at: "2026-09-12T11:00:00Z", validator_version: "0.1.0" };
+  return doc;
+}
+// One item of the "Needs attention" block, as the markup contract fixes it.
+const attnItem = (what: string, list: string, why: string): string =>
+  `<div class="attn-item"><div class="what">${what}</div><div>${list} <span class="why">${why}</span></div></div>`;
+
 test("the report carries every section id, in the order section 9 fixes", () => {
   const html = renderHtml(golden(), table, template);
   const ids = ["header", "ground-rules", "assumptions", "reviews", "structure", "chains", "actions", "lints", "provenance", "fmea-data"];
@@ -149,7 +175,8 @@ test("the header carries every field section 9 requires, and the provisional cou
   ]) {
     assert.ok(header.includes(pair), `the header is missing ${pair}`);
   }
-  assert.ok(header.includes("8 of 27 ratings provisional"), "the header is missing the provisional count");
+  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">8 <small>of 27</small></span><span class="sub">provisional, in 3 rows</span>'), "the header is missing the provisional tile");
+  assert.ok(!header.includes("ratings provisional"), "the old provisional line is still printed");
 });
 
 test("the provisional count and the row mark cover the post-action ratings", () => {
@@ -158,16 +185,93 @@ test("the provisional count and the row mark cover the post-action ratings", () 
   doc.chains[0].post_ratings = { S: rating(4, "provisional"), O: rating(3), D: rating(2) };
   doc.chains[0].post_priority = computePriority(table, doc.chains[0].post_ratings);
   const html = renderHtml(doc, table, template);
-  assert.ok(html.includes("1 of 6 ratings provisional"), "the header counts the post-action ratings, both in the total and in the provisional count");
+  assert.ok(html.includes('<span class="big">1 <small>of 6</small></span><span class="sub">provisional, in 1 row</span>'), "the tile counts the post-action ratings, both in the total and in the provisional count");
   assert.ok(
     html.includes('<td><code>ch-1</code><span class="mark mark-provisional">provisional</span></td>'),
     "the row is marked provisional on the strength of its post-action ratings alone",
   );
 });
 
+test("the header shows the five tiles, each linking to its section", () => {
+  const header = headerOf(golden());
+  assert.equal(occurrences(header, '<a class="tile'), 5);
+  for (const tile of [
+    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>4</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">8 failure chains</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">8 <small>of 27</small></span><span class="sub">provisional, in 3 rows</span></a>',
+    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">10 warnings</span></a>',
+    '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
+    '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">88 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
+  ]) {
+    assert.ok(header.includes(tile), `the header is missing the tile ${tile}`);
+  }
+});
+
+test("the Needs attention block lists the fixture's blocker, provisional ratings, handoff and next actions, in that order", () => {
+  const header = headerOf(golden());
+  assert.ok(header.includes('<div class="attn"><h2 class="attn-title">Needs attention</h2><div class="attn-item">'));
+  const items = [
+    attnItem(`1 row fails an automated check<br>${mark("blocker")}`,
+      '<a href="#row-ch-7"><code>ch-7</code></a> D &mdash; Detection is 1 with no existing detection control carrying evidence',
+      "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again."),
+    attnItem(`8 ratings not yet reviewed<br>${mark("provisional")}`,
+      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
+      "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does."),
+    attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
+      '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
+      "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure."),
+    attnItem("Next actions due",
+      '2026-10-09 <a href="#row-ch-4"><code>ch-4</code></a> act-1, Platform team &middot; 2026-10-15 <a href="#row-ch-1"><code>ch-1</code></a> act-1, Payments team &middot; 2026-10-16 <a href="#row-ch-8"><code>ch-8</code></a> act-1, Payments team',
+      "The open actions with the earliest target dates, three at most. All actions are listed under Actions."),
+  ];
+  const at = items.map((item) => header.indexOf(item));
+  assert.ok(at.every((i) => i !== -1), `an item is missing or misprinted: ${at.join(", ")}`);
+  assert.deepEqual(at, [...at].sort((a, b) => a - b));
+  assert.equal(occurrences(header, '<div class="attn-item">'), 4, "an empty item (stale rows) is left out");
+});
+
+test("the Needs attention block lists stale rows with their reasons in words", () => {
+  const header = headerOf(staleRows());
+  const stale = header.indexOf(attnItem(`2 rows due to be rated again<br>${mark("stale")}`,
+    '<a href="#row-ch-1"><code>ch-1</code></a> the scales changed &middot; <a href="#row-ch-2"><code>ch-2</code></a> its element changed',
+    "A stale row was rated before the design or the scales changed. Its ratings describe the earlier state until it is rated again."));
+  assert.notEqual(stale, -1, "the stale item is missing or misprinted");
+  assert.ok(stale < header.indexOf("3 ratings not yet reviewed"), "the stale item comes before the provisional item");
+});
+
+test("a blocker outside any row names the document or the unknown row, with no link", () => {
+  const doc = withComputed(minimalDoc(), [
+    { rule: "metadata-without-ground-rules", severity: "blocker", pointer: "/meta/ground_rules", message: "the document records no ground rules" },
+    { rule: "detection-1-without-evidenced-control", severity: "blocker", pointer: "/chains/9/ratings/D", message: "Detection is 1 with no existing detection control carrying evidence" },
+  ]);
+  assert.ok(headerOf(doc).includes(attnItem(`The document fails an automated check<br>${mark("blocker")}`,
+    "unknown row <code>/chains/9/ratings/D</code> &mdash; Detection is 1 with no existing detection control carrying evidence<br>document <code>/meta/ground_rules</code> &mdash; the document records no ground rules",
+    "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again.")));
+});
+
+test("with nothing to list, the Needs attention block holds its one sentence", () => {
+  const header = headerOf(minimalDoc());
+  assert.ok(header.includes('<div class="attn"><h2 class="attn-title">Needs attention</h2><p class="attn-none">Nothing needs attention: no blocker, no stale row, no provisional rating, no handoff and no open action.</p></div>'));
+  assert.equal(occurrences(header, "attn-item"), 0);
+});
+
+test("a document without a computed block shows an em dash in the quality score tile", () => {
+  const header = headerOf(minimalDoc());
+  assert.ok(header.includes('<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">&mdash;</span><span class="sub">share of rows with no blocker</span></a>'));
+  assert.ok(header.includes('<a class="tile" href="#lints"><span class="lbl">Automated checks</span><span class="big">0 blockers</span><span class="sub">0 warnings</span></a>'), "no finding, no alert");
+  assert.ok(header.includes('<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">none</span></a>'));
+});
+
+test("the header ends with the contents line, after the metadata, the tiles and the block", () => {
+  const header = headerOf(golden());
+  const toc = '<p class="toc"><b>Contents</b>&nbsp; <a href="#ground-rules">Ground rules</a><a href="#assumptions">Assumptions</a><a href="#reviews">Review record</a><a href="#structure">Structure</a><a href="#chains">Failure chains</a><a href="#actions">Actions</a><a href="#lints">Automated checks</a><a href="#provenance">Provenance</a></p>';
+  const at = ['<dl class="header">', '<div class="tiles">', '<div class="attn">', toc].map((s) => header.indexOf(s));
+  assert.ok(at.every((i) => i !== -1), `a header part is missing: ${at.join(", ")}`);
+  assert.deepEqual(at, [...at].sort((a, b) => a - b));
+});
+
 test("row marks: one handoff, three provisional rows, no stale row", () => {
   const html = renderHtml(golden(), table, template);
-  const count = (needle: string): number => html.split(needle).length - 1;
+  const count = (needle: string): number => occurrences(sectionOf(html, "chains", "actions"), needle);
   assert.equal(count('class="mark mark-handoff"'), 1);
   assert.equal(count('class="mark mark-provisional"'), 3);
   assert.equal(count('class="mark mark-stale"'), 0);
@@ -175,7 +279,7 @@ test("row marks: one handoff, three provisional rows, no stale row", () => {
 
 test("a flagged row carries the stale mark; a cleared row carries none", () => {
   const html = renderHtml(staleRows(), table, template);
-  const count = (needle: string): number => html.split(needle).length - 1;
+  const count = (needle: string): number => occurrences(sectionOf(html, "chains", "actions"), needle);
   assert.equal(count('class="mark mark-stale"'), 2);
   assert.ok(html.includes('<td><code>ch-1</code><span class="mark mark-stale">stale</span><span class="mark mark-provisional">provisional</span></td>'), "ch-1 is flagged scales-version with three provisional ratings");
   assert.ok(html.includes('<td><code>ch-2</code><span class="mark mark-stale">stale</span></td>'), "ch-2 is flagged element-changed and fully re-scored");
@@ -283,7 +387,7 @@ test("the CLI writes the report and exits 0", () => {
     const r = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out]);
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
-    assert.ok(readFileSync(out, "utf8").includes("8 of 27 ratings provisional"));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">8 <small>of 27</small></span>'));
   });
 });
 
@@ -309,7 +413,7 @@ test("an existing output needs --force", () => {
     assert.equal(readFileSync(out, "utf8"), "old report\n");
     const forced = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out, "--force"]);
     assert.equal(forced.status, 0);
-    assert.ok(readFileSync(out, "utf8").includes("8 of 27 ratings provisional"));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">8 <small>of 27</small></span>'));
   });
 });
 
