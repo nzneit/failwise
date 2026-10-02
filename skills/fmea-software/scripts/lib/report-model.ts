@@ -56,11 +56,15 @@ export type GroupLocation =
 // The findings that share severity, rule and message, with every place they point to (§5.6).
 export interface CheckGroup { severity: Severity; rule: string; message: string; count: number; locations: GroupLocation[] }
 
+// One action of the document with its chain's id, for the Actions section (§5.2).
+export interface ActionRow { chainId: string; action: Action; open: boolean }
+
 export interface ReportModel {
   tiles: Tiles;
   vocabulary: { value: string; style: RankStyle }[];   // the loaded table's vocabulary in order, for the key
   rows: RowModel[];                                    // the index order of sortChains
   groups: CheckGroup[];                                // blocker groups first, then by first finding
+  actions: ActionRow[];                                // open first, then by target date, ties in document order (§5.2)
 }
 
 // "1 row", "0 rows": the singular only for exactly one (§4).
@@ -249,6 +253,16 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
   });
 }
 
+// Every action in document order (chain position, then action position), then sorted open
+// before closed and by target date; the sort is stable, so ties keep document order (§5.1, §5.2).
+function orderActions(doc: FmeaDocument): ActionRow[] {
+  const rows = doc.chains.flatMap((chain) => chain.actions.map((action) => ({ chainId: chain.id, action, open: isOpen(action) })));
+  return rows.sort((a, b) => {
+    if (a.open !== b.open) return a.open ? -1 : 1;
+    return a.action.target_date < b.action.target_date ? -1 : a.action.target_date > b.action.target_date ? 1 : 0;
+  });
+}
+
 export function buildReportModel(doc: FmeaDocument, table: PriorityTable): ReportModel {
   const tiles: Tiles = {
     priorities: priorityCounts(doc, table.vocabulary),
@@ -264,5 +278,6 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })),
     rows: buildRows(doc, table, located),
     groups: groupFindings(located),
+    actions: orderActions(doc),
   };
 }

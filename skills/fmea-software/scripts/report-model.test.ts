@@ -262,3 +262,24 @@ test("two chains with the same id keep their own marks, findings and locations",
   ]);
   assert.deepEqual(model.groups[0].locations, [{ kind: "row", chainId: "ch-1", labels: [{ text: "D", raw: false }] }]);
 });
+
+test("actions: the fixture's nine actions, open by target date, then the closed one", () => {
+  const rows = modelOf(fixture()).actions;
+  assert.deepEqual(rows.map((r) => `${r.chainId} ${r.action.id} ${r.action.target_date}`), [
+    "ch-4 act-1 2026-10-09", "ch-1 act-1 2026-10-15", "ch-8 act-1 2026-10-16", "ch-6 act-1 2026-10-23",
+    "ch-3 act-2 2026-10-30", "ch-2 act-1 2026-11-02", "ch-8 act-2 2026-11-06", "ch-7 act-1 2026-11-20",
+    "ch-3 act-1 2026-08-14",
+  ]);
+  assert.deepEqual(rows.map((r) => r.open), [true, true, true, true, true, true, true, true, false]);
+});
+
+test("actions: ties keep document order, and both closed statuses go last", () => {
+  const doc = docOf(
+    { id: "ch-9", actions: [action("a1", "Completed", "2026-10-01"), action("a2", "Open", "2026-10-10"), action("a3", "Not Implemented", "2026-09-01"), action("a4", "Implementation pending", "2026-10-10")] },
+    { id: "ch-1", actions: [action("b1", "Decision pending", "2026-10-10"), action("b2", "Open", "2026-10-05"), action("b3", "Completed", "2026-09-01")] },
+  );
+  assert.deepEqual(modelOf(doc).actions.map((r) => `${r.chainId} ${r.action.id} ${r.open ? "open" : "closed"}`), [
+    "ch-1 b2 open", "ch-9 a2 open", "ch-9 a4 open", "ch-1 b1 open",
+    "ch-9 a3 closed", "ch-1 b3 closed", "ch-9 a1 closed",
+  ]);
+});
