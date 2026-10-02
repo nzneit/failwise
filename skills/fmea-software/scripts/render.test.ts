@@ -839,7 +839,7 @@ test("a null url renders the key as text, with no anchor", () => {
   assert.ok(!html.slice(0, html.indexOf('id="fmea-data"')).includes("http://github.example.com/x"), "the url is not printed in the report");
 });
 
-test("a detail holding markup is entity-escaped wherever it is printed", () => {
+test("a key holding markup is entity-escaped, and a detail holding markup is not printed in the tracker text", () => {
   const evil = `<img src=x onerror="alert(1)">&'`;
   const html = renderHtml(linkedAction({ key: evil, observed: { state: "open", detail: evil, date: "2026-10-02" } }), table, template);
   assert.ok(!html.includes("<img src=x"), "no raw markup");

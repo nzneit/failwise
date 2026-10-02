@@ -185,12 +185,22 @@ test("the digest is 64 hex characters and is stable for the same inputs", () => 
   assert.equal(computePlan(clone(doc), { ...target }, clone(listing)).digest, plan.digest);
 });
 
-test("the digest changes with the label, the visibility, a create's text, a create added and an adoption's item id", () => {
+test("the digest changes with the host, the project, the label, the visibility, a create's text, a fact, the origin URL, a create added and an adoption's item id", () => {
   const { doc, listing } = digestCase();
   const base = computePlan(doc, target, listing).digest;
 
+  assert.notEqual(computePlan(doc, { ...target, host: "github.example.com" }, listing).digest, base);
+  assert.notEqual(computePlan(doc, { ...target, project: "o/other" }, listing).digest, base);
   assert.notEqual(computePlan(doc, { ...target, label: "other" }, listing).digest, base);
   assert.notEqual(computePlan(doc, { ...target, visibility: "public" }, listing).digest, base);
+
+  const refacted = clone(doc);
+  refacted.chains[0].failure_mode = "stops serving some requests";
+  assert.notEqual(computePlan(refacted, target, listing).digest, base);
+
+  const published = clone(doc);
+  if (published.meta.tracker) published.meta.tracker.record_url = "https://example.com/report.html";
+  assert.notEqual(computePlan(published, target, listing).digest, base);
 
   const reworded = clone(doc);
   reworded.chains[0].actions[1].description = "do act-2 differently";

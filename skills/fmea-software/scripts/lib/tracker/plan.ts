@@ -3,7 +3,8 @@
 
 import { createHash } from "node:crypto";
 import type { ActionStatus, FmeaDocument, TrackerConfig, TrackerLink } from "../types.ts";
-import { actionRefs, buildItem, splitKey, textHash, type ActionRef } from "./items.ts";
+import { actionRefs, buildItem, splitKey, textHash } from "./items.ts";
+import type { ActionRef } from "./items.ts";
 import type { ItemContent, Link, RemoteItem, Target, TrackedItem } from "./provider.ts";
 
 export type Outcome = "linked" | "create" | "adopt" | "skip" | "blocked";
