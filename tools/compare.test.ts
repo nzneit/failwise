@@ -16,12 +16,12 @@ const HTML = SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join(""
   '<section id="chains"><div class="key"></div><table class="index"></table>' +
   '<article class="row" id="row-ch-1"></article><article class="row" id="row-ch-2"></article></section>';
 const N = PARTS.length * VIEWS.length; // views owed on one engine
-/** Recorded from Playwright 1.63.0 on 2026-10-02 (spec section 3.3). */
+/** The Playwright version the messages below were recorded from, on 2026-10-02: a later one may word them otherwise. */
 const RECORDED_WITH = "1.63.0";
 const SIZED = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  Expected an image 327px by 2957px, received 351px by 1930px. 57668 pixels (ratio 0.06 of all image pixels) are different.\n\n  Snapshot: 375--header.png\n";
 /** A size change with no pixel count, as Playwright 1.63.0 wrote it on 2026-10-02 (its call log left off). */
 const SIZE_ONLY = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#reviews')\n  Expected an image 327px by 230px, received 327px by 231px. \n\n  Snapshot: 375/reviews.png\n";
-const SAME_SIZE ="Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  2524 pixels (ratio 0.01 of all image pixels) are different.\n\n  Snapshot: 1280--header.png\n";
+const SAME_SIZE = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  2524 pixels (ratio 0.01 of all image pixels) are different.\n\n  Snapshot: 1280--header.png\n";
 
 /** Every owed view of the default report on chromium, each an "expected" test. */
 function owedTests(): ViewTest[] {
@@ -178,6 +178,7 @@ test("the summary names the before commit and both hashes, and says when the rep
   const same = run([]).read("/repo/build/compare/summary.md") ?? "";
   assert.ok(same.includes(`- Before: ${MERGE_BASE}, where HEAD left main\n`));
   assert.ok(same.includes("- After: the working tree, with no uncommitted change\n"));
+  assert.ok(same.includes(`- Views owed: ${N}\n`));
   assert.ok(same.includes(`- before.html SHA-256: ${sha(HTML)}\n- after.html SHA-256: ${sha(HTML)}\n- The two reports are byte for byte the same.\n`));
   const after = HTML + "<p>changed</p>";
   const differ = run(["--base", "HEAD"], { rendered: { before: HTML, after }, git: { dirty: true } }).read("/repo/build/compare/summary.md") ?? "";
@@ -286,7 +287,7 @@ test("no part on both sides: UNVERIFIED, exit 1, no pass started, the summary wr
   assert.ok(!result.lines.some((line) => line.startsWith("## compare:")));
   assert.equal(result.read("/gh/output"), null);
   const summary = result.read("/repo/build/compare/summary.md") ?? "";
-  assert.ok(summary.includes("- Views compared: 0\n"));
+  assert.ok(summary.includes("- Views owed: 0\n"));
   assert.ok(summary.includes("## Parts added\n\n- actions\n"));
   assert.ok(summary.includes("## Parts removed\n\n- header\n"));
   assert.ok(summary.includes("The comparison is incomplete."));

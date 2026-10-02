@@ -1,6 +1,6 @@
 // What the report comparison (tools/compare.ts) knows without touching the machine: the parts of a
 // rendered report, which of them are owed a comparison, the class of one view from Playwright's
-// JSON report (same, changed or unverified, section 6.4 of the narrow-screen design), the summary
+// JSON report (same, changed, or unverified when it cannot be judged either way), the summary
 // line of a changed view read from Playwright's message, and the text of build/compare/summary.md.
 // The class never depends on the wording of a message; only the summary line does.
 
@@ -99,7 +99,8 @@ function failed(test: ReportedTest): Verdict {
   return { kind: "changed", expected, actual, diff, detail: changeDetail(test.message) };
 }
 
-/** One view's class (§6.4). `referenced` is whether the first pass's test of the view is "expected" and its
+/** One view's class: unverified without a reference or a second result, same when the second pass passed, changed
+ *  when it failed with the three images, else unverified. `referenced` is whether the first pass's test of the view is "expected" and its
  *  reference file exists. */
 export function judge(referenced: boolean, second: ReportedTest | undefined): Verdict {
   if (!referenced) return { kind: "unverified", reason: "the first pass wrote no reference" };
@@ -152,7 +153,7 @@ export function summaryText(summary: Summary): string {
     `- after.html SHA-256: ${hashes.after}`,
     ...(hashes.before === hashes.after ? ["- The two reports are byte for byte the same."] : []),
     `- Engines: ${summary.engines.join(", ")}`,
-    `- Views compared: ${summary.views}`,
+    `- Views owed: ${summary.views}`,
   ];
   const sections = [
     "# Report comparison",

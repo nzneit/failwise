@@ -354,7 +354,7 @@ test("a document without a computed block shows an em dash in the quality score 
 
 test("the header ends with the contents line, after the metadata, the tiles and the block", () => {
   const header = headerOf(golden());
-  const toc = '<p class="toc"><b>Contents</b><a href="#ground-rules">Ground rules</a><a href="#assumptions">Assumptions</a><a href="#reviews">Review record</a><a href="#structure">Structure</a><a href="#chains">Failure chains</a><a href="#actions">Actions</a><a href="#lints">Automated checks</a><a href="#provenance">Provenance</a></p>';
+  const toc = '<p class="toc"><b>Contents</b> <a href="#ground-rules">Ground rules</a> <a href="#assumptions">Assumptions</a> <a href="#reviews">Review record</a> <a href="#structure">Structure</a> <a href="#chains">Failure chains</a> <a href="#actions">Actions</a> <a href="#lints">Automated checks</a> <a href="#provenance">Provenance</a></p>';
   const at = ['<dl class="header">', '<div class="tiles">', '<div class="attn">', toc].map((s) => header.indexOf(s));
   assert.ok(at.every((i) => i !== -1), `a header part is missing: ${at.join(", ")}`);
   assert.deepEqual(at, [...at].sort((a, b) => a - b));

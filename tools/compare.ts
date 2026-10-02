@@ -18,7 +18,8 @@
 // images in changed/<engine>/<view>/; build/compare/html/ is Playwright's own viewer of the second
 // pass. build/compare is removed first, so an earlier run's files cannot stand in. With
 // GITHUB_STEP_SUMMARY set the summary is appended to it; with GITHUB_OUTPUT set and exit status 0,
-// `changed=<count>`. Exit status 0 when every view is same or changed, 1 otherwise. The work of the
+// `changed=<count>`. Exit status 0 when every view is same or changed, 1 otherwise, and 1 when no
+// part of the report is on both sides, since then nothing was compared. The work of the
 // runner is tools/lib/browser.ts, the comparison's own in tools/lib/compare-views.ts. When a git or
 // tar step fails, the child's own stderr, if it wrote any, is shown before the coded line. Coded lines:
 //
@@ -29,21 +30,20 @@
 //                          started, no merge base, git status, git archive or tar failing, either
 //                          renderer failing
 //   error BROWSER: ...     the build of an engine asked for is not installed
-//   error UNVERIFIED: ...  a report that could not be read, a pass's JSON report absent or unreadable,
-//                          and each view that is neither same nor changed
+//   error UNVERIFIED: ...  a report that could not be read, no part of the report on both sides, a
+//                          pass's JSON report absent or unreadable, and each view that is neither
+//                          same nor changed
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { isEntry } from "./lib/entry.ts";
-import { defaultMachine, runBrowser, type Machine, type Run, type ReportedTest, type Session } from "./lib/browser.ts";
+import { defaultMachine, FIXTURE, RENDER, runBrowser, type Machine, type Run, type ReportedTest, type Session } from "./lib/browser.ts";
 import { judge, partsOf, planParts, summaryText, type PartPlan, type Verdict } from "./lib/compare-views.ts";
 import { VIEWS, type Engine, type View } from "../dev/browser/matrix.ts";
 
 const OUT = "build/compare";
 const TAR = `${OUT}/before.tar`;
 const TREE = `${OUT}/before-tree`;
-const RENDER = "skills/fmea-software/scripts/render.ts";
-const FIXTURE = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
 
 /** The two passes of Playwright: the before report updates the references, the after report is compared. */
 const PASSES = [

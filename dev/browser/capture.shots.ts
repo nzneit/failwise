@@ -37,7 +37,8 @@ for (const width of WIDTHS) {
     await openReport(page, width);
     const dir = join(SHOTS_DIR, testInfo.project.name, String(width));
     await page.screenshot({ path: join(dir, "page.png"), fullPage: true });
-    // The index is its frame when the table has one (§5.7), so it shows as the reader first sees it.
+    // The index is its frame when the table has one, and the table when it does not, so it shows as the reader
+    // first sees it and not as a wide table cut at the page's edge.
     for (const stem of [...SECTION_PARTS, "key", "index"]) await writePart(page, await partLocator(page, stem), dir, stem);
     const rows = page.locator("article.row");
     const ids = await rows.evaluateAll((elements) => elements.map((element) => element.id));

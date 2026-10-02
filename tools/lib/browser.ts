@@ -1,11 +1,13 @@
-// The runner both browser commands share: tools/check-browser.ts (the gate) and the screenshot
-// command. It starts Playwright's CLI, the entry under dev/node_modules/.bin, as a child process
-// through the Node 24.2 or later that tools/lib/host.ts finds, and turns Playwright's JSON report
-// into a verdict that fails closed: an engine asked for that ran no test, a skipped test, a test
-// with a status it does not know, or a report that is absent or unreadable each make the run exit 1
-// with an UNVERIFIED line. It imports no package; the one file of dev/browser/ it reads is
-// matrix.ts. Everything it touches goes through an injected `Machine`, so the tests stand in for
-// the machine (tools/lib/fake-machine.ts).
+// The runner the three browser commands share: tools/check-browser.ts (the gate), tools/shots.ts
+// (the screenshots) and tools/compare.ts (the report comparison). It parses their flags, finds a
+// Node 24.2 or later through tools/lib/host.ts, checks the tooling and the browsers, and starts
+// Playwright's CLI, the entry under dev/node_modules/.bin, as a child process. For the gate and the
+// screenshots it turns Playwright's JSON report into the default verdict, which fails closed: an
+// engine asked for that ran no test, a skipped test, a test with a status it does not know, or a
+// report that is absent or unreadable each make the run exit 1 with an UNVERIFIED line. The
+// comparison gives its own `execute` and judges for itself, through the same session. It imports no
+// package; the one file of dev/browser/ it reads is matrix.ts. Everything it touches goes through an
+// injected `Machine`, so the tests stand in for the machine (tools/lib/fake-machine.ts).
 
 import { appendFileSync, copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -13,8 +15,9 @@ import { ENGINES, type Engine } from "../../dev/browser/matrix.ts";
 import { defaultHost, findNode, MIN_LABEL, type Host } from "./host.ts";
 
 const PLAYWRIGHT = "dev/node_modules/.bin/playwright";
-const RENDER = "skills/fmea-software/scripts/render.ts";
-const FIXTURE = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
+/** The renderer and the fixture every browser command renders, repository-relative. */
+export const RENDER = "skills/fmea-software/scripts/render.ts";
+export const FIXTURE = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
 const OUT = "build/browser";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
 const ENGINE_LIST = ENGINES.join(", ");

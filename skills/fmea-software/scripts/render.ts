@@ -53,7 +53,8 @@ function list(items: string[], emptyText: string): string {
   return `<ul>${items.map((i) => `<li>${i}</li>`).join("")}</ul>`;
 }
 
-/** A table in a frame that scrolls sideways on its own, takes focus and carries a label no other frame shares (§4.1). */
+/** A table in a frame that scrolls sideways on its own, takes focus so a keyboard can scroll it, and carries a label
+ *  no other frame shares, so a screen reader names each region apart. */
 function frameHtml(label: string, tableHtml: string): string {
   return `<div class="frame" tabindex="0" role="region" aria-label="${e(label)}">${tableHtml}</div>`;
 }
@@ -144,7 +145,7 @@ function attentionHtml(a: Attention): string {
 }
 
 function contentsHtml(): string {
-  return `<p class="toc"><b>Contents</b>${CONTENTS.map(([id, label]) => `<a href="#${e(id)}">${e(label)}</a>`).join("")}</p>`;
+  return `<p class="toc"><b>Contents</b> ${CONTENTS.map(([id, label]) => `<a href="#${e(id)}">${e(label)}</a>`).join(" ")}</p>`;
 }
 
 function headerHtml(doc: FmeaDocument, model: ReportModel): string {
