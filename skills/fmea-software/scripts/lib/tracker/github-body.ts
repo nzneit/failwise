@@ -5,7 +5,7 @@ import { splitKey } from "./items.ts";
 import { CLOSING_LINE } from "./provider.ts";
 import type { ItemContent, Marker, TrackedItem } from "./provider.ts";
 
-const WORD_JOINER = "⁠";
+const WORD_JOINER = "\u2060";
 const HEX_RUN = /[0-9a-fA-F]{7,}/g;
 const MARKER_LINE = /^<!-- failwise:key=(\S+) text=([0-9a-f]{12}) -->$/;
 

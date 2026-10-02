@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { literal, readMarker, renderBody, renderTitle } from "./lib/tracker/github-body.ts";
 import { CLOSING_LINE } from "./lib/tracker/provider.ts";
 import { actionRefs, buildItem } from "./lib/tracker/items.ts";
@@ -137,4 +139,9 @@ test("renderTitle is the content's title", () => {
   const item = itemOf("Add a retry budget");
   assert.equal(renderTitle(item.content), item.content.title);
   assert.equal(renderTitle({ ...item.content, title: "@someone #1 <b>" }), "@someone #1 <b>");
+});
+
+test("the source of github-body.ts holds no raw word joiner", () => {
+  const source = readFileSync(join(import.meta.dirname, "lib", "tracker", "github-body.ts"), "utf8");
+  assert.ok(!source.includes("\u2060"));
 });
