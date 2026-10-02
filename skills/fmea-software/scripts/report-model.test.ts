@@ -5,7 +5,7 @@ import { sortChains as renderSortChains } from "./render.ts";
 import { loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { clone, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
-import type { Action, ActionStatus, Chain, FmeaDocument, Lint } from "./lib/types.ts";
+import type { Action, ActionStatus, Chain, FmeaDocument, Lint, Severity } from "./lib/types.ts";
 
 const table = loadTable();
 const fixture = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
@@ -110,4 +110,77 @@ test("a document with no chains shows zeros on every tile and none on the Action
     actions: { headline: "none", of: null, line: null },
     qualityScore: 0,
   });
+});
+
+// A finding for a built document. The message defaults to the pointer, so that findings which
+// differ in pointer fall into groups of their own.
+const finding = (pointer: string, severity: Severity = "warning", rule = "test-rule", message = pointer): Lint =>
+  ({ rule, severity, pointer, message });
+
+const PROVISIONAL = "The rating is still provisional and needs re-scoring";
+
+test("a finding is a row, unknown-row or document finding by its chain index", () => {
+  const doc = withComputed(minimalDoc(), ["/chains/0/ratings/S", "/chains/1/ratings/D", "/meta/ground_rules", "/chains", ""].map((p) => finding(p)));
+  assert.deepEqual(modelOf(doc).groups.map((g) => g.locations), [
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "S", raw: false }] }],
+    [{ kind: "unknown-row", pointer: "/chains/1/ratings/D" }],
+    [{ kind: "document", pointer: "/meta/ground_rules" }],
+    [{ kind: "document", pointer: "/chains" }],
+    [{ kind: "document", pointer: "" }],
+  ]);
+});
+
+test("a row finding is labelled by where its pointer lies within the row", () => {
+  const doc = minimalDoc();
+  doc.chains[0].actions = [action("act-7", "Open", "2026-10-09")];
+  const pointers = ["/chains/0", "/chains/0/ratings/O", "/chains/0/post_ratings/D", "/chains/0/actions/0",
+    "/chains/0/actions/1", "/chains/0/ratings/S/review", "/chains/0/causes/0/text"];
+  assert.deepEqual(modelOf(withComputed(doc, pointers.map((p) => finding(p)))).groups.map((g) => g.locations), [
+    [{ kind: "row", chainId: "ch-1", labels: [] }],
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "O", raw: false }] }],
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "post-action D", raw: false }] }],
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "act-7", raw: false }] }],
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "/actions/1", raw: true }] }],
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "/ratings/S/review", raw: true }] }],
+    [{ kind: "row", chainId: "ch-1", labels: [{ text: "/causes/0/text", raw: true }] }],
+  ]);
+});
+
+test("the fixture's findings form four groups, blockers first, rating-provisional as one group over three rows", () => {
+  const S = { text: "S", raw: false };
+  const O = { text: "O", raw: false };
+  const D = { text: "D", raw: false };
+  assert.deepEqual(modelOf(fixture()).groups, [
+    { severity: "blocker", rule: "detection-1-without-evidenced-control", message: "Detection is 1 with no existing detection control carrying evidence",
+      count: 1, locations: [{ kind: "row", chainId: "ch-7", labels: [D] }] },
+    { severity: "warning", rule: "occurrence-estimate-without-trigger", message: "Occurrence is 7 or more on an estimate with no trigger recorded",
+      count: 1, locations: [{ kind: "row", chainId: "ch-6", labels: [O] }] },
+    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 8, locations: [
+      { kind: "row", chainId: "ch-2", labels: [S, O, D] },
+      { kind: "row", chainId: "ch-4", labels: [O, D] },
+      { kind: "row", chainId: "ch-8", labels: [S, O, D] },
+    ] },
+    { severity: "warning", rule: "seeded-action-without-incident", message: "action on a chain seeded from INC-2026-0314 carries no source_incident",
+      count: 1, locations: [{ kind: "row", chainId: "ch-8", labels: [{ text: "act-2", raw: false }] }] },
+  ]);
+});
+
+test("a group's locations: rows by first appearance, factor labels in factor order, then unknown rows, then the document", () => {
+  const m = (pointer: string, severity: Severity = "warning"): Lint => finding(pointer, severity, "r", "m");
+  const doc = withComputed(docOf({}, { id: "ch-0", failure_mode: "second" }), [
+    m("/chains/0/post_ratings/S"), m("/chains/1/ratings/S"), m("/chains/0/causes/0"), m("/meta/x"), m("/chains/5"),
+    m("/chains/0/ratings/D"), m("/chains/0/ratings/S"), m("/chains/0", "blocker"), finding("/chains/1", "warning", "r", "other"),
+  ]);
+  assert.deepEqual(modelOf(doc).groups, [
+    { severity: "blocker", rule: "r", message: "m", count: 1, locations: [{ kind: "row", chainId: "ch-1", labels: [] }] },
+    { severity: "warning", rule: "r", message: "m", count: 7, locations: [
+      { kind: "row", chainId: "ch-1", labels: [
+        { text: "S", raw: false }, { text: "D", raw: false }, { text: "post-action S", raw: false }, { text: "/causes/0", raw: true },
+      ] },
+      { kind: "row", chainId: "ch-0", labels: [{ text: "S", raw: false }] },
+      { kind: "unknown-row", pointer: "/chains/5" },
+      { kind: "document", pointer: "/meta/x" },
+    ] },
+    { severity: "warning", rule: "r", message: "other", count: 1, locations: [{ kind: "row", chainId: "ch-0", labels: [] }] },
+  ]);
 });

@@ -2,9 +2,10 @@
 // No HTML and no escaping here; `render.ts` emits and escapes. Chains are addressed by their
 // position in `chains[]`.
 
-import type { Action, Chain, Factor, FmeaDocument, Ratings } from "./types.ts";
+import type { Action, Chain, Factor, FmeaDocument, Ratings, Severity } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
 import { vocabularyRank } from "./table.ts";
+import { chainIndex } from "./pointer.ts";
 
 const FACTORS: Factor[] = ["S", "O", "D"];
 
@@ -24,9 +25,28 @@ export interface Tiles {
   qualityScore: number | null;                                     // doc.computed.quality_score; null when the document has no computed block
 }
 
+// Where a finding points: into a row (its chain's id and a label for the spot within the row,
+// null for the row as a whole; `raw` when the label is the rest of the pointer as it stands), at a
+// chain index with no chain (§5.5), or outside `chains[]`.
+type Where =
+  | { kind: "row"; chainId: string; label: string | null; raw: boolean }
+  | { kind: "unknown-row"; pointer: string }
+  | { kind: "document"; pointer: string };
+
+interface PlacedFinding { severity: Severity; rule: string; message: string; where: Where }
+
+export type GroupLocation =
+  | { kind: "row"; chainId: string; labels: { text: string; raw: boolean }[] }   // labels empty = the row alone
+  | { kind: "unknown-row"; pointer: string }
+  | { kind: "document"; pointer: string };
+
+// The findings that share severity, rule and message, with every place they point to (§5.6).
+export interface CheckGroup { severity: Severity; rule: string; message: string; count: number; locations: GroupLocation[] }
+
 export interface ReportModel {
   tiles: Tiles;
   vocabulary: { value: string; style: RankStyle }[];   // the loaded table's vocabulary in order, for the key
+  groups: CheckGroup[];                                // blocker groups first, then by first finding
 }
 
 // "1 row", "0 rows": the singular only for exactly one (§4).
@@ -110,6 +130,81 @@ function actionsTile(doc: FmeaDocument): Tiles["actions"] {
   return { headline: `${due.length} open`, of: `of ${all.length}`, line };
 }
 
+// A placed finding and, for a row finding, its chain's position in `doc.chains` (never its id:
+// two chains may share one).
+interface Located { index: number | null; finding: PlacedFinding }
+
+const RATING_LABEL = /^\/(ratings|post_ratings)\/([SOD])$/;
+const ACTION_LABEL = /^\/actions\/(0|[1-9][0-9]*)$/;
+
+// The spot within a row that `rest`, the pointer after `/chains/<i>`, names (§5.8).
+function rowLabel(chain: Chain, rest: string): { label: string | null; raw: boolean } {
+  if (rest === "") return { label: null, raw: false };
+  const rated = RATING_LABEL.exec(rest);
+  if (rated) return { label: rated[1] === "ratings" ? rated[2] : `post-action ${rated[2]}`, raw: false };
+  const acted = ACTION_LABEL.exec(rest);
+  const act = acted ? chain.actions[Number(acted[1])] : undefined;
+  if (act) return { label: act.id, raw: false };
+  return { label: rest, raw: true };
+}
+
+// Every finding of `computed.lints`, in that order, placed by its chain index (§5.5).
+function placeFindings(doc: FmeaDocument): Located[] {
+  return (doc.computed?.lints ?? []).map(({ severity, rule, message, pointer }) => {
+    const i = chainIndex(pointer);
+    const chain = i === null ? undefined : doc.chains[i];
+    if (i === null || chain === undefined) {
+      return { index: null, finding: { severity, rule, message, where: { kind: i === null ? "document" : "unknown-row", pointer } } };
+    }
+    const where: Where = { kind: "row", chainId: chain.id, ...rowLabel(chain, pointer.slice(`/chains/${i}`.length)) };
+    return { index: i, finding: { severity, rule, message, where } };
+  });
+}
+
+const LABEL_ORDER = ["S", "O", "D", "post-action S", "post-action O", "post-action D"];
+
+function labelRank(text: string): number {
+  const i = LABEL_ORDER.indexOf(text);
+  return i === -1 ? LABEL_ORDER.length : i;
+}
+
+type RowLocation = Extract<GroupLocation, { kind: "row" }>;
+
+// A group's locations: its rows by chain position, in order of first appearance, each with its
+// labels in factor order; then the unknown rows; then the document pointers (§5.6).
+function groupLocations(members: Located[]): GroupLocation[] {
+  const rows = new Map<number, RowLocation>();
+  const unknown: GroupLocation[] = [];
+  const documents: GroupLocation[] = [];
+  for (const { index, finding: { where } } of members) {
+    if (where.kind !== "row") (where.kind === "unknown-row" ? unknown : documents).push({ ...where });
+    else if (index !== null) {
+      const row = rows.get(index) ?? { kind: "row", chainId: where.chainId, labels: [] };
+      rows.set(index, row);
+      if (where.label !== null) row.labels.push({ text: where.label, raw: where.raw });
+    }
+  }
+  for (const row of rows.values()) row.labels.sort((a, b) => labelRank(a.text) - labelRank(b.text));
+  return [...rows.values(), ...unknown, ...documents];
+}
+
+function groupFindings(located: Located[]): CheckGroup[] {
+  const groups = new Map<string, Located[]>();
+  for (const entry of located) {
+    const { severity, rule, message } = entry.finding;
+    const key = JSON.stringify([severity, rule, message]);
+    const members = groups.get(key);
+    if (members) members.push(entry);
+    else groups.set(key, [entry]);
+  }
+  return [...groups.values()]
+    .map((members): CheckGroup => {
+      const { severity, rule, message } = members[0].finding;
+      return { severity, rule, message, count: members.length, locations: groupLocations(members) };
+    })
+    .sort((a, b) => Number(b.severity === "blocker") - Number(a.severity === "blocker"));
+}
+
 export function buildReportModel(doc: FmeaDocument, table: PriorityTable): ReportModel {
   const tiles: Tiles = {
     priorities: priorityCounts(doc, table.vocabulary),
@@ -119,5 +214,9 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     actions: actionsTile(doc),
     qualityScore: doc.computed ? doc.computed.quality_score : null,
   };
-  return { tiles, vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })) };
+  return {
+    tiles,
+    vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })),
+    groups: groupFindings(placeFindings(doc)),
+  };
 }
