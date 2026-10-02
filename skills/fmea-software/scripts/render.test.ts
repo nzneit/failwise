@@ -45,7 +45,7 @@ function staleRows(): FmeaDocument {
 const FREE_TEXT_KEYS = new Set([
   "name", "scope", "security", "outcome", "description", "statement", "for_whom", "failure_mode",
   "local", "next_level", "end", "text", "rationale", "owner", "trigger", "message", "reason",
-  "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change",
+  "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident",
 ]);
 const FREE_TEXT_ARRAYS = new Set(["ground_rules", "included", "excluded", "reviewers", "conditions"]);
 
@@ -538,13 +538,21 @@ test("a three-value and a one-value supplied table get the rank styles of sectio
 });
 
 test("a supplied table's vocabulary values are escaped in every badge", () => {
-  const html = renderHtml(priced(minimalDoc(), 0, vectors[0]), suppliedTable(vectors), template);
+  const doc = priced(minimalDoc(), 0, vectors[0]);
+  doc.chains[0].post_ratings = { S: rating(8), O: rating(2), D: rating(4) };
+  doc.chains[0].post_priority = { value: vectors[1], table: "priority-test-v1", rpn: 64 };
+  const html = renderHtml(doc, suppliedTable(vectors), template);
   for (const vector of vectors) {
     assert.ok(!html.includes(vector), `raw vector present: ${JSON.stringify(vector)}`);
     assert.ok(html.includes(`>${escapeHtml(vector)}</span>`), `no escaped badge for ${JSON.stringify(vector)}`);
   }
   // The row's value is printed four times: in the tile, the key, the index and the row header.
   assert.equal(occurrences(html, `<span class="pri pri-top">${escapeHtml(vectors[0])}</span>`), 4);
+  // The post-action value is printed in the row header's second line and in the post-action ratings label.
+  const section = rowSection(html, "ch-1");
+  assert.ok(section.includes(`<span class="muted">after actions:</span> <span class="pri pri-mid">${escapeHtml(vectors[1])}</span>`), "the after-actions badge");
+  assert.ok(section.includes(`<span class="lbl">Post-action ratings — priority ${escapeHtml(vectors[1])}, RPN 64</span>`), "the post-action ratings label");
+  assert.ok(!section.includes(vectors[1]), "the post-action value is never printed raw");
   assert.ok(!html.includes("<img"));
 });
 
