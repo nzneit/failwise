@@ -109,6 +109,16 @@ test("rating-provisional fires once per provisional rating, on ratings and post_
   assert.deepEqual(lints.map((l) => l.severity), ["warning", "warning"]);
 });
 
+test("rating-provisional names no factor in its message, so a pre-action and a post-action finding read alike", () => {
+  const doc = minimalDoc();
+  doc.chains[0].ratings.D = rating(4, "provisional");
+  doc.chains[0].post_ratings = { S: rating(8, "provisional"), O: rating(3), D: rating(4) };
+  assert.deepEqual(fired(doc, "rating-provisional").map((l) => [l.pointer, l.message]), [
+    ["/chains/0/ratings/D", "The rating is still provisional and needs re-scoring"],
+    ["/chains/0/post_ratings/S", "The rating is still provisional and needs re-scoring"],
+  ]);
+});
+
 test("seeded-action-without-incident stays silent when the action carries the incident", () => {
   const doc = minimalDoc();
   doc.chains[0].source_incident = "INC-2026-0314";

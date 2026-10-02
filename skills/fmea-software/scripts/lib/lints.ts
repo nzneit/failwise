@@ -53,7 +53,7 @@ export const MACHINE_RULES: MachineRule[] = [
       const scan = (ratings: Ratings, i: number, key: "ratings" | "post_ratings"): void => {
         for (const f of FACTORS) {
           if (ratings[f].review.status === "provisional") {
-            out.push(lint("rating-provisional", "warning", ptr("chains", i, key, f), `${f} is still provisional and needs re-scoring`));
+            out.push(lint("rating-provisional", "warning", ptr("chains", i, key, f), "The rating is still provisional and needs re-scoring"));
           }
         }
       };

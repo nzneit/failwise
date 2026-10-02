@@ -30,9 +30,9 @@ function staleRows(): FmeaDocument {
   doc.computed = {
     quality_score: 100,
     lints: [
-      { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/S", message: "S is still provisional and needs re-scoring" },
-      { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/O", message: "O is still provisional and needs re-scoring" },
-      { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/D", message: "D is still provisional and needs re-scoring" },
+      { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/S", message: "The rating is still provisional and needs re-scoring" },
+      { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/O", message: "The rating is still provisional and needs re-scoring" },
+      { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/D", message: "The rating is still provisional and needs re-scoring" },
     ],
     validated_at: "2026-09-12T11:00:00Z",
     validator_version: "0.1.0",
