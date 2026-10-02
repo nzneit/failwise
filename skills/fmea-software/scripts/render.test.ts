@@ -104,6 +104,10 @@ function withComputed(doc: FmeaDocument, lints: Lint[], quality_score = 0): Fmea
 // One item of the "Needs attention" block, as the markup contract fixes it.
 const attnItem = (what: string, list: string, why: string): string =>
   `<div class="attn-item"><div class="what">${what}</div><div>${list} <span class="why">${why}</span></div></div>`;
+const SOD_TEXT = "Severity, Occurrence and Detection, each rated 1 to 10 against the scales. Higher is worse: more harm, more likely, caught later or not at all.";
+const PRIORITY_TEXT = "Priority, highest first, looked up from S, O and D in the priority table. Rows are sorted by it.";
+const RPN_TEXT = "S × O × D, kept for comparison with older sheets. It is not used to rank rows.";
+const indexTable = (html: string): string => between(html, '<table class="index">', "</table>");
 
 test("the report carries every section id, in the order section 9 fixes", () => {
   const html = renderHtml(golden(), table, template);
@@ -187,7 +191,7 @@ test("the provisional count and the row mark cover the post-action ratings", () 
   const html = renderHtml(doc, table, template);
   assert.ok(html.includes('<span class="big">1 <small>of 6</small></span><span class="sub">provisional, in 1 row</span>'), "the tile counts the post-action ratings, both in the total and in the provisional count");
   assert.ok(
-    html.includes('<td><code>ch-1</code><span class="mark mark-provisional">provisional</span></td>'),
+    indexTable(html).includes(`<td class="nw"><a href="#row-ch-1"><code>ch-1</code></a><br>${mark("provisional")}</td>`),
     "the row is marked provisional on the strength of its post-action ratings alone",
   );
 });
@@ -270,20 +274,18 @@ test("the header ends with the contents line, after the metadata, the tiles and 
 });
 
 test("row marks: one handoff, three provisional rows, no stale row", () => {
-  const html = renderHtml(golden(), table, template);
-  const count = (needle: string): number => occurrences(sectionOf(html, "chains", "actions"), needle);
-  assert.equal(count('class="mark mark-handoff"'), 1);
-  assert.equal(count('class="mark mark-provisional"'), 3);
-  assert.equal(count('class="mark mark-stale"'), 0);
+  const index = indexTable(renderHtml(golden(), table, template));
+  assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
+  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 3);
+  assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
 });
 
 test("a flagged row carries the stale mark; a cleared row carries none", () => {
-  const html = renderHtml(staleRows(), table, template);
-  const count = (needle: string): number => occurrences(sectionOf(html, "chains", "actions"), needle);
-  assert.equal(count('class="mark mark-stale"'), 2);
-  assert.ok(html.includes('<td><code>ch-1</code><span class="mark mark-stale">stale</span><span class="mark mark-provisional">provisional</span></td>'), "ch-1 is flagged scales-version with three provisional ratings");
-  assert.ok(html.includes('<td><code>ch-2</code><span class="mark mark-stale">stale</span></td>'), "ch-2 is flagged element-changed and fully re-scored");
-  assert.ok(html.includes("<td><code>ch-3</code></td>"), "ch-3 had its flag cleared and carries no mark");
+  const index = indexTable(renderHtml(staleRows(), table, template));
+  assert.equal(occurrences(index, 'class="mark mark-stale"'), 2);
+  assert.ok(index.includes(`<a href="#row-ch-1"><code>ch-1</code></a><br>${mark("stale")} ${mark("provisional")}</td>`), "ch-1 is flagged scales-version with three provisional ratings");
+  assert.ok(index.includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("stale")}</td>`), "ch-2 is flagged element-changed and fully re-scored");
+  assert.ok(index.includes(`<a href="#row-ch-3"><code>ch-3</code></a></td>`), "ch-3 had its flag cleared and carries no mark");
 });
 
 test("chains sort by priority, then by severity descending, then by id", () => {
@@ -296,7 +298,47 @@ test("chains sort by priority, then by severity descending, then by id", () => {
 
 test("the chain table's caption states the sort order and that actions do not move a row", () => {
   const html = renderHtml(golden(), table, template);
-  assert.ok(html.includes("<caption>Rows are sorted by the pre-action priority, then by severity; a row keeps its place after actions.</caption>"));
+  const caption = "Rows are sorted by the pre-action priority, then by severity; a row keeps its place after actions. A row id links to the row's full section below.";
+  assert.ok(html.includes(`<table class="index"><caption>${escapeHtml(caption)}</caption><thead>`));
+});
+
+test("the key lists the loaded table's vocabulary and all five marks; a document with no chains has no key and no index", () => {
+  const key = between(renderHtml(golden(), table, template), '<div class="key">', "</div>");
+  const entries = [
+    '<h3 class="key-title">How to read this table</h3><dl>',
+    `<dt><b>S</b>, <b>O</b>, <b>D</b></dt><dd>${escapeHtml(SOD_TEXT)}</dd>`,
+    `<dt><span class="pri pri-top">H</span> <span class="pri pri-mid">M</span> <span class="pri pri-low">L</span></dt><dd>${escapeHtml(PRIORITY_TEXT)}</dd>`,
+    `<dt><b>RPN</b></dt><dd>${escapeHtml(RPN_TEXT)}</dd>`,
+    ...[...MARK_TITLES].map(([name, title]) => `<dt>${mark(name)}</dt><dd>${escapeHtml(title)}</dd>`),
+  ];
+  const at = entries.map((entry) => key.indexOf(entry));
+  assert.ok(at.every((i) => i !== -1), `the key is missing an entry: ${JSON.stringify(at)}`);
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "the key's entries are out of order");
+
+  const empty = minimalDoc();
+  empty.chains = [];
+  const chains = sectionOf(renderHtml(empty, table, template), "chains", "actions");
+  assert.ok(chains.includes('<p class="empty">No chains.</p>'));
+  for (const absent of ['class="key"', 'class="index"', "<article"]) assert.ok(!chains.includes(absent), `a document with no chains has ${absent}`);
+});
+
+test("the index has a titled head and one row per chain linking to the row's section", () => {
+  const doc = golden();
+  const index = indexTable(renderHtml(doc, table, template));
+  const sod = (f: string): string => `<th class="num"><abbr title="${escapeHtml(SOD_TEXT)}">${f}</abbr></th>`;
+  assert.ok(index.includes(
+    `<thead><tr><th><abbr title="${escapeHtml(PRIORITY_TEXT)}">Priority</abbr></th><th>Row</th><th>Element</th><th>Failure mode</th><th>End effect</th>` +
+    `${sod("S")}${sod("O")}${sod("D")}<th class="num"><abbr title="${escapeHtml(RPN_TEXT)}">RPN</abbr></th><th>Actions</th></tr></thead><tbody>`,
+  ));
+  assert.equal(occurrences(index, "<tr>"), doc.chains.length + 1);
+  const ch3 = doc.chains[2];
+  assert.ok(index.includes(
+    `<tr><td><span class="pri pri-mid">M</span></td><td class="nw"><a href="#row-ch-3"><code>ch-3</code></a></td><td><code>pricing</code></td>` +
+    `<td>${escapeHtml(ch3.failure_mode)}</td><td>${escapeHtml(ch3.effects.end)}</td>` +
+    `<td class="num">4</td><td class="num">5</td><td class="num">2</td><td class="num">40</td><td class="nw">1 open of 2<br><span class="muted">due 2026-10-30</span></td></tr>`,
+  ), "ch-3's index row");
+  assert.ok(index.includes(`<a href="#row-ch-7"><code>ch-7</code></a><br>${mark("blocker")}</td>`), "ch-7 carries the fixture's one blocker");
+  assert.ok(index.includes('<td class="nw muted">none</td>'), "ch-5 has no action");
 });
 
 test("an expanded row shows the post-action priority letter and RPN in its post-action ratings block", () => {

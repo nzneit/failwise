@@ -9,8 +9,8 @@ import { escapeHtml, escapeJsonForScript } from "./lib/escape.ts";
 import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
-import { buildReportModel, provisionalCount, sortChains } from "./lib/report-model.ts";
-import type { ActionRow, Attention, PlacedFinding, RankStyle, ReportModel, RowMark, Tiles, Where } from "./lib/report-model.ts";
+import { buildReportModel } from "./lib/report-model.ts";
+import type { ActionRow, Attention, PlacedFinding, RankStyle, ReportModel, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
@@ -168,14 +168,6 @@ function structureHtml(elements: Element[]): string {
   return `<ul class="tree">${roots.map(node).join("")}</ul>`;
 }
 
-function marksHtml(chain: Chain): string {
-  let out = "";
-  if (chain.stale.flag) out += `<span class="mark mark-stale">stale</span>`;
-  if (chain.handoff) out += `<span class="mark mark-handoff">handoff</span>`;
-  if (provisionalCount(chain) > 0) out += `<span class="mark mark-provisional">provisional</span>`;
-  return out;
-}
-
 // `priority` is the block computed from these ratings, given only for the post-action ratings:
 // the letter and the RPN save the reader a table lookup (§6). The pre-action priority already
 // has its own column in the chain table, so the pre-action block passes none.
@@ -206,21 +198,49 @@ function chainDetailHtml(chain: Chain): string {
   ].join("");
 }
 
-function chainsHtml(doc: FmeaDocument, table: PriorityTable): string {
-  const fnById = new Map(doc.functions.map((f) => [f.id, f]));
-  const rows = sortChains(doc, table).map((chain) => {
-    const fn = fnById.get(chain.function);
-    const element = fn ? fn.element : "";
-    const statement = fn ? fn.statement : "";
-    const head = `<tr><td><code>${e(chain.id)}</code>${marksHtml(chain)}</td><td><code>${e(element)}</code></td><td>${e(statement)}</td><td>${e(chain.failure_mode)}</td>` +
-      `<td>${e(chain.effects.local)}</td><td>${e(chain.effects.next_level)}</td><td>${e(chain.effects.end)}</td>` +
-      `<td class="num">${chain.ratings.S.value}</td><td class="num">${chain.ratings.O.value}</td><td class="num">${chain.ratings.D.value}</td>` +
-      `<td>${e(chain.priority.value)}</td><td class="num">${chain.priority.rpn}</td></tr>`;
-    const detail = `<tr><td colspan="12"><details><summary>Row detail for ${e(chain.id)}</summary>${chainDetailHtml(chain)}</details></td></tr>`;
-    return head + detail;
-  }).join("");
-  if (doc.chains.length === 0) return `<p class="empty">No chains.</p>`;
-  return `<table><caption>Rows are sorted by the pre-action priority, then by severity; a row keeps its place after actions.</caption><tr><th>Row</th><th>Element</th><th>Function</th><th>Failure mode</th><th>Local effect</th><th>Next level</th><th>End effect</th><th>S</th><th>O</th><th>D</th><th>Priority</th><th>RPN</th></tr>${rows}</table>`;
+function marksHtml(marks: readonly RowMark[]): string {
+  return marks.map(markHtml).join(" ");
+}
+
+function keyHtml(vocabulary: ReportModel["vocabulary"]): string {
+  const badges = vocabulary.map((v) => badgeHtml(v.value, v.style)).join(" ");
+  const marks: (RowMark | "warning")[] = ["provisional", "stale", "handoff", "blocker", "warning"];
+  const entries: [string, string][] = [
+    ["<b>S</b>, <b>O</b>, <b>D</b>", KEY_TEXT.sod],
+    [badges, KEY_TEXT.priority],
+    ["<b>RPN</b>", KEY_TEXT.rpn],
+    ...marks.map((m): [string, string] => [markHtml(m), KEY_TEXT[m]]),
+  ];
+  return `<div class="key"><h3 class="key-title">How to read this table</h3><dl>${entries.map(([dt, dd]) => `<dt>${dt}</dt><dd>${e(dd)}</dd>`).join("")}</dl></div>`;
+}
+
+function actionsCellHtml(cell: RowModel["actionsCell"]): string {
+  if (cell.due === null) return `<td class="nw muted">${e(cell.text)}</td>`;
+  return `<td class="nw">${e(cell.text)}<br><span class="muted">due ${e(cell.due)}</span></td>`;
+}
+
+function indexRowHtml(row: RowModel): string {
+  const c = row.chain;
+  const marks = row.marks.length === 0 ? "" : `<br>${marksHtml(row.marks)}`;
+  return `<tr><td>${badgeHtml(c.priority.value, row.style)}</td><td class="nw">${rowLinkHtml(c.id)}${marks}</td><td><code>${e(row.element)}</code></td>` +
+    `<td>${e(c.failure_mode)}</td><td>${e(c.effects.end)}</td>` +
+    `<td class="num">${c.ratings.S.value}</td><td class="num">${c.ratings.O.value}</td><td class="num">${c.ratings.D.value}</td><td class="num">${c.priority.rpn}</td>` +
+    `${actionsCellHtml(row.actionsCell)}</tr>`;
+}
+
+const INDEX_CAPTION = "Rows are sorted by the pre-action priority, then by severity; a row keeps its place after actions. A row id links to the row's full section below.";
+
+function indexHtml(rows: RowModel[]): string {
+  const sod = FACTORS.map((f) => `<th class="num"><abbr title="${e(KEY_TEXT.sod)}">${f}</abbr></th>`).join("");
+  const head = `<thead><tr><th><abbr title="${e(KEY_TEXT.priority)}">Priority</abbr></th><th>Row</th><th>Element</th><th>Failure mode</th><th>End effect</th>` +
+    `${sod}<th class="num"><abbr title="${e(KEY_TEXT.rpn)}">RPN</abbr></th><th>Actions</th></tr></thead>`;
+  return `<table class="index"><caption>${e(INDEX_CAPTION)}</caption>${head}<tbody>${rows.map(indexRowHtml).join("")}</tbody></table>`;
+}
+
+function chainsHtml(model: ReportModel): string {
+  if (model.rows.length === 0) return `<p class="empty">No chains.</p>`;
+  const details = model.rows.map((row) => `<details><summary>Row detail for ${e(row.chain.id)}</summary>${chainDetailHtml(row.chain)}</details>`).join("");
+  return keyHtml(model.vocabulary) + indexHtml(model.rows) + details;
 }
 
 function actionsHtml(doc: FmeaDocument): string {
@@ -264,7 +284,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     assumptions: list(doc.meta.assumptions.map((a) => `${e(a.text)} <span class="empty">(${e(a.owner)}, ${e(a.status)})</span>`), "No assumptions recorded."),
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),
     structure: structureHtml(doc.elements),
-    chains: chainsHtml(doc, table),
+    chains: chainsHtml(model),
     actions: actionsHtml(doc),
     lints: lintsHtml(doc),
     provenance: provenanceHtml(doc),

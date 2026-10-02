@@ -109,7 +109,7 @@ function ratingBlocks(chain: Chain): Ratings[] {
   return chain.post_ratings ? [chain.ratings, chain.post_ratings] : [chain.ratings];
 }
 
-export function provisionalCount(chain: Chain): number {
+function provisionalCount(chain: Chain): number {
   let n = 0;
   for (const ratings of ratingBlocks(chain)) {
     for (const f of FACTORS) if (ratings[f].review.status === "provisional") n++;
