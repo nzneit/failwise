@@ -668,8 +668,16 @@ test("the template carries print rules for landscape pages and page breaks", () 
   }
 });
 
-test("the template lets a long element id break inside the index", () => {
-  assert.ok(template.includes("table.index code { overflow-wrap:anywhere; }"));
+test("overflow-wrap:anywhere is set below the breakpoint and, at every width, only in the index's code cells", () => {
+  const start = template.indexOf("@media (max-width: 767px) {");
+  assert.notEqual(start, -1);
+  const end = template.indexOf("\n}\n", start);
+  const inside = template.slice(start, end);
+  const outside = template.slice(0, start) + template.slice(end);
+  // Not td: every table scrolls in its frame, and anywhere in a cell lets the table squeeze its columns until words split.
+  assert.ok(inside.includes("code, dd, li, h3 { overflow-wrap:anywhere; }"));
+  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 1);
+  assert.ok(outside.includes("table.index code { overflow-wrap:anywhere; }"));
 });
 
 test("the template styles the stale notice and shrinks the post-action badge in a row header", () => {

@@ -95,6 +95,22 @@ article.row > header .meta .pri { height:1.2rem; min-width:1.2rem; font-size:.75
 .empty { color: #6b7177; font-style: italic; }
 .mark + .mark { margin-left: 0.25rem; }
 
+@media (max-width: 767px) {
+  body { padding:1rem .75rem 3rem; }
+  .tiles { grid-template-columns:repeat(2,1fr); }
+  dl.header, .key dl { grid-template-columns:1fr; gap:0; }
+  dl.header dd, .key dd { margin-bottom:.4rem; }
+  .key dt { white-space:normal; }
+  .attn-item { grid-template-columns:1fr; }
+  .fx { grid-template-columns:1fr; }
+  .fx .arrow { justify-self:center; transform:rotate(90deg); }
+  .two { grid-template-columns:1fr; }
+  article.row > header { flex-wrap:wrap; }
+  article.row > header h3 { flex-basis:calc(100% - 2.5rem); }
+  article.row > header .meta { white-space:normal; text-align:left; flex-basis:100%; }
+  code, dd, li, h3 { overflow-wrap:anywhere; }
+}
+
 @media print {
   @page { size: landscape; margin: 12mm; }
   body { padding:0; font-size:11px; }

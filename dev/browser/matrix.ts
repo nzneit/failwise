@@ -6,6 +6,8 @@ export const WIDTHS = [320, 375, 768, 1280, 1920] as const;
 export type View = (typeof WIDTHS)[number] | "print";
 /** Every view the comparison photographs a part at: each width, then print. */
 export const VIEWS: readonly View[] = [...WIDTHS, "print"];
+/** The first width with the wide layout; the template's one width query is BREAKPOINT - 1 px. */
+export const BREAKPOINT = 768;
 export const VIEWPORT_HEIGHT = 900;
 /** The width the print checks open the report at: a landscape page less its margins, in CSS pixels. */
 export const PRINT_WIDTH = 965;
@@ -14,12 +16,7 @@ export type CheckId = "scroll" | "edge" | "axe";
 export interface ExpectedFailure { check: CheckId; width: number; reason: string }
 
 /** The checks known to fail on today's report, each with the reason it fails. */
-export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [
-  { check: "scroll", width: 320, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
-  { check: "edge", width: 320, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
-  { check: "scroll", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
-  { check: "edge", width: 375, reason: "the report has no phone layout yet; the narrow-screen design gives it one" },
-];
+export const EXPECTED_FAILURES: readonly ExpectedFailure[] = [];
 
 /** The expected failure of `check` at `width`, or undefined when that check must pass. */
 export function expectedFailure(check: CheckId, width: number): ExpectedFailure | undefined {

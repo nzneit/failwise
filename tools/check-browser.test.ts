@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { runGate } from "./check-browser.ts";
-import { EXPECTED_FAILURES, expectedFailure, NOT_ASSERTED } from "../dev/browser/matrix.ts";
+import { BREAKPOINT, EXPECTED_FAILURES, NOT_ASSERTED, notAsserted } from "../dev/browser/matrix.ts";
 import { fakeMachine, report, type Call, type FakeOptions } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
@@ -257,14 +259,14 @@ test("the stale results file the fake starts with sits where the runner reads it
   assert.equal(machine.files.readText(RESULTS), "{}");
 });
 
-test("the phone-width layout checks are expected failures, and the tablet-width ones are measured and not asserted", () => {
-  assert.deepEqual(EXPECTED_FAILURES.map((known) => `${known.width} ${known.check}`), ["320 scroll", "320 edge", "375 scroll", "375 edge"]);
-  assert.deepEqual(NOT_ASSERTED.map((open) => `${open.width} ${open.check}`), []);
-  for (const entry of [...EXPECTED_FAILURES, ...NOT_ASSERTED]) {
-    assert.match(entry.reason, /narrow-screen design/, `${entry.check} at ${entry.width}`);
-  }
-  for (const open of NOT_ASSERTED) {
-    assert.match(open.reason, /fonts/, `${open.check} at ${open.width}`);
-    assert.equal(expectedFailure(open.check, open.width), undefined, "a check is an expected failure or not asserted, never both");
-  }
+test("both lists are empty, and share no entry", () => {
+  // The loop runs first: the strict deepEqual below narrows EXPECTED_FAILURES to never[] for the type checker.
+  for (const known of EXPECTED_FAILURES) assert.equal(notAsserted(known.check, known.width), undefined);
+  assert.deepEqual(EXPECTED_FAILURES, []);
+  assert.deepEqual(NOT_ASSERTED, []);
+});
+
+test("the template's one width query is at BREAKPOINT - 1 px", () => {
+  const template = readFileSync(join(import.meta.dirname, "..", "skills", "fmea-software", "assets", "report-template.html"), "utf8");
+  assert.deepEqual([...template.matchAll(/@media\s*\(([^)]*)\)/g)].map((match) => match[1]), [`max-width: ${BREAKPOINT - 1}px`]);
 });
