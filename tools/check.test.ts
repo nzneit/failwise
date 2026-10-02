@@ -219,16 +219,39 @@ test("the root package.json declares nothing and the root holds no lockfile", ()
   }
 });
 
+/** The `run:` commands and the `uses:` actions of a workflow under `.github/workflows/`, in file order. */
+function workflowSteps(file: string): { runs: string[]; uses: string[] } {
+  const workflow = readFileSync(join(import.meta.dirname, "..", ".github", "workflows", file), "utf8");
+  return {
+    runs: [...workflow.matchAll(/^\s*(?:-\s+)?run:\s*(.+?)\s*$/gm)].map((match) => match[1]),
+    uses: [...workflow.matchAll(/^\s*(?:-\s+)?uses:\s*(\S+)/gm)].map((match) => match[1]),
+  };
+}
+
 // The workflow's syntax is first proved when it runs on GitHub. Until then this pins what it runs and
 // that every action is pinned to a commit, not to a tag that can be moved.
 test("the CI workflow runs the install, the suites and the gate in order, and pins every action by commit", () => {
-  const workflow = readFileSync(join(import.meta.dirname, "..", ".github", "workflows", "ci.yml"), "utf8");
-  const runs = [...workflow.matchAll(/^\s*(?:-\s+)?run:\s*(.+?)\s*$/gm)].map((match) => match[1]);
+  const { runs, uses } = workflowSteps("ci.yml");
   assert.deepEqual(runs, ["npm ci --prefix dev --ignore-scripts", "node tools/run-tests.ts", "node tools/check.ts"]);
-  const uses = [...workflow.matchAll(/^\s*(?:-\s+)?uses:\s*(\S+)/gm)].map((match) => match[1]);
   assert.deepEqual(
     uses.map((action) => action.split("@")[0]),
     ["actions/checkout", "actions/setup-node"],
   );
   for (const action of uses) assert.match(action, /@[0-9a-f]{40}$/, action);
+});
+
+// The same pin for the workflow that publishes the sample report: it renders a fixture that exists
+// into the folder it uploads, and the README links to the page it deploys.
+test("the Pages workflow renders the sample analysis into the site it deploys, and pins every action by commit", () => {
+  const root = join(import.meta.dirname, "..");
+  const fixture = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
+  const { runs, uses } = workflowSteps("pages.yml");
+  assert.deepEqual(runs, ["mkdir site", `node skills/fmea-software/scripts/render.ts ${fixture} --out site/index.html`]);
+  assert.ok(existsSync(join(root, fixture)), fixture);
+  assert.deepEqual(
+    uses.map((action) => action.split("@")[0]),
+    ["actions/checkout", "actions/setup-node", "actions/upload-pages-artifact", "actions/deploy-pages"],
+  );
+  for (const action of uses) assert.match(action, /@[0-9a-f]{40}$/, action);
+  assert.ok(readFileSync(join(root, "README.md"), "utf8").includes("](https://nzneit.github.io/failwise/)"));
 });
