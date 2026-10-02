@@ -47,6 +47,8 @@ export interface RowModel {
   marks: RowMark[];                // §5.7 order: stale, handoff, provisional, blocker
   findings: PlacedFinding[];       // row findings pointing into this chain, without rule "rating-provisional", in §5.8 order
   actionsCell: { text: string; due: string | null };   // "1 open" | "1 open of 2" | "all 2 closed" | "none"; due = earliest open target date
+  trigger: string | null;          // the trimmed trigger, when it gets its own part (§5.3); else null
+  triggerCauses: number[];         // indexes into chain.causes of every cause whose trimmed text equals the trimmed trigger
 }
 
 export type GroupLocation =
@@ -247,6 +249,16 @@ function actionsCell(chain: Chain): RowModel["actionsCell"] {
   return { text, due: open === 0 ? null : due[0] };
 }
 
+// The trigger rule (§5.3): a trigger that restates causes marks them and gets no part of its own;
+// one that restates none is shown alone, trimmed; an empty one is no trigger.
+function triggerMatch(chain: Chain): { trigger: string | null; triggerCauses: number[] } {
+  const trigger = chain.trigger?.trim() ?? "";
+  if (trigger === "") return { trigger: null, triggerCauses: [] };
+  const triggerCauses: number[] = [];
+  chain.causes.forEach((cause, i) => { if (cause.text.trim() === trigger) triggerCauses.push(i); });
+  return { trigger: triggerCauses.length === 0 ? trigger : null, triggerCauses };
+}
+
 // The rows in the index order. A row's findings are found by its chain's position in
 // `doc.chains` (object identity), never by its id.
 function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]): RowModel[] {
@@ -264,6 +276,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
       marks: rowMarks(chain, own),
       findings: [...shown.filter((f) => f.severity === "blocker"), ...shown.filter((f) => f.severity !== "blocker")],
       actionsCell: actionsCell(chain),
+      ...triggerMatch(chain),
     };
   });
 }

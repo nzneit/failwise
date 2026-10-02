@@ -306,3 +306,24 @@ test("actions cell: all actions closed reads all T closed with no date; due is t
   assert.deepEqual(rowById(model, "ch-1").actionsCell, { text: "all 2 closed", due: null });
   assert.deepEqual(rowById(model, "ch-2").actionsCell, { text: "2 open", due: "2026-10-01" });
 });
+
+test("trigger: the fixture's ch-2 trigger restates its first cause, ch-1's stands alone, ch-4 has none", () => {
+  const model = modelOf(fixture());
+  const pick = (id: string) => { const r = rowById(model, id); return { trigger: r.trigger, triggerCauses: r.triggerCauses }; };
+  assert.deepEqual(pick("ch-2"), { trigger: null, triggerCauses: [0] });
+  assert.deepEqual(pick("ch-1"), { trigger: "A promotion drives submissions above the merchant's authorized rate at the gateway", triggerCauses: [] });
+  assert.deepEqual(pick("ch-4"), { trigger: null, triggerCauses: [] });
+});
+
+test("trigger: equal to two causes after trimming, empty after trimming, and trimmed when it stands alone", () => {
+  const model = modelOf(docOf(
+    { trigger: " queue fills\n", causes: [{ text: "queue fills " }, { text: "no admission control" }, { text: "\tqueue fills" }] },
+    { trigger: "   ", causes: [{ text: " " }, { text: "process crash" }] },
+    { trigger: "  a burst of traffic  ", causes: [{ text: "process crash" }] },
+  ));
+  assert.deepEqual(model.rows.map((r) => [r.chain.id, r.trigger, r.triggerCauses]), [
+    ["ch-1", null, [0, 2]],
+    ["ch-2", null, []],
+    ["ch-3", "a burst of traffic", []],
+  ]);
+});
