@@ -3,7 +3,7 @@
 
 import { pathToFileURL } from "node:url";
 import { test, type Locator, type Page } from "@playwright/test";
-import { notAsserted, rowStem, SCROLL_CONTAINERS, SECTION_PARTS, VIEWPORT_HEIGHT, type CheckId } from "./matrix.ts";
+import { LONG_TOKEN, notAsserted, rowStem, SCROLL_CONTAINERS, SECTION_PARTS, TOKEN_EXEMPT, VIEWPORT_HEIGHT, type CheckId } from "./matrix.ts";
 
 /** Sets the viewport to `width` by VIEWPORT_HEIGHT and loads the report. Throws when FAILWISE_REPORT is unset,
  *  and when the page loaded has no <main> with an element in it, so neither measurement can pass on
@@ -47,6 +47,22 @@ export async function pastRightEdge(page: Page): Promise<string[]> {
     return [...document.querySelectorAll("main *")].filter(passes).slice(0, 10);
   }, [...SCROLL_CONTAINERS]);
   return passing.evaluate(tagLabels);
+}
+
+/** Appends a space and LONG_TOKEN, as text, to every element under <main> that has a text node of its own with
+ *  something other than white space in it, whose computed white-space lets text wrap, and that matches no
+ *  selector of TOKEN_EXEMPT. Returns how many elements it wrote into. */
+export async function plantLongToken(page: Page): Promise<number> {
+  return page.evaluate(({ token, exempt }) => {
+    const ownText = (element: Element): boolean =>
+      [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "");
+    const wraps = (element: Element): boolean => !["nowrap", "pre"].includes(getComputedStyle(element).whiteSpace);
+    const targets = [...document.querySelectorAll("main *")].filter(
+      (element) => ownText(element) && wraps(element) && !exempt.some((selector) => element.matches(selector)),
+    );
+    for (const element of targets) element.append(` ${token}`);
+    return targets.length;
+  }, { token: LONG_TOKEN, exempt: TOKEN_EXEMPT.map((entry) => entry.selector) });
 }
 
 /** Up to ten faults of the report's frames: "table outside a frame: <tag#id.class>" for a table whose parent

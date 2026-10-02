@@ -39,6 +39,19 @@ export function notAsserted(check: CheckId, width: number): NotAsserted | undefi
   return NOT_ASSERTED.find((open) => open.check === check && open.width === width);
 }
 
+/** An identifier of 65 lower-case letters and underscores, with no place a line may break: what the tokens check
+ *  writes into every text of the report that may wrap. */
+export const LONG_TOKEN = "an_identifier_long_enough_to_widen_any_field_it_is_written_into_x";
+/** The widths the tokens check runs at: the two phones and the last width under the breakpoint. */
+export const TOKEN_WIDTHS: readonly number[] = [320, 375, BREAKPOINT - 1];
+/** An element the tokens check writes nothing into, and where its text comes from. */
+interface TokenExemption { selector: string; reason: string }
+/** The elements that hold a short label from a fixed vocabulary or the priority table, not text a user wrote,
+ *  and are built not to wrap or shrink. */
+export const TOKEN_EXEMPT: readonly TokenExemption[] = [
+  { selector: ".pri", reason: "the priority badge: a value of the priority table's vocabulary, in an inline-flex box that does not shrink" },
+];
+
 /** Selectors of elements that may scroll sideways inside themselves: the frames every table of the report sits in. */
 export const SCROLL_CONTAINERS: readonly string[] = [".frame"];
 
