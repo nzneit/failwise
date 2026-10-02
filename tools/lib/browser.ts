@@ -65,7 +65,7 @@ export interface Session {
   /** The tests of the Playwright JSON report at `results` (repository-relative); null when absent or not one. */
   readTests: (results: string) => ReportedTest[] | null;
   /** Starts `command ...args` from the root with stdio "pipe": git and tar. */
-  exec: (command: string, args: string[]) => { status: number | null; stdout: string };
+  exec: (command: string, args: string[]) => { status: number | null; stdout: string; stderr: string };
 }
 
 /** One test of a JSON report. */
@@ -305,8 +305,8 @@ function openSession(ctx: Context, run: Run, flags: Flags, nodeVersion: string):
     readTests: (results) => reportedTests(machine.files.readText(join(machine.root, results))),
     exec: (command, args) => {
       const { root, host } = machine;
-      const { status, stdout } = host.spawn(command, args, { cwd: root, stdio: "pipe", env: { ...host.env } });
-      return { status, stdout: String(stdout ?? "") };
+      const { status, stdout, stderr } = host.spawn(command, args, { cwd: root, stdio: "pipe", env: { ...host.env } });
+      return { status, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") };
     },
   };
 }

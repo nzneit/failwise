@@ -374,3 +374,18 @@ test("a first pass that leaves no results file: UNVERIFIED, exit 1, every view u
   assert.deepEqual([result.status, result.errors], [1, ["error UNVERIFIED: build/compare/pass1/results.json is absent or is not Playwright's JSON report"]]);
   assert.match(result.read("/repo/build/compare/summary.md") ?? "", new RegExp(`## Unverified views: ${N}\n`));
 });
+
+// What a failed child says
+test("git that cannot be started: TOOLING, not USAGE, nothing else started", () => {
+  const result = run([], { statuses: { revParse: null } });
+  assert.deepEqual([result.status, result.errors], [1, ["error TOOLING: git could not be started"]]);
+  assert.deepEqual(result.calls, [`${PW} install --dry-run chromium`, "git rev-parse --verify --quiet main^{commit}"]);
+});
+
+test("a failing git archive shows its own stderr before the coded line, and only the coded line when it wrote none", () => {
+  const line = "error TOOLING: git archive exited 128; the base commit could not be exported";
+  const said = run([], { statuses: { archive: 128 }, stderr: { archive: "fatal: not a tree object\n" } });
+  assert.deepEqual([said.status, said.errors], [1, ["fatal: not a tree object", line]]);
+  const silent = run([], { statuses: { archive: 128 } });
+  assert.deepEqual([silent.status, silent.errors], [1, [line]]);
+});

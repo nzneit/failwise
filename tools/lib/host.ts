@@ -16,7 +16,7 @@ export type Spawn = (
   command: string,
   args: string[],
   options: { cwd: string; stdio: "inherit" | "pipe"; env?: Record<string, string | undefined> },
-) => { status: number | null; stdout?: string | null };
+) => { status: number | null; stdout?: string | null; stderr?: string | null };
 
 export interface Host {
   execPath: string;

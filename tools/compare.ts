@@ -19,13 +19,15 @@
 // pass. build/compare is removed first, so an earlier run's files cannot stand in. With
 // GITHUB_STEP_SUMMARY set the summary is appended to it; with GITHUB_OUTPUT set and exit status 0,
 // `changed=<count>`. Exit status 0 when every view is same or changed, 1 otherwise. The work of the
-// runner is tools/lib/browser.ts, the comparison's own in tools/lib/compare-views.ts. Coded lines:
+// runner is tools/lib/browser.ts, the comparison's own in tools/lib/compare-views.ts. When a git or
+// tar step fails, the child's own stderr, if it wrote any, is shown before the coded line. Coded lines:
 //
 //   error USAGE: ...       an unknown flag (--report and --fetch among them), an unknown engine, a
 //                          flag without its value, a --base that names no commit
 //   error NODE: ...        no Node 24.2 or later found
-//   error TOOLING: ...     dev/node_modules or Playwright absent or unstartable, no merge base, git
-//                          status, git archive or tar failing, either renderer failing
+//   error TOOLING: ...     dev/node_modules or Playwright absent or unstartable, git that cannot be
+//                          started, no merge base, git status, git archive or tar failing, either
+//                          renderer failing
 //   error BROWSER: ...     the build of an engine asked for is not installed
 //   error UNVERIFIED: ...  a report that could not be read, a pass's JSON report absent or unreadable,
 //                          and each view that is neither same nor changed
@@ -81,7 +83,13 @@ interface Classes {
   unverified: string[];
 }
 
-function fail(session: Session, line: string): false {
+/** A child's result as Session.exec gives it. */
+type Child = ReturnType<Session["exec"]>;
+
+/** Writes a failed child's own stderr, when it has any, then the coded line. */
+function fail(session: Session, line: string, child?: Child): false {
+  const said = child?.stderr.trim() ?? "";
+  if (said !== "") session.machine.writeError(said);
   session.machine.writeError(line);
   return false;
 }
@@ -93,18 +101,18 @@ function exited(status: number | null): string {
 /** Steps 1 to 3: the base names a commit, it has a merge base with HEAD, and whether the tree is dirty. */
 function findBase(session: Session): Base | null {
   const { base } = session;
-  const noBase = (line: string): null => {
-    session.machine.writeError(line);
+  const noBase = (line: string, child: Child): null => {
+    fail(session, line, child);
     return null;
   };
-  if (session.exec("git", ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]).status !== 0) {
-    return noBase(`error USAGE: --base names no commit: ${base}`);
-  }
+  const commit = session.exec("git", ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]);
+  if (commit.status === null) return noBase("error TOOLING: git could not be started", commit);
+  if (commit.status !== 0) return noBase(`error USAGE: --base names no commit: ${base}`, commit);
   const merge = session.exec("git", ["merge-base", base, "HEAD"]);
   const sha = merge.stdout.split("\n")[0].trim();
-  if (merge.status !== 0 || sha === "") return noBase(`error TOOLING: ${base} and HEAD have no merge base`);
+  if (merge.status !== 0 || sha === "") return noBase(`error TOOLING: ${base} and HEAD have no merge base`, merge);
   const status = session.exec("git", ["status", "--porcelain"]);
-  if (status.status !== 0) return noBase(`error TOOLING: git status exited ${exited(status.status)}`);
+  if (status.status !== 0) return noBase(`error TOOLING: git status exited ${exited(status.status)}`, status);
   return { sha, dirty: status.stdout !== "" };
 }
 
@@ -113,10 +121,10 @@ function exportBase(session: Session, sha: string): boolean {
   session.machine.files.makeDir(join(session.machine.root, TREE));
   const archive = session.exec("git", ["archive", "--format=tar", `--output=${TAR}`, sha, "skills"]);
   if (archive.status !== 0) {
-    return fail(session, `error TOOLING: git archive exited ${exited(archive.status)}; the base commit could not be exported`);
+    return fail(session, `error TOOLING: git archive exited ${exited(archive.status)}; the base commit could not be exported`, archive);
   }
   const tar = session.exec("tar", ["-xf", TAR, "-C", TREE]);
-  if (tar.status !== 0) return fail(session, `error TOOLING: tar exited ${exited(tar.status)}; the base commit could not be unpacked`);
+  if (tar.status !== 0) return fail(session, `error TOOLING: tar exited ${exited(tar.status)}; the base commit could not be unpacked`, tar);
   return true;
 }
 

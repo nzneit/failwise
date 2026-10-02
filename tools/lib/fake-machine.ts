@@ -87,7 +87,9 @@ export interface FakeOptions {
     archive?: number | null;
     tar?: number | null;
     renderBefore?: number | null;
+    revParse?: number | null; // null: git could not be started
   };
+  stderr?: { archive?: string; tar?: string }; // what a failing git archive or tar writes to stderr
   results?: string | null; // what `playwright test` writes to the results file; null writes nothing.
   // Default: one "expected" test per --project named.
   stale?: string; // what the results file holds before the run
@@ -133,6 +135,7 @@ interface Fake {
 interface Child {
   status: number | null;
   stdout: string;
+  stderr?: string;
 }
 
 /** The status the fake gives a child of the given kind: 0 unless `statuses` names it. */
@@ -156,7 +159,7 @@ function resultsOf(options: FakeOptions, args: string[]): string | null {
 function leaving(fake: Fake, kind: "archive" | "tar", path: string): Child {
   const status = statusOf(fake.options, kind);
   if (status === 0) fake.disk.set(join(fake.root, path), kind);
-  return { status, stdout: "" };
+  return { status, stdout: "", stderr: status === 0 ? "" : (fake.options.stderr?.[kind] ?? "") };
 }
 
 /** A line of output when `value` is a string, else status 1 and nothing. */
@@ -166,7 +169,8 @@ function printing(value: string | null): Child {
 
 /** The fake git, by subcommand. */
 const GIT: Record<string, (fake: Fake, args: string[]) => Child> = {
-  "rev-parse": (fake) => printing(fake.options.git?.commit === false ? null : MERGE_BASE),
+  "rev-parse": (fake) =>
+    statusOf(fake.options, "revParse") === null ? { status: null, stdout: "" } : printing(fake.options.git?.commit === false ? null : MERGE_BASE),
   "merge-base": (fake) => {
     const mergeBase = fake.options.git?.mergeBase;
     return printing(mergeBase === undefined ? MERGE_BASE : mergeBase);
