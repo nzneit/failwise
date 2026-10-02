@@ -257,8 +257,24 @@ test("the report loads nothing from the network and runs no script", () => {
   assert.ok(html.includes('<script type="application/json" id="fmea-data">'));
 });
 
-test("the template carries print rules for page breaks and table widths", () => {
-  assert.ok(template.includes("@media print { tr, details { break-inside: avoid } table { width: 100% } }"));
+test("the template carries print rules for landscape pages and page breaks", () => {
+  assert.equal(template.split("@media print").length - 1, 1, "the template has one print block");
+  const print = template.slice(template.indexOf("@media print {"), template.indexOf("</style>"));
+  for (const rule of [
+    "@page { size: landscape; margin: 12mm; }",
+    "body { padding:0; font-size:11px; }",
+    ".back { display:none; }",
+    "h2, h3, article.row > header { break-after: avoid; }",
+    "article.row, tr, .attn-item, .tiles, .key { break-inside: avoid; }",
+    "thead { display: table-header-group; }",
+    "a { color:inherit; text-decoration:none; }",
+  ]) {
+    assert.ok(print.includes(rule), `the print block is missing: ${rule}`);
+  }
+});
+
+test("the template lets a long element id break inside the index", () => {
+  assert.ok(template.includes("table.index code { overflow-wrap:anywhere; }"));
 });
 
 test("the CLI writes the report and exits 0", () => {
