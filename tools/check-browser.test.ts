@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runGate } from "./check-browser.ts";
+import { EXPECTED_FAILURES } from "../dev/browser/matrix.ts";
 import { fakeMachine, report, type Call, type FakeOptions } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
@@ -218,4 +219,11 @@ test("each child is started through the resolved Node from the root", () => {
 test("the stale results file the fake starts with sits where the runner reads it", () => {
   const { machine } = fakeMachine("gate", ROOT, { stale: "{}" });
   assert.equal(machine.files.readText(RESULTS), "{}");
+});
+
+test("the phone-width layout checks are expected failures, each naming the narrow-screen design", () => {
+  for (const check of ["scroll", "edge"] as const) {
+    assert.ok(EXPECTED_FAILURES.some((known) => known.check === check && known.width === 375), check);
+  }
+  for (const known of EXPECTED_FAILURES) assert.match(known.reason, /narrow-screen design/, `${known.check} at ${known.width}`);
 });
