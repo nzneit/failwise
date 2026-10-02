@@ -71,3 +71,16 @@ export async function partLocator(page: Page, stem: string): Promise<Locator> {
   }
   throw new Error(`the report has no part "${stem}"`);
 }
+
+/** Hides everything in the page but `part`, its ancestors and what is inside it, so the part sits alone at the
+ *  top of the page and its image does not depend on what comes before it. Each sibling of the part, and of every
+ *  ancestor of the part up to <body>, gets `display: none !important`. */
+export async function isolatePart(part: Locator): Promise<void> {
+  await part.evaluate((element) => {
+    for (let node: Element | null = element; node !== null && node !== document.body; node = node.parentElement) {
+      for (const sibling of node.parentElement?.children ?? []) {
+        if (sibling !== node && sibling instanceof HTMLElement) sibling.style.setProperty("display", "none", "important");
+      }
+    }
+  });
+}
