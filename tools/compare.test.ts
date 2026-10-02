@@ -342,3 +342,35 @@ test("two rows with one id: the views of that stem UNVERIFIED, exit 1", () => {
   assert.equal(result.status, 1);
   assert.equal(result.errors[0], `error UNVERIFIED: chromium ${VIEWS[0]} row-ch-1: more than one row id reduces to this file name (row-ch-1, row-ch-1)`);
 });
+
+// The fail-closed branches
+test("a view with a result on chromium only, when firefox is asked for too: UNVERIFIED on firefox, the chromium result does not stand in", () => {
+  const both = ["chromium", "firefox"].flatMap((engine) => owedTests().map((one) => ({ ...one, engine })));
+  const results = viewReport(...both.filter((one) => !(one.engine === "firefox" && one.view === "1280" && one.stem === "header")));
+  const dryRun = "browser: chromium version 1\n  Install location:    /cache/chromium-1\nbrowser: firefox version 1\n  Install location:    /cache/firefox-1\n";
+  const result = run(["--engines", "chromium,firefox"], { dryRun, passes: { 2: results } });
+  assert.deepEqual([result.status, result.errors], [1, ["error UNVERIFIED: firefox 1280 header: no result in the second pass"]]);
+});
+
+test("one row stem reached from a different single id on each side: every view of it UNVERIFIED, naming both ids", () => {
+  const before = HTML.replace("row-ch-1", "row-a/b");
+  const after = HTML.replace("row-ch-1", "row-a b");
+  const result = run([], { rendered: { before, after } });
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, VIEWS.map((view) => `error UNVERIFIED: chromium ${view} row-a-b: more than one row id reduces to this file name (row-a b, row-a/b)`));
+  assert.ok(!result.env.some((one) => one.FAILWISE_COMPARE_PARTS?.includes("row-a-b")));
+});
+
+test("a rendered report that cannot be read: UNVERIFIED, exit 1, no pass started", () => {
+  for (const side of ["before", "after"]) {
+    const result = run([], { rendered: { [side]: null } });
+    assert.deepEqual([result.status, result.errors], [1, [`error UNVERIFIED: build/compare/${side}.html could not be read`]]);
+    assert.ok(!result.calls.some((call) => call.startsWith(`${PW} test`)), side);
+  }
+});
+
+test("a first pass that leaves no results file: UNVERIFIED, exit 1, every view unverified in the summary", () => {
+  const result = run([], { passes: { 1: null } });
+  assert.deepEqual([result.status, result.errors], [1, ["error UNVERIFIED: build/compare/pass1/results.json is absent or is not Playwright's JSON report"]]);
+  assert.match(result.read("/repo/build/compare/summary.md") ?? "", new RegExp(`## Unverified views: ${N}\n`));
+});

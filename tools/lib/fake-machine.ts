@@ -95,7 +95,8 @@ export interface FakeOptions {
   written?: Record<string, string>; // further files `playwright test` leaves, by absolute path
   present?: Record<string, string>; // files on the disk before the run, by absolute path
   git?: { commit?: boolean; mergeBase?: string | null; dirty?: boolean }; // defaults: true, MERGE_BASE, false
-  rendered?: { before?: string; after?: string }; // what each render writes on a compare run; default ""
+  rendered?: { before?: string | null; after?: string | null }; // what each render writes on a compare run; default "";
+  // null: the render succeeds and writes nothing
   passes?: { 1?: string | null; 2?: string | null }; // what each compare pass writes; null writes nothing
   // Default: one "expected" test per project named, view of VIEWS and stem of FAILWISE_COMPARE_PARTS.
   lost?: string[]; // attachment paths a pass reports but leaves off the disk
@@ -186,9 +187,10 @@ function gitOrTar(fake: Fake, command: string, args: string[]): Child {
 function render(fake: Fake, args: string[]): number | null {
   const before = args[0].startsWith(BEFORE_TREE);
   const status = statusOf(fake.options, before ? "renderBefore" : "render");
-  if (fake.run === "compare" && status === 0) {
-    const rendered = fake.options.rendered ?? {};
-    fake.disk.set(join(fake.root, args[args.indexOf("--out") + 1]), (before ? rendered.before : rendered.after) ?? "");
+  const rendered = fake.options.rendered ?? {};
+  const text = before ? rendered.before : rendered.after;
+  if (fake.run === "compare" && status === 0 && text !== null) {
+    fake.disk.set(join(fake.root, args[args.indexOf("--out") + 1]), text ?? "");
   }
   return status;
 }
