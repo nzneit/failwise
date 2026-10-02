@@ -20,6 +20,8 @@ import { computePlan } from "./lib/tracker/plan.ts";
 import type { Plan, PlannedAction } from "./lib/tracker/plan.ts";
 import { judge } from "./lib/tracker/observe.ts";
 import { CreatedWithFault, TrackerWait } from "./lib/tracker/provider.ts";
+import { githubProvider } from "./lib/tracker/github.ts";
+import { runProcess } from "./lib/tracker/spawn.ts";
 import type { Link, Observation, Provider, Target, Visibility } from "./lib/tracker/provider.ts";
 
 export interface Deps {
@@ -45,9 +47,7 @@ const DETAIL_LIMIT = 80;
 const HTTPS_URL = /^https:\/\/\S+$/;
 
 const defaultDeps: Deps = {
-  makeProvider: () => {
-    throw new ScriptError("TRACKER_UNAVAILABLE", "no tracker adapter is installed");
-  },
+  makeProvider: (config) => githubProvider(config, (args, input) => runProcess("gh", args, input)),
   today: () => nowIso().slice(0, 10),
   sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
   write: (text) => { process.stdout.write(text); },
