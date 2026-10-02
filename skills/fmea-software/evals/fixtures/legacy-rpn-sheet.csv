@@ -1,0 +1,8 @@
+Prepared by,J. Legacy,,,,,,,,,,,,
+Date,2025-11-30,,,,,,,,,,,,
+
+Item,Function,Failure Mode,Effect,Cause,Current Controls,S,O,D,RPN,Recommended Action,Owner,Status,Justification
+Checkout API,Accept a submission from the storefront,Returns a confirmation body the storefront cannot read,Storefront treats a confirmed order as failed,A response field is renamed without a version bump,Detection: contract tests on the checkout API,6,4,5,120,Extend the contract tests to the response shape,Checkout team,Open,Rated from the storefront outage in the spring release
+Payment Gateway,Authorize a card within the timeout budget,Authorization times out with no decision,Cart is not confirmed,Gateway degrades above the per-merchant rate,Detection: gateway latency alerting,8,6,3,144,Align the client timeout with the storefront budget,Payments team,Open,
+Order Store,Persist a confirmed order durably,Write is acknowledged but the row is absent after failover,Confirmed order data is lost,Acknowledgement precedes replication to the replica,Prevention: nightly backup of the order store,7,5,6,200,Gate failover on replication lag,Platform team,Not Implemented,Rated from the failover drill of the autumn
+Pricing Service,Return a current priced cart,A stale price is served from the cart quote,Shopper is charged a price the catalogue no longer offers,The fallback quote has no maximum age,Detection: cache age dashboard,4,5,2,40,Give the fallback quote a maximum age,Pricing team,Open,Rated from the pricing incident review

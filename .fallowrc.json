@@ -1,0 +1,13 @@
+{
+  "entry": ["skills/fmea-software/scripts/*.ts", "tools/*.ts"],
+  "includeEntryExports": true,
+  "ignorePatterns": ["tools/workflows/**"],
+  "failOnParseError": true,
+  "health": { "maxCyclomatic": 20, "maxCognitive": 15 },
+  "rules": {
+    "complexity-crap": "off",
+    "complexity-cyclomatic": "error",
+    "complexity-cognitive": "error"
+  },
+  "duplicates": { "threshold": 0.01 }
+}

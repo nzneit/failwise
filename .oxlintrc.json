@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "typescript/no-floating-promises": ["error", {
+      "allowForKnownSafeCalls": [
+        { "from": "package", "package": "node:test", "name": ["test", "describe", "it", "suite"] }
+      ]
+    }]
+  },
+  "ignorePatterns": ["tools/workflows/**", "dev/**"]
+}

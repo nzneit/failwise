@@ -1,0 +1,780 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fmea-software:schema:fmea:v1",
+  "title": "fmea-software analysis document",
+  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain table prints. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "elements", "functions", "chains"],
+  "properties": {
+    "meta": {
+      "$ref": "#/$defs/meta",
+      "description": "Identity, scope, planning records, pins and the analysis-level log."
+    },
+    "elements": {
+      "type": "array",
+      "description": "The structure under analysis: one entry per element, in any order. Hierarchy is carried by the dotted element id, not by nesting or position. The update mode diffs this array against the stored version by id.",
+      "items": {
+        "$ref": "#/$defs/element"
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "What each element must do, keyed by id and owned by one element. A chain reaches its element only through its function.",
+      "items": {
+        "$ref": "#/$defs/function"
+      }
+    },
+    "chains": {
+      "type": "array",
+      "description": "One denormalized row per failure chain, as the report's chain table reads it. The file keeps authoring order; the report sorts by priority, then severity.",
+      "items": {
+        "$ref": "#/$defs/chain"
+      }
+    },
+    "computed": {
+      "$ref": "#/$defs/computed",
+      "description": "Written whole by validate.ts --write on a passing run and never by hand; absent until the first such run. render.ts refuses a document without it."
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "title": "Non-empty text",
+      "description": "Free text of at least one character.",
+      "type": "string",
+      "minLength": 1
+    },
+    "date": {
+      "title": "Calendar date",
+      "description": "YYYY-MM-DD. Draft 2020-12 treats format as an annotation; validate.ts enforces it by hand.",
+      "type": "string",
+      "format": "date"
+    },
+    "elementId": {
+      "title": "Element id",
+      "description": "A hierarchical dotted path of one to four lowercase kebab-case segments, for example checkout.payment-gateway. Depth is the segment count and is the element's level; the parent id is the path minus its last segment. The depth cap is the skill's own convention. Ids are stable across versions and compared byte-for-byte: the update mode diffs elements by id, so a renamed element keeps its id.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*){0,3}$"
+    },
+    "plainId": {
+      "title": "Plain id",
+      "description": "An opaque identifier: a leading letter or digit, then letters, digits, '.', '_', ':' or '-'. Used for the analysis, functions, chains and actions; carries no hierarchy; compared byte-for-byte. A converted sheet's row id is kept when it fits this grammar.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "historyEntry": {
+      "title": "History entry",
+      "description": "One dated log line, bound to the meta.version current when it was written. change is prose; there is no closed change-kind vocabulary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "date", "change"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The meta.version current when the entry was written."
+        },
+        "date": {
+          "$ref": "#/$defs/date"
+        },
+        "change": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of elements and functions added, removed or changed and rows marked stale; each scales.version change. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
+        }
+      }
+    },
+    "assumption": {
+      "title": "Assumption",
+      "description": "One written assumption of the analysis, with an owner and an open or closed status (F-WS6-04). An unattended run records every missing input here with owner \"user\" and status \"open\" rather than inventing it. The report prints the list.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "owner", "status"],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "owner": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Who is to confirm or retire it: a name, role or team; \"user\" when no one else is known."
+        },
+        "status": {
+          "enum": ["open", "closed"],
+          "description": "open: not yet confirmed. closed: confirmed, refuted or retired; the text says which."
+        }
+      }
+    },
+    "review": {
+      "title": "Review record",
+      "description": "One review of the analysis by named people (F-WS6-04). The skill records an entry, and sets meta.updated, only when it is told a review happened; it never records one it was not told about. The report prints the record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "reviewers", "outcome"],
+      "properties": {
+        "date": {
+          "$ref": "#/$defs/date"
+        },
+        "reviewers": {
+          "type": "array",
+          "description": "Names or roles of the people who reviewed.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "outcome": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "What the reviewers concluded, in prose."
+        }
+      }
+    },
+    "boundary": {
+      "title": "Analysis boundary",
+      "description": "What the analysis covers, what it deliberately leaves out, and the security boundary statement declared in step 1 (D6). The report header prints all three.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["included", "excluded", "security"],
+      "properties": {
+        "included": {
+          "type": "array",
+          "description": "What is inside the boundary, one entry each.",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "excluded": {
+          "type": "array",
+          "description": "What is deliberately outside the boundary, one entry each.",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "security": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The security boundary statement: security components are analysed as ordinary elements, and any failure whose cause is an adversary becomes a handoff row to threat modeling."
+        }
+      }
+    },
+    "scales": {
+      "title": "Scale and table pins",
+      "description": "The two document-wide pins every rating and priority in the document was produced under. The document carries neither the scales nor the table; both are external files these two fields name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "priority_table"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The scales version the ratings were made against: the 'scales version: N' line of scales-software.md at rating time. The update mode compares it with that line, marks every rated row stale with reason scales-version when it is behind, and advances it in the same run. Rows carry no pin of their own."
+        },
+        "priority_table": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The id declared by the priority table file every row's priority was computed with: the shipped table or a user-supplied --table-file. Set by priority.ts --write. Every chains[].priority.table and post_priority.table must equal it; validate.ts and render.ts refuse the document, naming both ids, when it differs from the loaded table's id. The table file, not the document, holds the priority vocabulary, its order and the S/O/D cell map."
+        }
+      }
+    },
+    "meta": {
+      "title": "Analysis metadata",
+      "description": "Document-level identity, scope, planning records, pins and log. The report header prints name, version, branch, scope, boundary, the two pins and the count of provisional ratings.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "branch", "scope", "boundary", "ground_rules", "assumptions", "reviews", "scales", "created", "updated", "history"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/plainId",
+          "description": "A stable identifier for the analysis, chosen once and kept across its versions: an update run keeps it and bumps version. Nothing in the scripts reads it."
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The analysis title, as the report header prints it."
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1 at creation; bumped by every update run. history[].version, chains[].history[].version and chains[].stale.since_version refer to it."
+        },
+        "branch": {
+          "enum": ["DFMEA"],
+          "description": "The FMEA branch. Exactly DFMEA in v1 (D3): a PFMEA request receives the process stub's answer and no document."
+        },
+        "scope": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "What is analysed, in prose."
+        },
+        "boundary": {
+          "$ref": "#/$defs/boundary"
+        },
+        "ground_rules": {
+          "type": "array",
+          "description": "Rules decided before the analysis began, one entry each (F-WS6-04). The report prints them.",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "description": "Every assumption, written down as its own item.",
+          "items": {
+            "$ref": "#/$defs/assumption"
+          }
+        },
+        "reviews": {
+          "type": "array",
+          "description": "The review record, appended to whenever a review is reported; meta.updated is set at the same time.",
+          "items": {
+            "$ref": "#/$defs/review"
+          }
+        },
+        "scales": {
+          "$ref": "#/$defs/scales"
+        },
+        "created": {
+          "$ref": "#/$defs/date",
+          "description": "The date the analysis was created."
+        },
+        "updated": {
+          "$ref": "#/$defs/date",
+          "description": "The date of the last change to an authored part, a recorded review included."
+        },
+        "history": {
+          "type": "array",
+          "description": "The analysis-level log. Per-row changes go in chains[].history instead.",
+          "items": {
+            "$ref": "#/$defs/historyEntry"
+          }
+        }
+      }
+    },
+    "dependency": {
+      "title": "Dependency",
+      "description": "How the analysed system depends on this element, classified strong or weak with its SLA and limits as free text (F-WS3-01). Required on an element of kind external_dependency and optional on every other kind; an internal dependency is any other element that carries it. The keyword subset cannot make it conditional, so the invariant element-dependency-required enforces the requirement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strength"],
+      "properties": {
+        "strength": {
+          "enum": ["strong", "weak"],
+          "description": "Strong or weak, as the design-inputs checklist classifies dependencies."
+        },
+        "sla": {
+          "type": "string",
+          "description": "The availability or latency commitment, as free text in the source's own terms. Nothing computes on it."
+        },
+        "limits": {
+          "type": "string",
+          "description": "Scaling or rate limits, as free text in the source's own terms. Nothing computes on it."
+        }
+      }
+    },
+    "source": {
+      "title": "Element source",
+      "description": "Where knowledge of an element came from. Every element lists at least one source whose kind is not catalog (invariant element-source-non-catalog): a catalog source records only that a row prompted the element, and the row's provenance is recorded on the chains that use it, in catalog_refs[].",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": {
+          "enum": ["document", "repo", "interview", "incident", "contract", "catalog"],
+          "description": "document: an architecture or design document, or a converted legacy sheet. repo: a code repository. interview: a person. incident: an incident or postmortem record. contract: a supplier or service agreement. catalog: a row of the skill's design-failure catalog prompted the element."
+        },
+        "ref": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The reference as the source spells it: a document name or path with an optional heading, a repository, a person or role, an incident id, a contract clause. When kind is catalog, the cat-<kind>-<NN> row id; the keyword subset cannot make that conditional, so the reviewer checks it. No URI format is asserted."
+        }
+      }
+    },
+    "element": {
+      "title": "Element",
+      "description": "One element of the structure, keyed by id (step 2). The report renders elements as a structure tree.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "description", "parent", "sources"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/elementId",
+          "description": "Unique within the document (invariant element-id-unique). Its dotted segments carry the hierarchy; its depth is its level. The eval stability check compares element id sets after trimming and case-folding."
+        },
+        "kind": {
+          "enum": ["service", "external_dependency", "interface", "event_stream", "datastore", "security_component", "component"],
+          "description": "The skill's own seven-value vocabulary. A security component is analysed like any other kind (D6); an ML or LLM element takes whichever kind fits, usually component."
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The element's name as the team says it."
+        },
+        "description": {
+          "type": "string",
+          "description": "Free text; may be empty."
+        },
+        "parent": {
+          "type": ["string", "null"],
+          "description": "Equal to id with its last dotted segment removed, or null at depth 1; the invariant element-parent-matches-id rejects any other value, and element-parent-resolves requires the named element to exist. Stored for the reader; derivable from id."
+        },
+        "dependency": {
+          "$ref": "#/$defs/dependency"
+        },
+        "sources": {
+          "type": "array",
+          "description": "At least one entry, and at least one whose kind is not catalog.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        }
+      }
+    },
+    "function": {
+      "title": "Function",
+      "description": "What an element must do, under what conditions, for whom (step 3). Keyed by id: chains reference a function by id and reach its element through this record, and the update mode diffs functions by id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "element", "statement", "conditions", "for_whom"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/plainId",
+          "description": "Unique within the document (invariant function-id-unique)."
+        },
+        "element": {
+          "$ref": "#/$defs/elementId",
+          "description": "A reference: the id of the element in elements[] that performs the function (invariant function-element-resolves)."
+        },
+        "statement": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "What the element must do. A converted sheet's function column lands here."
+        },
+        "conditions": {
+          "type": "array",
+          "description": "Operating conditions under which the function is required, one entry each; may be empty.",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "for_whom": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The user or consumer the function serves."
+        }
+      }
+    },
+    "cause": {
+      "title": "Cause",
+      "description": "One cause of the failure mode. origin records the artifact the defect lives in (adapted from F-WS2-01); adversarial records that an adversary is the agent (D6, skill-authored); a cause may carry both.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The cause in the source's or the team's terms. When adversarial is true, the chain's handoff.adversary_cause repeats this text exactly."
+        },
+        "origin": {
+          "enum": ["specification", "design", "code"],
+          "description": "Optional; absent when not classified."
+        },
+        "adversarial": {
+          "type": "boolean",
+          "description": "Absent means false. A chain carries handoff if and only if at least one of its causes is true here (invariants handoff-without-adversarial and adversarial-without-handoff)."
+        }
+      }
+    },
+    "controlEvidence": {
+      "title": "Control evidence",
+      "description": "What shows the control works: the same referent as a rating's evidence_kind and evidence_ref, nested here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["observed_incident", "test_result", "estimate", "none"],
+          "description": "observed_incident: the control acted in a recorded incident. test_result: a recorded test exercised it. estimate: a judgement with no record. none: no evidence; a detection control with kind none does not satisfy the Detection lint."
+        },
+        "ref": {
+          "type": "string",
+          "description": "The incident id, test id or document the evidence lives in, as the source spells it. No URI format is asserted."
+        }
+      }
+    },
+    "control": {
+      "title": "Control",
+      "description": "One prevention, detection or compensating control on the chain, identified before the chain is rated (step 4). Controls carry no id: lints point at one by array index, and the update mode re-confirms each status existing control against the re-collected control inventory by its description text, marking the chain stale with reason control-removed when the control is no longer present.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "status", "evidence"],
+      "properties": {
+        "kind": {
+          "enum": ["prevention", "detection", "compensating"],
+          "description": "The skill's own three-way composition: prevention and detection follow the convention evidenced in F-WS6-01 and F-WS6-06; compensating carries Neufelder's third construct (F-WS6-03) under a skill-authored definition. No standard in the evidence base binds a control kind to a rating column."
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The control in prose. It is also the control's matching key for the update mode."
+        },
+        "status": {
+          "enum": ["existing", "planned"],
+          "description": "existing: in place now. planned: not yet in place; does not satisfy the Detection lint."
+        },
+        "evidence": {
+          "$ref": "#/$defs/controlEvidence"
+        }
+      }
+    },
+    "ratingReview": {
+      "title": "Rating review",
+      "description": "Who stands behind the rating value. by and date are required when status is not provisional; the keyword subset cannot make that conditional, so the invariant rating-review-by-date enforces it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["provisional", "rescored", "authored"],
+          "description": "provisional: written by the skill, or rewritten by an update run, and not yet re-scored by a named person; the lint rating-provisional fires, and the report says when priority rests on such ratings. rescored: a named person re-scored the value against the anchors, one rating at a time. authored: the value was authored outside this skill, for example carried from a converted sheet."
+        },
+        "by": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The person who re-scored the value or, for a converted sheet, its stated author or its file name."
+        },
+        "date": {
+          "$ref": "#/$defs/date",
+          "description": "When they did so; for a converted sheet, its date or the conversion date."
+        }
+      }
+    },
+    "rating": {
+      "title": "Rating",
+      "description": "One of S, O, D: a value on the 1 to 10 scale with the rationale and evidence kind every rating must carry (D2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rationale", "evidence_kind", "review"],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "An integer 1 to 10 on the scales pinned by meta.scales.version; 10 is the worst. priority.ts rejects any other value as a validation failure."
+        },
+        "rationale": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Why this value against the anchors, in prose; mandatory. For a converted sheet without a rationale column, the declared default 'converted from <file>; no rationale recorded', with the substitution recorded in meta.history."
+        },
+        "evidence_kind": {
+          "enum": ["observed_incident", "test_result", "estimate"],
+          "description": "observed_incident: an incident count over a stated window, named in evidence_ref. test_result: a recorded test. estimate: a judgement with no record. Averaged incident metrics and recorded severity labels are not rating evidence (F-WS4-11, F-WS4-12)."
+        },
+        "evidence_ref": {
+          "type": "string",
+          "description": "The incident ids and window, the test, or the document the evidence lives in, as the source spells it. The same referent as controls[].evidence.ref. No URI format is asserted."
+        },
+        "review": {
+          "$ref": "#/$defs/ratingReview"
+        }
+      }
+    },
+    "ratings": {
+      "title": "S, O, D ratings",
+      "description": "Severity, Occurrence and Detection; the three keys are fixed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["S", "O", "D"],
+      "properties": {
+        "S": {
+          "$ref": "#/$defs/rating",
+          "description": "Severity, rated on the end-level effect."
+        },
+        "O": {
+          "$ref": "#/$defs/rating",
+          "description": "Occurrence: exposure to the mode under its trigger."
+        },
+        "D": {
+          "$ref": "#/$defs/rating",
+          "description": "Detection: the earliest control layer that reliably catches the mode; 1 is earliest."
+        }
+      }
+    },
+    "priority": {
+      "title": "Priority",
+      "description": "Computed, never authored: priority.ts --write fills it from a ratings block and the loaded table, and validate.ts recomputes it, failing the document on any mismatch. value is a string drawn from the loaded table's vocabulary, so it is a value plus a table id rather than a closed enum (F-WS6-02); rpn is the product of the three values, kept for reference and for comparison with legacy sheets, never used to rank (D2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "table", "rpn"],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "A value from the vocabulary of the table named by table (H, M or L under the shipped table). The table's declared order, highest priority first, is the value's only ordering; the report sorts by it."
+        },
+        "table": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The id declared by the table file this value came from; must equal meta.scales.priority_table (invariant priority-row-table-mismatch)."
+        },
+        "rpn": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "S times O times D of the ratings this block was computed from. Never copied from a sheet: a sheet's divergent stated RPN goes in the row's history[]."
+        }
+      }
+    },
+    "action": {
+      "title": "Action",
+      "description": "One recommended action on the chain (step 6). id is unique within the chain, not the document (invariant action-id-unique). The report prints an actions table with status.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "owner", "status", "target_date"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/plainId",
+          "description": "Unique within the chain."
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The action, in prose."
+        },
+        "owner": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The person, role or team responsible."
+        },
+        "status": {
+          "enum": ["Open", "Decision pending", "Implementation pending", "Completed", "Not Implemented"],
+          "description": "The five-value status vocabulary of the AIAG-VDA handbook's Step 6 after its June 2020 errata (F-WS1-08), carried by citation. A row whose actions resolve to no action keeps its risk and priority unchanged (F-WS6-01)."
+        },
+        "target_date": {
+          "$ref": "#/$defs/date",
+          "description": "When the action is due."
+        },
+        "completed_date": {
+          "$ref": "#/$defs/date",
+          "description": "Present when status is Completed."
+        },
+        "source_incident": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The identifier of the incident whose postmortem action item this action was carried over from (C076). Present only on carried-over actions; the lint seeded-action-without-incident flags an action without one on a chain that carries source_incident, for the reviewer to decide."
+        }
+      }
+    },
+    "handoff": {
+      "title": "Threat-model handoff",
+      "description": "Present if and only if at least one cause on the chain is marked adversarial, on any element kind (D6). The report marks handoff rows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["to", "reason", "adversary_cause"],
+      "properties": {
+        "to": {
+          "const": "threat-model",
+          "description": "The one handoff target in v1."
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Why the chain is handed off, in prose."
+        },
+        "adversary_cause": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The exact text of a cause on the same chain whose adversarial flag is true (invariant handoff-cause-mismatch)."
+        }
+      }
+    },
+    "catalogRef": {
+      "title": "Catalog reference",
+      "description": "A design-failure-catalog.md row the chain was built from, with that row's provenance tag. The validator checks both grammars; that the id resolves to a row carrying that tag is a reviewer check. A row enters only when tied to a named element and function and rewritten for it (F-WS2-03). The report's provenance appendix prints every entry.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "provenance"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^cat-(?:service|external_dependency|interface|event_stream|datastore|security_component|component)-[0-9]{2}$",
+          "description": "The catalog's row-id form: cat-<element kind>-<two digits>."
+        },
+        "provenance": {
+          "type": "string",
+          "pattern": "^(?:(?:sourced|paraphrased|adapted-from|cites):C[0-9]{3}|skill-authored)$",
+          "description": "The row's tag from provenance.md: sourced, paraphrased, adapted-from or cites, a colon and the record id C<nnn>; or the bare word skill-authored. The appendix reads the record id from the text after the colon."
+        }
+      }
+    },
+    "stale": {
+      "title": "Stale mark",
+      "description": "Set only by the update mode; every chain carries the object, and a chain no update has touched carries {\"flag\": false}. Cleared by the skill once all three of the chain's ratings carry review status rescored, with a history[] entry recording the since_version it had. The report marks stale rows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["flag"],
+      "properties": {
+        "flag": {
+          "type": "boolean",
+          "description": "true while the row's ratings predate a change to its element, its function, its control inventory or the scales."
+        },
+        "reason": {
+          "enum": ["element-changed", "function-changed", "control-removed", "scales-version"],
+          "description": "Present when flag is true (invariant stale-without-reason): the first rule that fired, in the order element-changed, function-changed, control-removed, scales-version."
+        },
+        "since_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The meta.version of the run that flagged the row; never above meta.version (invariant stale-version-ahead); kept when a later rule replaces reason."
+        }
+      }
+    },
+    "effects": {
+      "title": "Effects",
+      "description": "The consequence of the mode at three levels (step 4). All three are required, non-empty text: a source with a single effect column maps it to end and fills local and next_level with a declared default recorded in meta.history, the same convention as a converted rating's rationale.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local", "next_level", "end"],
+      "properties": {
+        "local": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The effect on the element itself."
+        },
+        "next_level": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The effect on the element's parent or immediate consumer."
+        },
+        "end": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The effect on the end user or the system as a whole; the level Severity is rated on."
+        }
+      }
+    },
+    "chain": {
+      "title": "Failure chain",
+      "description": "One row of the chain table: the function that fails, the mode, its effects, causes, trigger, controls, ratings, computed priority, actions, the optional post-action re-rating and its priority, the optional handoff and source incident, catalog references, the stale mark and the row's own history. post_priority is present exactly when post_ratings is (invariant post-priority-presence): priority.ts --write fills it from post_ratings with the same table and validate.ts recomputes it the same way, while the chain's priority, the report's sort order and the computed block derive from ratings alone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "function", "failure_mode", "effects", "causes", "controls", "ratings", "priority", "actions", "catalog_refs", "stale", "history"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/plainId",
+          "description": "Unique within the document (invariant chain-id-unique). A converted sheet's row id is kept when it fits the grammar."
+        },
+        "function": {
+          "$ref": "#/$defs/plainId",
+          "description": "A reference: the id of the function in functions[] whose loss this chain describes (invariant chain-function-resolves). The chain's element is reached only through it."
+        },
+        "failure_mode": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The mode in the source's or the team's terms; no taxonomy label, since no closed software failure-mode taxonomy survived verification."
+        },
+        "effects": {
+          "$ref": "#/$defs/effects"
+        },
+        "causes": {
+          "type": "array",
+          "description": "At least one cause.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/cause"
+          }
+        },
+        "trigger": {
+          "type": "string",
+          "description": "The initiating event or the condition under which the mode is exercised; on a cascading row a repeat of the triggering cause. The lint occurrence-estimate-without-trigger reads an absent field and the empty string alike, as no trigger named; a writer with none omits the field, and conversion notes the omission in meta.history. No trigger-kind vocabulary is sourced."
+        },
+        "controls": {
+          "type": "array",
+          "description": "Existing and planned controls; may be empty.",
+          "items": {
+            "$ref": "#/$defs/control"
+          }
+        },
+        "ratings": {
+          "$ref": "#/$defs/ratings",
+          "description": "The pre-action ratings: the sole input to priority, the report's sort, the lints and the quality score."
+        },
+        "priority": {
+          "$ref": "#/$defs/priority",
+          "description": "Computed from ratings alone, never from post_ratings."
+        },
+        "actions": {
+          "type": "array",
+          "description": "Actions on the row; may be empty.",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        },
+        "post_ratings": {
+          "$ref": "#/$defs/ratings",
+          "description": "The row's single post-action re-rating, present only when at least one action on the row has status Completed (invariant post-ratings-without-completed). Its three ratings carry their own review state and fire rating-provisional like any other; the report header's 'N of M ratings provisional' counts chains[].post_ratings alongside chains[].ratings, and a provisional post-action rating marks its row provisional in the report like any other rating. Earlier re-ratings are logged in history[]."
+        },
+        "post_priority": {
+          "$ref": "#/$defs/priority"
+        },
+        "handoff": {
+          "$ref": "#/$defs/handoff"
+        },
+        "source_incident": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The identifier of the incident a seeded chain was derived from (a skill-authored slot). Present only on seeded chains; read by the lint seeded-action-without-incident."
+        },
+        "catalog_refs": {
+          "type": "array",
+          "description": "Catalog rows the chain was built from; empty when none.",
+          "items": {
+            "$ref": "#/$defs/catalogRef"
+          }
+        },
+        "stale": {
+          "$ref": "#/$defs/stale"
+        },
+        "history": {
+          "type": "array",
+          "description": "The row's own log; empty on a row nothing has happened to.",
+          "items": {
+            "$ref": "#/$defs/historyEntry"
+          }
+        }
+      }
+    },
+    "lint": {
+      "title": "Lint finding",
+      "description": "One machine-rule finding, written by validate.ts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "severity", "pointer", "message"],
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The rule id as quality-and-lint.md spells it."
+        },
+        "severity": {
+          "enum": ["blocker", "warning"],
+          "description": "blocker: zeroes its row's contribution to the quality score. warning: listed only."
+        },
+        "pointer": {
+          "type": "string",
+          "description": "An RFC 6901 JSON pointer from the document root to the finding's location. A row-scoped finding's first two segments are chains and the row's index, which the quality score matches by segment. Typed as a plain string; validate.ts, the field's only writer, guarantees the grammar."
+        },
+        "message": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The finding, in prose."
+        }
+      }
+    },
+    "computed": {
+      "title": "Computed",
+      "description": "Replaced whole by validate.ts --write on exit 0 and by nothing else; never hand-authored; schema-checked on read but never compared against a later run's values. render.ts refuses a document without it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality_score", "lints", "validated_at", "validator_version"],
+      "properties": {
+        "quality_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "100 times the fraction of chain rows with no blocker lint, rounded: a blocker whose pointer lies inside chains[] dirties that row, and a blocker whose pointer lies outside chains[] is a fault of the document as a whole and zeroes the score outright; 0 when chains[] is empty. The formula is the skill's own."
+        },
+        "lints": {
+          "type": "array",
+          "description": "Every machine-rule finding of the validating run.",
+          "items": {
+            "$ref": "#/$defs/lint"
+          }
+        },
+        "validated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 date-time of the validating run."
+        },
+        "validator_version": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The version of the plugin manifest whose validate.ts wrote the block."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1045 @@
+{
+  "meta": {
+    "id": "fmea-checkout-2026",
+    "name": "Checkout service DFMEA",
+    "version": 1,
+    "branch": "DFMEA",
+    "scope": "Design-side analysis of the checkout service, its public interface, its order store, its session authentication component, and its two service dependencies, as described in checkout-inputs.md.",
+    "boundary": {
+      "included": [
+        "checkout and the interfaces it owns",
+        "the checkout side of the payment gateway dependency",
+        "the checkout side of the pricing dependency"
+      ],
+      "excluded": [
+        "the storefront application",
+        "the payment gateway's internals",
+        "the pricing service's internals"
+      ],
+      "security": "Session authentication is in scope as an ordinary element; any failure whose agent is an adversary is recorded as a handoff row to threat modeling rather than rated as a reliability failure alone."
+    },
+    "ground_rules": [
+      "The analysis covers the design of the checkout service and the interfaces it owns, not the storefront and not the gateway's internals.",
+      "A rating is provisional until a named reviewer re-scores it against the anchors in scales-software.md."
+    ],
+    "assumptions": [
+      {
+        "text": "The pricing service's request ceiling is not documented in the supplied inputs; the Occurrence rating for pricing-related rows rests on exposure reasoning rather than on a stated limit.",
+        "owner": "user",
+        "status": "open"
+      },
+      {
+        "text": "The storefront retries a 5xx submission at most twice with backoff, as stated in the contracts section of checkout-inputs.md.",
+        "owner": "A. Reviewer",
+        "status": "closed"
+      }
+    ],
+    "reviews": [
+      {
+        "date": "2026-09-03",
+        "reviewers": [
+          "A. Reviewer",
+          "B. Owner"
+        ],
+        "outcome": "Ratings on the gateway, session, contract-drift and overload rows re-scored against the anchors, and the Severity of the order-store row with them; the retry-amplification and incident-seeded rows, and the Occurrence and Detection of the order-store row, left provisional pending the payments team's input."
+      }
+    ],
+    "scales": {
+      "version": 1,
+      "priority_table": "priority-fmea-software-v1"
+    },
+    "created": "2026-09-01",
+    "updated": "2026-09-03",
+    "history": []
+  },
+  "elements": [
+    {
+      "id": "checkout",
+      "kind": "service",
+      "name": "Checkout service",
+      "description": "Orchestrates pricing, payment authorization, and order persistence for a submitted cart.",
+      "parent": null,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#component-inventory"
+        },
+        {
+          "kind": "catalog",
+          "ref": "cat-service-01"
+        }
+      ]
+    },
+    {
+      "id": "checkout.api",
+      "kind": "interface",
+      "name": "Checkout HTTP interface",
+      "description": "The public HTTP interface the storefront calls to submit and confirm a cart.",
+      "parent": "checkout",
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "checkout.payment-gateway",
+      "kind": "external_dependency",
+      "name": "Payment gateway",
+      "description": "A third-party card authorization gateway reached over HTTPS.",
+      "parent": "checkout",
+      "dependency": {
+        "strength": "strong",
+        "sla": "99.95% monthly",
+        "limits": "50 rps per merchant"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#dependencies"
+        },
+        {
+          "kind": "catalog",
+          "ref": "cat-external_dependency-01"
+        }
+      ]
+    },
+    {
+      "id": "checkout.order-store",
+      "kind": "datastore",
+      "name": "Order store",
+      "description": "The relational store holding orders and their state transitions.",
+      "parent": "checkout",
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "checkout.session-auth",
+      "kind": "security_component",
+      "name": "Session authentication",
+      "description": "The session token issuer and verifier that authenticates a shopper.",
+      "parent": "checkout",
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#component-inventory"
+        },
+        {
+          "kind": "catalog",
+          "ref": "cat-security_component-01"
+        }
+      ]
+    },
+    {
+      "id": "pricing",
+      "kind": "service",
+      "name": "Pricing service",
+      "description": "Returns a priced cart for a shopper and a locale.",
+      "parent": null,
+      "dependency": {
+        "strength": "weak",
+        "sla": "99.9% monthly"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#dependencies"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "id": "fn-checkout-order",
+      "element": "checkout",
+      "statement": "Turn a submitted cart into a confirmed order exactly once",
+      "conditions": [
+        "under promotion traffic",
+        "while a dependency is degraded"
+      ],
+      "for_whom": "signed-in shoppers"
+    },
+    {
+      "id": "fn-api-accept",
+      "element": "checkout.api",
+      "statement": "Accept a submission from the storefront and return a confirmation or a typed error",
+      "conditions": [
+        "for every published interface version"
+      ],
+      "for_whom": "the storefront application"
+    },
+    {
+      "id": "fn-gateway-authorize",
+      "element": "checkout.payment-gateway",
+      "statement": "Return an authorization decision for a card and an amount within the client's timeout budget",
+      "conditions": [
+        "at or below the per-merchant rate limit"
+      ],
+      "for_whom": "the checkout service"
+    },
+    {
+      "id": "fn-store-persist",
+      "element": "checkout.order-store",
+      "statement": "Durably persist a confirmed order before acknowledging the write",
+      "conditions": [
+        "across a failover of the store's primary"
+      ],
+      "for_whom": "the checkout service and downstream fulfilment"
+    },
+    {
+      "id": "fn-auth-session",
+      "element": "checkout.session-auth",
+      "statement": "Admit a request only when it carries a session token this component issued and has not expired",
+      "conditions": [
+        "for every request that reaches the checkout interface"
+      ],
+      "for_whom": "shoppers and the checkout service"
+    },
+    {
+      "id": "fn-pricing-quote",
+      "element": "pricing",
+      "statement": "Return a current priced cart for a shopper and a locale",
+      "conditions": [
+        "during a price change rollout"
+      ],
+      "for_whom": "the checkout service"
+    }
+  ],
+  "chains": [
+    {
+      "id": "ch-1",
+      "function": "fn-gateway-authorize",
+      "failure_mode": "The authorization call exceeds its timeout budget and returns no decision",
+      "effects": {
+        "local": "The checkout request holds an authorization attempt with no decision and abandons it at the timeout.",
+        "next_level": "Checkout returns a retryable error to the storefront and the cart is not confirmed.",
+        "end": "Shoppers cannot complete checkout for as long as the gateway stays degraded."
+      },
+      "causes": [
+        {
+          "text": "The gateway's authorization endpoint degrades once promotion traffic passes the per-merchant rate limit",
+          "origin": "design"
+        },
+        {
+          "text": "The client timeout is longer than the storefront's own request budget, so the storefront gives up first",
+          "origin": "code"
+        }
+      ],
+      "trigger": "A promotion drives submissions above the merchant's authorized rate at the gateway",
+      "controls": [
+        {
+          "kind": "compensating",
+          "description": "Circuit breaker on gateway calls, opening after consecutive authorization timeouts",
+          "status": "existing",
+          "evidence": {
+            "kind": "test_result",
+            "ref": "gateway-circuit-breaker integration suite"
+          }
+        },
+        {
+          "kind": "detection",
+          "description": "Latency and error-rate alerting on gateway calls, paging the on-call engineer",
+          "status": "existing",
+          "evidence": {
+            "kind": "observed_incident",
+            "ref": "INC-2026-0314"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 9,
+          "rationale": "The end effect is loss of checkout for all shoppers while the gateway is degraded: the top class, at majority radius, since no condition beyond reaching checkout selects who it hits. The causes name no sustaining loop, so the state ends with its trigger (H), which is the severity anchor's recoverable row at majority radius.",
+          "evidence_kind": "observed_incident",
+          "evidence_ref": "INC-2026-0314",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "O": {
+          "value": 6,
+          "rationale": "The trigger is exercised on every promotion and the service sits in the vulnerable state for the length of the promotion window, which the exposure anchor places in the middle band.",
+          "evidence_kind": "observed_incident",
+          "evidence_ref": "INC-2026-0314",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "D": {
+          "value": 3,
+          "rationale": "The earliest layer that reliably catches the mode is production alerting on gateway latency, which the detection anchor places near the middle, improved here by the latency and error-rate alerting that paged the on-call engineer during the recorded incident.",
+          "evidence_kind": "observed_incident",
+          "evidence_ref": "INC-2026-0314",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Align the gateway client timeout with the storefront request budget and publish the resulting retry policy in the interface contract",
+          "owner": "Payments team",
+          "status": "Open",
+          "target_date": "2026-10-15"
+        }
+      ],
+      "catalog_refs": [
+        {
+          "id": "cat-external_dependency-01",
+          "provenance": "adapted-from:C014"
+        }
+      ],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "H",
+        "table": "priority-fmea-software-v1",
+        "rpn": 162
+      }
+    },
+    {
+      "id": "ch-2",
+      "function": "fn-checkout-order",
+      "failure_mode": "Retried submissions amplify load and the checkout service cascades the overload into the pricing service",
+      "effects": {
+        "local": "The checkout service's outbound request rate to pricing rises with every retry wave and its work queue grows.",
+        "next_level": "Pricing sheds load, checkout falls back to the last quoted price, and confirmations slow for every shopper.",
+        "end": "Checkout stays degraded for all shoppers after the original pricing fault has cleared."
+      },
+      "causes": [
+        {
+          "text": "A partial pricing outage makes checkout submissions slow enough that the storefront retries them",
+          "origin": "design"
+        },
+        {
+          "text": "Retries are issued without a budget, so the retried load is added to the offered load rather than replacing it",
+          "origin": "code"
+        }
+      ],
+      "trigger": "A partial pricing outage makes checkout submissions slow enough that the storefront retries them",
+      "controls": [
+        {
+          "kind": "prevention",
+          "description": "Idempotency keys on submissions, deduplicating a retried cart",
+          "status": "existing",
+          "evidence": {
+            "kind": "test_result",
+            "ref": "idempotency contract suite"
+          }
+        },
+        {
+          "kind": "compensating",
+          "description": "Fallback to the last quoted price held in the cart when pricing does not answer",
+          "status": "existing",
+          "evidence": {
+            "kind": "test_result",
+            "ref": "pricing-fallback integration suite"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 10,
+          "rationale": "The mode is a retry amplification, so the severity anchor's promotion rule takes loss of access as the worst credible class however partial the degradation looks, and the end effect reaches all shoppers, which is majority radius. The causes name the unbudgeted retry loop that keeps the state alive after the pricing fault has cleared, so there is no recovery path (N).",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "O": {
+          "value": 8,
+          "rationale": "The sustaining loop keeps the overload alive once the trigger has passed and the service sits close to its advertised capacity during promotions, which the exposure anchor places high.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "D": {
+          "value": 4,
+          "rationale": "The earliest layer that reliably catches the mode is production alerting on queue depth, and the alert fires only once the loop is established.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Decide whether the storefront's retry budget or a server-side admission control is the right place to bound retried load, and record the decision in the interface contract",
+          "owner": "Checkout team",
+          "status": "Decision pending",
+          "target_date": "2026-11-02"
+        }
+      ],
+      "catalog_refs": [
+        {
+          "id": "cat-service-03",
+          "provenance": "cites:C037"
+        },
+        {
+          "id": "cat-service-01",
+          "provenance": "cites:C036"
+        }
+      ],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "H",
+        "table": "priority-fmea-software-v1",
+        "rpn": 320
+      }
+    },
+    {
+      "id": "ch-3",
+      "function": "fn-pricing-quote",
+      "failure_mode": "The cart's last quoted price is served after the catalogue price has changed",
+      "effects": {
+        "local": "The checkout service prices a cart from a quote that is no longer current.",
+        "next_level": "The order is confirmed at a price the catalogue no longer offers and the difference is reconciled by hand.",
+        "end": "A subset of shoppers is charged a stale price and finance carries the correction."
+      },
+      "causes": [
+        {
+          "text": "The fallback quote has no maximum age, so an old quote stays usable for the length of the session",
+          "origin": "specification"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Cache age dashboard for the last quoted price held in the cart",
+          "status": "existing",
+          "evidence": {
+            "kind": "estimate"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 4,
+          "rationale": "The end effect is price staleness for a subset of shoppers, fully recoverable by a correction, which the severity anchor places in the lower middle.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "legacy-sheet-2025.csv",
+            "date": "2025-11-30"
+          }
+        },
+        "O": {
+          "value": 5,
+          "rationale": "The vulnerable state exists whenever a price change lands during an open session, which the exposure anchor places in the middle.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "legacy-sheet-2025.csv",
+            "date": "2025-11-30"
+          }
+        },
+        "D": {
+          "value": 2,
+          "rationale": "The earliest layer that reliably catches the mode is a dashboard watched during price rollouts, close to the top of the detection anchor.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "legacy-sheet-2025.csv",
+            "date": "2025-11-30"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Give the fallback quote a maximum age and refuse to price a cart from a quote older than it",
+          "owner": "Pricing team",
+          "status": "Completed",
+          "target_date": "2026-08-14",
+          "completed_date": "2026-08-15"
+        },
+        {
+          "id": "act-2",
+          "description": "Emit a metric for every checkout priced from the fallback quote and alert when the share rises",
+          "owner": "Checkout team",
+          "status": "Implementation pending",
+          "target_date": "2026-10-30"
+        }
+      ],
+      "post_ratings": {
+        "S": {
+          "value": 4,
+          "rationale": "The end effect is unchanged by the completed action, which bounds how often the effect occurs rather than how bad it is.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "O": {
+          "value": 3,
+          "rationale": "The maximum age on the fallback quote shortens the vulnerable window to the age limit, which the exposure anchor places lower.",
+          "evidence_kind": "test_result",
+          "evidence_ref": "quote-age expiry suite",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "D": {
+          "value": 2,
+          "rationale": "Detection is unchanged: the dashboard is still the earliest layer that reliably catches the mode.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        }
+      },
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 40
+      },
+      "post_priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 24
+      }
+    },
+    {
+      "id": "ch-4",
+      "function": "fn-store-persist",
+      "failure_mode": "A write is acknowledged to the caller and the order is not durably stored",
+      "effects": {
+        "local": "The order store returns success for a row that is absent after a failover.",
+        "next_level": "Checkout confirms an order that fulfilment never receives.",
+        "end": "Confirmed order data is lost for the affected shoppers with no path to reconstruct it from the store."
+      },
+      "causes": [
+        {
+          "text": "The write path acknowledges before the replica has the row, so an unclean failover drops it",
+          "origin": "design"
+        },
+        {
+          "text": "The failover procedure promotes a replica without checking replication lag",
+          "origin": "specification"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Write-ahead audit reconciler on checkout.order-store, comparing acknowledged writes against stored rows nightly",
+          "status": "existing",
+          "evidence": {
+            "kind": "test_result",
+            "ref": "reconciler failover drill"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 10,
+          "rationale": "The end effect is loss of confirmed order data with no recovery path from the store, which is the top band of the severity anchor.",
+          "evidence_kind": "test_result",
+          "evidence_ref": "reconciler failover drill",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "O": {
+          "value": 2,
+          "rationale": "The vulnerable state exists only during an unclean failover of the store's primary, which the exposure anchor places near the bottom.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "D": {
+          "value": 1,
+          "rationale": "The nightly reconciler is an existing detection control with a drill behind it, and it catches every dropped row, which is the top of the detection anchor.",
+          "evidence_kind": "test_result",
+          "evidence_ref": "reconciler failover drill",
+          "review": {
+            "status": "provisional"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Require acknowledged writes to be replicated before checkout confirms the order, and gate failover on replication lag",
+          "owner": "Platform team",
+          "status": "Implementation pending",
+          "target_date": "2026-10-09"
+        }
+      ],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 20
+      }
+    },
+    {
+      "id": "ch-5",
+      "function": "fn-auth-session",
+      "failure_mode": "A session token that this component did not issue for the current session is accepted",
+      "effects": {
+        "local": "A request is admitted under another shopper's session identity.",
+        "next_level": "Checkout prices, authorizes, and confirms a cart against the wrong shopper's account.",
+        "end": "A subset of shoppers has orders placed and payment attempted in their name."
+      },
+      "causes": [
+        {
+          "text": "attacker replays a captured session token",
+          "adversarial": true
+        },
+        {
+          "text": "The verifier accepts a token whose expiry claim is absent instead of rejecting it",
+          "origin": "code"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "prevention",
+          "description": "Session token signature verification on every request",
+          "status": "existing",
+          "evidence": {
+            "kind": "test_result",
+            "ref": "session verifier unit suite"
+          }
+        },
+        {
+          "kind": "detection",
+          "description": "Alert on a session token presented from two distinct client fingerprints within one session",
+          "status": "existing",
+          "evidence": {
+            "kind": "estimate"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 9,
+          "rationale": "The end effect is unauthorized ordering in a shopper's name for a subset of shoppers, an outcome the severity anchor places just below the top band because access for the majority is retained.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "O": {
+          "value": 3,
+          "rationale": "The vulnerable state requires a captured token, so the trigger is exercised rarely, which the exposure anchor places low.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "D": {
+          "value": 4,
+          "rationale": "The earliest layer that reliably catches the mode is production alerting on fingerprint divergence, which the detection anchor places in the middle.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        }
+      },
+      "actions": [],
+      "handoff": {
+        "to": "threat-model",
+        "reason": "The agent of the failure is an adversary replaying a captured token, so the countermeasure belongs to threat modeling rather than to a reliability action on this row.",
+        "adversary_cause": "attacker replays a captured session token"
+      },
+      "catalog_refs": [
+        {
+          "id": "cat-security_component-01",
+          "provenance": "skill-authored"
+        }
+      ],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "H",
+        "table": "priority-fmea-software-v1",
+        "rpn": 108
+      }
+    },
+    {
+      "id": "ch-6",
+      "function": "fn-api-accept",
+      "failure_mode": "A published response field changes shape and the storefront can no longer read a confirmation",
+      "effects": {
+        "local": "The interface returns a body the storefront's parser rejects.",
+        "next_level": "The storefront treats a confirmed order as a failed submission and retries it.",
+        "end": "Shoppers on the storefront version that broke cannot see their confirmations."
+      },
+      "causes": [
+        {
+          "text": "A response field is renamed without a new interface version",
+          "origin": "specification"
+        },
+        {
+          "text": "The contract tests cover the request shape and not the response shape",
+          "origin": "code"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Contract tests on checkout.api, run in the storefront's pipeline",
+          "status": "existing",
+          "evidence": {
+            "kind": "test_result",
+            "ref": "storefront contract pipeline"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 6,
+          "rationale": "The end effect blocks confirmations for a subset of shoppers on one storefront version and is recoverable by a rollback.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "O": {
+          "value": 7,
+          "rationale": "The vulnerable state exists on every release that touches the response shape, and no reviewer currently owns the response contract, which the exposure anchor places high.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "D": {
+          "value": 5,
+          "rationale": "The earliest layer that reliably catches the mode is the storefront's integration pipeline, which runs after the change is merged, in the middle of the detection anchor.",
+          "evidence_kind": "test_result",
+          "evidence_ref": "storefront contract pipeline",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Extend the contract tests to the response shape and fail the checkout build, not the storefront build, when a published field changes",
+          "owner": "Checkout team",
+          "status": "Open",
+          "target_date": "2026-10-23"
+        }
+      ],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 210
+      }
+    },
+    {
+      "id": "ch-7",
+      "function": "fn-checkout-order",
+      "failure_mode": "The service enters a sustained overload that persists after the triggering load has gone",
+      "effects": {
+        "local": "The work queue stays full and every submission is served from behind it.",
+        "next_level": "Timeouts and retries keep the queue full without any new offered load.",
+        "end": "Checkout is unavailable to all shoppers until an operator drains the queue."
+      },
+      "causes": [
+        {
+          "text": "Retries of timed-out submissions sustain the queue once it has filled",
+          "origin": "design"
+        },
+        {
+          "text": "The service has no admission control, so it accepts work it cannot finish within the client's budget",
+          "origin": "design"
+        }
+      ],
+      "trigger": "A burst of submissions during a promotion fills the work queue above the depth from which it can drain",
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Queue-depth and retry-rate alerting on the checkout work queue",
+          "status": "planned",
+          "evidence": {
+            "kind": "none"
+          }
+        },
+        {
+          "kind": "prevention",
+          "description": "Admission control that rejects submissions when the queue is above its drain threshold",
+          "status": "planned",
+          "evidence": {
+            "kind": "none"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 9,
+          "rationale": "The end effect is loss of checkout for all shoppers until an operator intervenes, which the severity anchor places at the top of the outage band short of data loss.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "O": {
+          "value": 4,
+          "rationale": "The trigger is exercised on promotion bursts only, though the sustaining loop makes the vulnerable state long once entered, which the exposure anchor places below the middle.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        },
+        "D": {
+          "value": 1,
+          "rationale": "Queue depth would be visible the moment the loop starts, which the detection anchor places at the top; the alerting that would show it is not yet built, which this row records as a planned control.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-09-03"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Build the queue-depth and retry-rate alerting, then add admission control keyed to the drain threshold",
+          "owner": "Checkout team",
+          "status": "Open",
+          "target_date": "2026-11-20"
+        }
+      ],
+      "catalog_refs": [
+        {
+          "id": "cat-service-02",
+          "provenance": "adapted-from:C031"
+        }
+      ],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "H",
+        "table": "priority-fmea-software-v1",
+        "rpn": 36
+      }
+    },
+    {
+      "id": "ch-8",
+      "function": "fn-gateway-authorize",
+      "failure_mode": "Authorization succeeds at the gateway and the response is lost before checkout records it",
+      "effects": {
+        "local": "Checkout treats an authorized payment as failed and does not confirm the order.",
+        "next_level": "The shopper is charged for a cart that has no confirmed order behind it.",
+        "end": "A subset of shoppers is charged without receiving goods until support reverses the charge."
+      },
+      "causes": [
+        {
+          "text": "The gateway response is lost when the client abandons the call at its timeout",
+          "origin": "design"
+        },
+        {
+          "text": "No reconciliation reads the gateway's authorization list back against unconfirmed carts",
+          "origin": "specification"
+        }
+      ],
+      "trigger": "The gateway answers after the client's timeout has already elapsed",
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Daily comparison of gateway authorizations against confirmed orders",
+          "status": "existing",
+          "evidence": {
+            "kind": "observed_incident",
+            "ref": "INC-2026-0314"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 7,
+          "rationale": "The end effect is a charge without goods for a subset of shoppers, reversible by support, which the severity anchor places below an outage for all shoppers.",
+          "evidence_kind": "observed_incident",
+          "evidence_ref": "INC-2026-0314",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "O": {
+          "value": 5,
+          "rationale": "The vulnerable window is the span between the client's timeout and the gateway's answer, entered on every timed-out authorization, which the exposure anchor places in the middle.",
+          "evidence_kind": "observed_incident",
+          "evidence_ref": "INC-2026-0314",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "D": {
+          "value": 3,
+          "rationale": "The daily comparison catches every occurrence, but only after the shopper has been charged, which the detection anchor places above the middle rather than at the top.",
+          "evidence_kind": "observed_incident",
+          "evidence_ref": "INC-2026-0314",
+          "review": {
+            "status": "provisional"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Reconcile abandoned authorizations against the gateway within the settlement window and void the ones with no confirmed order",
+          "owner": "Payments team",
+          "status": "Open",
+          "target_date": "2026-10-16",
+          "source_incident": "INC-2026-0314"
+        },
+        {
+          "id": "act-2",
+          "description": "Show the shopper a pending state instead of a failure when an authorization times out",
+          "owner": "Checkout team",
+          "status": "Open",
+          "target_date": "2026-11-06"
+        }
+      ],
+      "source_incident": "INC-2026-0314",
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 105
+      }
+    }
+  ],
+  "computed": {
+    "quality_score": 88,
+    "lints": [
+      {
+        "rule": "occurrence-estimate-without-trigger",
+        "severity": "warning",
+        "pointer": "/chains/5/ratings/O",
+        "message": "Occurrence is 7 or more on an estimate with no trigger recorded"
+      },
+      {
+        "rule": "detection-1-without-evidenced-control",
+        "severity": "blocker",
+        "pointer": "/chains/6/ratings/D",
+        "message": "Detection is 1 with no existing detection control carrying evidence"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/1/ratings/S",
+        "message": "S is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/1/ratings/O",
+        "message": "O is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/1/ratings/D",
+        "message": "D is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/3/ratings/O",
+        "message": "O is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/3/ratings/D",
+        "message": "D is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/7/ratings/S",
+        "message": "S is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/7/ratings/O",
+        "message": "O is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/7/ratings/D",
+        "message": "D is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "seeded-action-without-incident",
+        "severity": "warning",
+        "pointer": "/chains/7/actions/1",
+        "message": "action on a chain seeded from INC-2026-0314 carries no source_incident"
+      }
+    ],
+    "validated_at": "2026-09-11T14:12:02.509Z",
+    "validator_version": "0.1.0"
+  }
+}

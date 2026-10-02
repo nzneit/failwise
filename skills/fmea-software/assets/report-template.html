@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!--@title--></title>
+<style>
+:root { color-scheme: light; }
+body { margin: 0; padding: 2rem 1.5rem 4rem; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #14171a; background: #ffffff; }
+main { max-width: 72rem; margin: 0 auto; }
+h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.15rem; margin: 2rem 0 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #d7dbdf; }
+h3 { font-size: 1rem; margin: 1.25rem 0 0.4rem; }
+dl.header { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.75rem 0 0; }
+dl.header dt { font-weight: 600; color: #4a5157; }
+dl.header dd { margin: 0; }
+p.provisional-count { margin: 0.75rem 0 0; font-weight: 600; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 0; }
+th, td { border: 1px solid #d7dbdf; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+th { background: #f1f3f5; font-weight: 600; }
+td.num { text-align: right; width: 3rem; }
+ul { margin: 0.25rem 0; padding-left: 1.2rem; }
+ul.tree { list-style: none; padding-left: 1rem; }
+ul.tree > li { margin: 0.15rem 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+details { margin: 0; }
+details > summary { cursor: pointer; font-weight: 600; }
+.mark { display: inline-block; margin-left: 0.25rem; padding: 0 0.35rem; border-radius: 0.6rem; font-size: 0.75rem; font-weight: 600; border: 1px solid #b6bcc2; }
+.mark-stale { background: #fde8cf; }
+.mark-handoff { background: #e2dcf7; }
+.mark-provisional { background: #fff4b8; }
+.mark-adversarial { background: #e9edf0; }
+.sev-blocker { font-weight: 600; color: #8a1c1c; }
+.sev-warning { color: #6b5300; }
+.empty { color: #6b7177; font-style: italic; }
+@media print { tr, details { break-inside: avoid } table { width: 100% } }
+</style>
+</head>
+<body>
+<main>
+<section id="header">
+<!--@header-->
+</section>
+<section id="ground-rules">
+<h2>Ground rules</h2>
+<!--@ground-rules-->
+</section>
+<section id="assumptions">
+<h2>Assumptions</h2>
+<!--@assumptions-->
+</section>
+<section id="reviews">
+<h2>Review record</h2>
+<!--@reviews-->
+</section>
+<section id="structure">
+<h2>Structure</h2>
+<!--@structure-->
+</section>
+<section id="chains">
+<h2>Failure chains</h2>
+<!--@chains-->
+</section>
+<section id="actions">
+<h2>Actions</h2>
+<!--@actions-->
+</section>
+<section id="lints">
+<h2>Lint findings and quality score</h2>
+<!--@lints-->
+</section>
+<section id="provenance">
+<h2>Provenance appendix</h2>
+<!--@provenance-->
+</section>
+</main>
+<script type="application/json" id="fmea-data"><!--@data--></script>
+</body>
+</html>

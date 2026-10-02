@@ -1,0 +1,13 @@
+{
+  "id": "priority-malformed-overlap",
+  "vocabulary": ["H", "M", "L"],
+  "bands": {
+    "S": [[1, 10]],
+    "O": [[1, 5], [5, 10]],
+    "D": [[1, 10]]
+  },
+  "cells": {
+    "1-1-1": "L",
+    "1-2-1": "H"
+  }
+}

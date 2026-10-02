@@ -1,0 +1,342 @@
+{
+  "meta": {
+    "id": "fmea-checkout-update",
+    "name": "Checkout service DFMEA, version 2 with rows still flagged",
+    "version": 2,
+    "branch": "DFMEA",
+    "scope": "Design-side analysis of the checkout service at version 2, after the scales pin was advanced from 1 to 2 and the session-authentication element changed.",
+    "boundary": {
+      "included": ["checkout and the interfaces it owns", "the checkout side of both service dependencies"],
+      "excluded": ["the storefront application", "the payment gateway's internals"],
+      "security": "Session authentication is in scope as an ordinary element; a failure whose agent is an adversary is handed off to threat modeling."
+    },
+    "ground_rules": [
+      "Rows are re-rated only when the update marks them stale."
+    ],
+    "assumptions": [
+      {
+        "text": "The control inventory in the stored analysis is the one confirmed at the last review.",
+        "owner": "A. Reviewer",
+        "status": "closed"
+      }
+    ],
+    "reviews": [
+      {
+        "date": "2026-09-03",
+        "reviewers": ["A. Reviewer"],
+        "outcome": "All five rows re-scored against the version 1 anchors; no row left provisional."
+      },
+      {
+        "date": "2026-09-12",
+        "reviewers": ["A. Reviewer"],
+        "outcome": "Four of the five flagged rows re-scored against the version 2 anchors; ch-1 was left provisional and ch-2 was re-scored last, so its flag is still to be cleared."
+      }
+    ],
+    "scales": {
+      "version": 2,
+      "priority_table": "priority-fmea-software-v1"
+    },
+    "created": "2026-08-01",
+    "updated": "2026-09-12",
+    "history": [
+      {
+        "version": 2,
+        "date": "2026-09-10",
+        "change": "Update run: the session-authentication element description changed; the scales pin was found at 1 behind the declared version 2 and was advanced. All five rated rows were marked stale, ch-2 with reason element-changed and the other four with reason scales-version, and all five were re-rated provisional."
+      }
+    ]
+  },
+  "elements": [
+    {
+      "id": "checkout",
+      "kind": "service",
+      "name": "Checkout service",
+      "description": "Orchestrates pricing, payment authorization, and order persistence for a submitted cart.",
+      "parent": null,
+      "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#component-inventory" }]
+    },
+    {
+      "id": "checkout.payment-gateway",
+      "kind": "external_dependency",
+      "name": "Payment gateway",
+      "description": "A third-party card authorization gateway reached over HTTPS.",
+      "parent": "checkout",
+      "dependency": {
+        "strength": "strong",
+        "sla": "99.95% monthly",
+        "limits": "50 rps per merchant"
+      },
+      "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#dependencies" }]
+    },
+    {
+      "id": "checkout.session-auth",
+      "kind": "security_component",
+      "name": "Session authentication",
+      "description": "The session token verifier that authenticates a shopper; tokens are now issued by the shared identity service rather than by checkout.",
+      "parent": "checkout",
+      "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#component-inventory" }]
+    },
+    {
+      "id": "checkout.order-store",
+      "kind": "datastore",
+      "name": "Order store",
+      "description": "The relational store holding orders and their state transitions.",
+      "parent": "checkout",
+      "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#component-inventory" }]
+    },
+    {
+      "id": "pricing",
+      "kind": "service",
+      "name": "Pricing service",
+      "description": "Returns a priced cart for a shopper and a locale.",
+      "parent": null,
+      "dependency": { "strength": "weak", "sla": "99.9% monthly" },
+      "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#dependencies" }]
+    }
+  ],
+  "functions": [
+    {
+      "id": "fn-gateway-authorize",
+      "element": "checkout.payment-gateway",
+      "statement": "Return an authorization decision for a card and an amount within the client's timeout budget",
+      "conditions": ["at or below the per-merchant rate limit"],
+      "for_whom": "the checkout service"
+    },
+    {
+      "id": "fn-auth-session",
+      "element": "checkout.session-auth",
+      "statement": "Admit a request only when it carries a session token this component issued and has not expired",
+      "conditions": ["for every request that reaches the checkout interface"],
+      "for_whom": "shoppers and the checkout service"
+    },
+    {
+      "id": "fn-checkout-order",
+      "element": "checkout",
+      "statement": "Turn a submitted cart into a confirmed order exactly once",
+      "conditions": ["under promotion traffic"],
+      "for_whom": "signed-in shoppers"
+    },
+    {
+      "id": "fn-store-persist",
+      "element": "checkout.order-store",
+      "statement": "Durably persist a confirmed order before acknowledging the write",
+      "conditions": ["across a failover of the store's primary"],
+      "for_whom": "the checkout service and downstream fulfilment"
+    },
+    {
+      "id": "fn-pricing-quote",
+      "element": "pricing",
+      "statement": "Return a current priced cart for a shopper and a locale",
+      "conditions": ["during a price change rollout"],
+      "for_whom": "the checkout service"
+    }
+  ],
+  "chains": [
+    {
+      "id": "ch-1",
+      "function": "fn-gateway-authorize",
+      "failure_mode": "The authorization call exceeds its timeout budget and returns no decision",
+      "effects": {
+        "local": "The checkout request abandons the authorization attempt at the timeout.",
+        "next_level": "Checkout returns a retryable error and the cart is not confirmed.",
+        "end": "Shoppers cannot complete checkout while the gateway stays degraded."
+      },
+      "causes": [{ "text": "The gateway degrades once promotion traffic passes the per-merchant rate limit", "origin": "design" }],
+      "trigger": "A promotion drives submissions above the merchant's authorized rate at the gateway",
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "circuit breaker on gateway calls",
+          "status": "existing",
+          "evidence": { "kind": "test_result", "ref": "gateway-circuit-breaker integration suite" }
+        }
+      ],
+      "ratings": {
+        "S": { "value": 8, "rationale": "The end effect is loss of checkout for all shoppers while the gateway is degraded, recoverable without data loss.", "evidence_kind": "observed_incident", "evidence_ref": "INC-2026-0314", "review": { "status": "provisional" } },
+        "O": { "value": 6, "rationale": "The trigger is exercised on every promotion and the vulnerable state lasts as long as the promotion window.", "evidence_kind": "observed_incident", "evidence_ref": "INC-2026-0314", "review": { "status": "provisional" } },
+        "D": { "value": 3, "rationale": "The breaker opens on consecutive timeouts and is exercised by an integration suite, so the mode is caught before an operator looks.", "evidence_kind": "test_result", "evidence_ref": "gateway-circuit-breaker integration suite", "review": { "status": "provisional" } }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": { "flag": true, "reason": "scales-version", "since_version": 2 },
+      "history": [
+        {
+          "version": 2,
+          "date": "2026-09-10",
+          "change": "Marked stale with reason scales-version at version 2 and re-rated provisional against the version 2 anchors."
+        }
+      ]
+    },
+    {
+      "id": "ch-2",
+      "function": "fn-auth-session",
+      "failure_mode": "A session token is admitted after the moment it should have expired",
+      "effects": {
+        "local": "A request is admitted under a session that should have ended.",
+        "next_level": "Checkout serves a shopper whose session the storefront has already closed.",
+        "end": "A subset of shoppers keeps an open checkout session longer than the policy allows."
+      },
+      "causes": [{ "text": "The verifier reads the issued-at claim where it should read the expiry claim", "origin": "code" }],
+      "controls": [
+        {
+          "kind": "prevention",
+          "description": "session token signature verification on every request",
+          "status": "existing",
+          "evidence": { "kind": "test_result", "ref": "session verifier unit suite" }
+        }
+      ],
+      "ratings": {
+        "S": { "value": 5, "rationale": "The end effect is a policy breach for a subset of shoppers with no loss of access or data.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "O": { "value": 4, "rationale": "The vulnerable state exists for every session whose expiry falls inside an open checkout.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "D": { "value": 4, "rationale": "The earliest layer that reliably catches the mode is the verifier's unit suite, which covers signatures and not expiry.", "evidence_kind": "test_result", "evidence_ref": "session verifier unit suite", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": { "flag": true, "reason": "element-changed", "since_version": 2 },
+      "history": [
+        {
+          "version": 2,
+          "date": "2026-09-10",
+          "change": "Marked stale with reason element-changed at version 2, the session-authentication element description having changed; scales-version also applied and lost to it by precedence. Re-rated provisional."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "S, O and D re-scored against the version 2 anchors by A. Reviewer; the stale flag is still set."
+        }
+      ]
+    },
+    {
+      "id": "ch-3",
+      "function": "fn-checkout-order",
+      "failure_mode": "A retried submission confirms the same cart twice",
+      "effects": {
+        "local": "Two orders are written for one cart.",
+        "next_level": "The shopper is charged twice and fulfilment ships twice.",
+        "end": "A subset of shoppers is double-charged until support reverses one order."
+      },
+      "causes": [{ "text": "The idempotency key is scoped to the session rather than to the cart", "origin": "design" }],
+      "controls": [
+        {
+          "kind": "prevention",
+          "description": "idempotency keys on submissions",
+          "status": "existing",
+          "evidence": { "kind": "test_result", "ref": "idempotency contract suite" }
+        }
+      ],
+      "ratings": {
+        "S": { "value": 7, "rationale": "The end effect is a double charge for a subset of shoppers, reversible by support.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "O": { "value": 3, "rationale": "The vulnerable state needs a retry inside one session, which the storefront's backoff makes uncommon.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "D": { "value": 3, "rationale": "The contract suite exercises the deduplication path on every build, so a regression is caught before release.", "evidence_kind": "test_result", "evidence_ref": "idempotency contract suite", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": { "flag": false },
+      "history": [
+        {
+          "version": 2,
+          "date": "2026-09-10",
+          "change": "Marked stale with reason scales-version at version 2 and re-rated provisional against the version 2 anchors."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "S, O and D re-scored against the version 2 anchors by A. Reviewer."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "Stale flag cleared once all three ratings were re-scored; it had reason scales-version and since_version 2."
+        }
+      ]
+    },
+    {
+      "id": "ch-4",
+      "function": "fn-store-persist",
+      "failure_mode": "A write is acknowledged to the caller and the order is not durably stored",
+      "effects": {
+        "local": "The store returns success for a row that is absent after a failover.",
+        "next_level": "Checkout confirms an order that fulfilment never receives.",
+        "end": "Confirmed order data is lost for the affected shoppers."
+      },
+      "causes": [{ "text": "The write path acknowledges before the replica has the row", "origin": "design" }],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "write-ahead audit reconciler",
+          "status": "existing",
+          "evidence": { "kind": "test_result", "ref": "reconciler failover drill" }
+        }
+      ],
+      "ratings": {
+        "S": { "value": 10, "rationale": "The end effect is loss of confirmed order data with no recovery path from the store.", "evidence_kind": "test_result", "evidence_ref": "reconciler failover drill", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "O": { "value": 2, "rationale": "The vulnerable state exists only during an unclean failover of the store's primary.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "D": { "value": 2, "rationale": "The nightly reconciler catches every dropped row, one day after the loss at worst.", "evidence_kind": "test_result", "evidence_ref": "reconciler failover drill", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": { "flag": false },
+      "history": [
+        {
+          "version": 2,
+          "date": "2026-09-10",
+          "change": "Marked stale with reason scales-version at version 2 and re-rated provisional against the version 2 anchors."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "S, O and D re-scored against the version 2 anchors by A. Reviewer."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "Stale flag cleared once all three ratings were re-scored; it had reason scales-version and since_version 2."
+        }
+      ]
+    },
+    {
+      "id": "ch-5",
+      "function": "fn-pricing-quote",
+      "failure_mode": "The cart's last quoted price is served after the catalogue price has changed",
+      "effects": {
+        "local": "The checkout service prices a cart from a quote that is no longer current.",
+        "next_level": "The order is confirmed at a price the catalogue no longer offers.",
+        "end": "A subset of shoppers is charged a stale price and finance carries the correction."
+      },
+      "causes": [{ "text": "The fallback quote has no maximum age", "origin": "specification" }],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "cache age dashboard for the last quoted price",
+          "status": "existing",
+          "evidence": { "kind": "estimate" }
+        }
+      ],
+      "ratings": {
+        "S": { "value": 4, "rationale": "The end effect is price staleness for a subset of shoppers, fully recoverable by a correction.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "O": { "value": 5, "rationale": "The vulnerable state exists whenever a price change lands during an open session.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } },
+        "D": { "value": 2, "rationale": "The dashboard is watched during price rollouts, which is the earliest layer that reliably shows the mode.", "evidence_kind": "estimate", "review": { "status": "rescored", "by": "A. Reviewer", "date": "2026-09-12" } }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": { "flag": false },
+      "history": [
+        {
+          "version": 2,
+          "date": "2026-09-10",
+          "change": "Marked stale with reason scales-version at version 2 and re-rated provisional against the version 2 anchors."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "S, O and D re-scored against the version 2 anchors by A. Reviewer."
+        },
+        {
+          "version": 2,
+          "date": "2026-09-12",
+          "change": "Stale flag cleared once all three ratings were re-scored; it had reason scales-version and since_version 2."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,465 @@
+{
+  "meta": {
+    "id": "fmea-legacy-rpn-2025",
+    "name": "Legacy RPN sheet conversion",
+    "version": 1,
+    "branch": "DFMEA",
+    "scope": "The four items of legacy-rpn-sheet.csv, converted to the schema without re-rating them.",
+    "boundary": {
+      "included": [
+        "the four items listed in legacy-rpn-sheet.csv"
+      ],
+      "excluded": [
+        "every element the sheet does not name"
+      ],
+      "security": "The sheet records no security component and no security boundary; the boundary is left undeclared by the conversion and belongs to the first review."
+    },
+    "ground_rules": [
+      "The conversion carries the sheet's own values and does not re-rate them.",
+      "Every field the sheet does not supply is filled with a declared default and counted in meta.history, never invented."
+    ],
+    "assumptions": [
+      {
+        "text": "The sheet does not name the scale its S, O and D were rated against; the pin to scales version one is the conversion's declared default and needs the sheet author's confirmation.",
+        "owner": "user",
+        "status": "open"
+      },
+      {
+        "text": "The sheet does not classify the payment gateway dependency; the conversion's declared default is strength strong, because the sheet's own Effect column says a failed authorization leaves the cart unconfirmed, and it needs the sheet author's confirmation.",
+        "owner": "user",
+        "status": "open"
+      }
+    ],
+    "reviews": [],
+    "scales": {
+      "version": 1,
+      "priority_table": "priority-fmea-software-v1"
+    },
+    "created": "2026-09-07",
+    "updated": "2026-09-07",
+    "history": [
+      {
+        "version": 1,
+        "date": "2026-09-07",
+        "change": "Converted from legacy-rpn-sheet.csv on 2026-09-07. Column mapping: Item to elements[].name and its derived id; Function to functions[].statement; Failure Mode to chains[].failure_mode; Effect to chains[].effects.end; Cause to chains[].causes[0].text; Current Controls to chains[].controls[0], whose kind is read from the cell's own prefix; S, O and D to chains[].ratings.S|O|D.value; RPN read for reference only and never copied, priority.rpn being recomputed by priority.ts from the retained ratings; Recommended Action to chains[].actions[0].description; Owner to chains[].actions[0].owner; Status to chains[].actions[0].status; Justification to chains[].ratings.S|O|D.rationale. Ratings retained with review status authored, by J. Legacy, date 2025-11-30, both read from the sheet's header rows. Declared defaults, each counted here rather than invented: rationale substituted with the text 'converted from legacy-rpn-sheet.csv; no rationale recorded' on 1 of 4 rows; evidence_kind set to estimate on 4 of 4 rows because the sheet has no evidence column; trigger left empty on 4 of 4 rows; effects.local and effects.next_level set to 'not recorded in legacy-rpn-sheet.csv' on 4 of 4 rows because the sheet carries a single Effect column; functions[].for_whom set to 'not recorded in legacy-rpn-sheet.csv' on 4 of 4 functions; controls[].status set to existing and controls[].evidence.kind set to none on 4 of 4 rows because the sheet records neither; actions[].target_date set to the conversion date 2026-09-07 on 4 of 4 actions because the sheet has no target date column; dependency.strength set to strong on the 1 of 4 elements typed external_dependency, because section 6 requires a dependency block on that kind and the sheet records no classification; the choice is recorded as an open assumption. The sheet's stated RPN differs from the product of the retained ratings on 1 of 4 rows and the sheet's value is recorded in that row's history."
+      }
+    ]
+  },
+  "elements": [
+    {
+      "id": "checkout-api",
+      "kind": "interface",
+      "name": "Checkout API",
+      "description": "Item 'Checkout API' of legacy-rpn-sheet.csv.",
+      "parent": null,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "legacy-rpn-sheet.csv"
+        }
+      ]
+    },
+    {
+      "id": "payment-gateway",
+      "kind": "external_dependency",
+      "name": "Payment Gateway",
+      "description": "Item 'Payment Gateway' of legacy-rpn-sheet.csv.",
+      "parent": null,
+      "dependency": {
+        "strength": "strong"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "legacy-rpn-sheet.csv"
+        }
+      ]
+    },
+    {
+      "id": "order-store",
+      "kind": "datastore",
+      "name": "Order Store",
+      "description": "Item 'Order Store' of legacy-rpn-sheet.csv.",
+      "parent": null,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "legacy-rpn-sheet.csv"
+        }
+      ]
+    },
+    {
+      "id": "pricing-service",
+      "kind": "service",
+      "name": "Pricing Service",
+      "description": "Item 'Pricing Service' of legacy-rpn-sheet.csv.",
+      "parent": null,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "legacy-rpn-sheet.csv"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "id": "fn-1",
+      "element": "checkout-api",
+      "statement": "Accept a submission from the storefront",
+      "conditions": [],
+      "for_whom": "not recorded in legacy-rpn-sheet.csv"
+    },
+    {
+      "id": "fn-2",
+      "element": "payment-gateway",
+      "statement": "Authorize a card within the timeout budget",
+      "conditions": [],
+      "for_whom": "not recorded in legacy-rpn-sheet.csv"
+    },
+    {
+      "id": "fn-3",
+      "element": "order-store",
+      "statement": "Persist a confirmed order durably",
+      "conditions": [],
+      "for_whom": "not recorded in legacy-rpn-sheet.csv"
+    },
+    {
+      "id": "fn-4",
+      "element": "pricing-service",
+      "statement": "Return a current priced cart",
+      "conditions": [],
+      "for_whom": "not recorded in legacy-rpn-sheet.csv"
+    }
+  ],
+  "chains": [
+    {
+      "id": "ch-1",
+      "function": "fn-1",
+      "failure_mode": "Returns a confirmation body the storefront cannot read",
+      "effects": {
+        "local": "not recorded in legacy-rpn-sheet.csv",
+        "next_level": "not recorded in legacy-rpn-sheet.csv",
+        "end": "Storefront treats a confirmed order as failed"
+      },
+      "causes": [
+        {
+          "text": "A response field is renamed without a version bump"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "contract tests on the checkout API",
+          "status": "existing",
+          "evidence": {
+            "kind": "none"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 6,
+          "rationale": "Rated from the storefront outage in the spring release",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "O": {
+          "value": 4,
+          "rationale": "Rated from the storefront outage in the spring release",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "D": {
+          "value": 5,
+          "rationale": "Rated from the storefront outage in the spring release",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Extend the contract tests to the response shape",
+          "owner": "Checkout team",
+          "status": "Open",
+          "target_date": "2026-09-07"
+        }
+      ],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [
+        {
+          "version": 1,
+          "date": "2026-09-07",
+          "change": "Converted from row 1 of legacy-rpn-sheet.csv; sheet RPN 120 matches the product of the retained ratings."
+        }
+      ],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 120
+      }
+    },
+    {
+      "id": "ch-2",
+      "function": "fn-2",
+      "failure_mode": "Authorization times out with no decision",
+      "effects": {
+        "local": "not recorded in legacy-rpn-sheet.csv",
+        "next_level": "not recorded in legacy-rpn-sheet.csv",
+        "end": "Cart is not confirmed"
+      },
+      "causes": [
+        {
+          "text": "Gateway degrades above the per-merchant rate"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "gateway latency alerting",
+          "status": "existing",
+          "evidence": {
+            "kind": "none"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 8,
+          "rationale": "converted from legacy-rpn-sheet.csv; no rationale recorded",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "O": {
+          "value": 6,
+          "rationale": "converted from legacy-rpn-sheet.csv; no rationale recorded",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "D": {
+          "value": 3,
+          "rationale": "converted from legacy-rpn-sheet.csv; no rationale recorded",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Align the client timeout with the storefront budget",
+          "owner": "Payments team",
+          "status": "Open",
+          "target_date": "2026-09-07"
+        }
+      ],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [
+        {
+          "version": 1,
+          "date": "2026-09-07",
+          "change": "Converted from row 2 of legacy-rpn-sheet.csv; the Justification cell is empty, so the rationale on all three ratings is the declared substitute text."
+        }
+      ],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 144
+      }
+    },
+    {
+      "id": "ch-3",
+      "function": "fn-3",
+      "failure_mode": "Write is acknowledged but the row is absent after failover",
+      "effects": {
+        "local": "not recorded in legacy-rpn-sheet.csv",
+        "next_level": "not recorded in legacy-rpn-sheet.csv",
+        "end": "Confirmed order data is lost"
+      },
+      "causes": [
+        {
+          "text": "Acknowledgement precedes replication to the replica"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "prevention",
+          "description": "nightly backup of the order store",
+          "status": "existing",
+          "evidence": {
+            "kind": "none"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 7,
+          "rationale": "Rated from the failover drill of the autumn",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "O": {
+          "value": 5,
+          "rationale": "Rated from the failover drill of the autumn",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "D": {
+          "value": 6,
+          "rationale": "Rated from the failover drill of the autumn",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Gate failover on replication lag",
+          "owner": "Platform team",
+          "status": "Not Implemented",
+          "target_date": "2026-09-07"
+        }
+      ],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [
+        {
+          "version": 1,
+          "date": "2026-09-07",
+          "change": "Converted from row 3 of legacy-rpn-sheet.csv; sheet RPN 200 differs from computed 210, the product of the retained ratings, and the computed value is the one stored."
+        }
+      ],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 210
+      }
+    },
+    {
+      "id": "ch-4",
+      "function": "fn-4",
+      "failure_mode": "A stale price is served from the cart quote",
+      "effects": {
+        "local": "not recorded in legacy-rpn-sheet.csv",
+        "next_level": "not recorded in legacy-rpn-sheet.csv",
+        "end": "Shopper is charged a price the catalogue no longer offers"
+      },
+      "causes": [
+        {
+          "text": "The fallback quote has no maximum age"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "cache age dashboard",
+          "status": "existing",
+          "evidence": {
+            "kind": "none"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 4,
+          "rationale": "Rated from the pricing incident review",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "O": {
+          "value": 5,
+          "rationale": "Rated from the pricing incident review",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        },
+        "D": {
+          "value": 2,
+          "rationale": "Rated from the pricing incident review",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "authored",
+            "by": "J. Legacy",
+            "date": "2025-11-30"
+          }
+        }
+      },
+      "actions": [
+        {
+          "id": "act-1",
+          "description": "Give the fallback quote a maximum age",
+          "owner": "Pricing team",
+          "status": "Open",
+          "target_date": "2026-09-07"
+        }
+      ],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [
+        {
+          "version": 1,
+          "date": "2026-09-07",
+          "change": "Converted from row 4 of legacy-rpn-sheet.csv; sheet RPN 40 matches the product of the retained ratings."
+        }
+      ],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 40
+      }
+    }
+  ]
+}

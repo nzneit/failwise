@@ -1,0 +1,9 @@
+{
+  "stale": {
+    "ch-1": "element-changed",
+    "ch-2": "function-changed",
+    "ch-4": "control-removed"
+  },
+  "unchanged": ["ch-3", "ch-5"],
+  "new_elements": ["checkout.pricing-cache"]
+}

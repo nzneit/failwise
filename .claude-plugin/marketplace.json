@@ -1,0 +1,14 @@
+{
+  "name": "failwise",
+  "description": "failwise: design-side FMEA for software, a Claude Code plugin",
+  "owner": {
+    "name": "Nathan Neitman"
+  },
+  "plugins": [
+    {
+      "name": "failwise",
+      "source": "./",
+      "description": "Design-side FMEA for software"
+    }
+  ]
+}

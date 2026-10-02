@@ -1,0 +1,7 @@
+build/
+.fallow/
+node_modules/
+/package-lock.json
+scratchpad/
+.superpowers/
+.claude/settings.local.json

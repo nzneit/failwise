@@ -1,0 +1,34 @@
+{
+  "unattended_preamble": "You are running unattended: no one will answer questions during this run. Your inputs are the files in the inputs/ directory of the current working directory; read them before doing anything else. When an input the analysis needs is missing from inputs/, do not invent it: record it as an open assumption in meta.assumptions[] with owner \"user\" and status \"open\", proceed with that assumption stated, and list every such assumption in your final message. Write the analysis document to ./analysis.json and the report to ./report.html, producing both with the skill's own scripts (priority, validate --write, render) rather than by hand. Use the fmea-software skill.",
+  "prompts": [
+    {
+      "id": 1,
+      "name": "design-checkout",
+      "text": "Design FMEA of a checkout service that depends on a third-party payment gateway and a pricing service.",
+      "inputs": ["evals/fixtures/checkout-inputs.md"]
+    },
+    {
+      "id": 5,
+      "name": "seed-postmortems",
+      "text": "Seed an FMEA baseline from a set of existing postmortems and identify gaps.",
+      "inputs": [
+        "evals/fixtures/postmortems/INC-2026-0314-gateway-timeouts.md",
+        "evals/fixtures/postmortems/INC-2026-0502-stale-prices.md",
+        "evals/fixtures/postmortems/INC-2026-0621-retry-storm.md",
+        "evals/fixtures/checkout-inputs.md"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "convert-legacy-sheet",
+      "text": "Convert a legacy RPN-based FMEA spreadsheet to the JSON model with AP, preserving RPN for reference.",
+      "inputs": ["evals/fixtures/legacy-rpn-sheet.csv"]
+    },
+    {
+      "id": 7,
+      "name": "update-after-change",
+      "text": "Update an existing FMEA after an architecture change (living-document behavior: diff, re-rate, flag stale rows).",
+      "inputs": ["evals/fixtures/update/before.fmea.json", "evals/fixtures/update/after-architecture.md"]
+    }
+  ]
+}

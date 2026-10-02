@@ -1,0 +1,10 @@
+{
+  "vectors": [
+    "</script><script>alert(1)</script>",
+    "<!-- comment -->",
+    "a\u2028b",
+    "c\u2029d",
+    "\"quoted\" & 'single'",
+    "<img src=x onerror=alert(1)>"
+  ]
+}
