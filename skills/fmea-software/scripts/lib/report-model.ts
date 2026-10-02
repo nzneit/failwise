@@ -46,6 +46,7 @@ export interface RowModel {
   postStyle: RankStyle | null;     // the badge style of chain.post_priority.value; null without post_priority
   marks: RowMark[];                // §5.7 order: stale, handoff, provisional, blocker
   findings: PlacedFinding[];       // row findings pointing into this chain, without rule "rating-provisional", in §5.8 order
+  actionsCell: { text: string; due: string | null };   // "1 open" | "1 open of 2" | "all 2 closed" | "none"; due = earliest open target date
 }
 
 export type GroupLocation =
@@ -233,6 +234,19 @@ function rowMarks(chain: Chain, own: PlacedFinding[]): RowMark[] {
   return marks;
 }
 
+// The index Actions cell (§4.2): O open of T, and the earliest target date among the open ones.
+function actionsCell(chain: Chain): RowModel["actionsCell"] {
+  const total = chain.actions.length;
+  const due = chain.actions.filter(isOpen).map((a) => a.target_date).sort();
+  const open = due.length;
+  let text: string;
+  if (total === 0) text = "none";
+  else if (open === 0) text = `all ${total} closed`;
+  else if (open === total) text = `${open} open`;
+  else text = `${open} open of ${total}`;
+  return { text, due: open === 0 ? null : due[0] };
+}
+
 // The rows in the index order. A row's findings are found by its chain's position in
 // `doc.chains` (object identity), never by its id.
 function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]): RowModel[] {
@@ -249,6 +263,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
       postStyle: chain.post_priority ? rankStyle(table.vocabulary, chain.post_priority.value) : null,
       marks: rowMarks(chain, own),
       findings: [...shown.filter((f) => f.severity === "blocker"), ...shown.filter((f) => f.severity !== "blocker")],
+      actionsCell: actionsCell(chain),
     };
   });
 }

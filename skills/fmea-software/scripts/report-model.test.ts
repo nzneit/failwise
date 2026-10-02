@@ -119,6 +119,12 @@ const finding = (pointer: string, severity: Severity = "warning", rule = "test-r
 
 const PROVISIONAL = "The rating is still provisional and needs re-scoring";
 
+function rowById(model: ReturnType<typeof buildReportModel>, id: string) {
+  const row = model.rows.find((r) => r.chain.id === id);
+  assert.ok(row, `no row ${id}`);
+  return row;
+}
+
 test("a finding is a row, unknown-row or document finding by its chain index", () => {
   const doc = withComputed(minimalDoc(), ["/chains/0/ratings/S", "/chains/1/ratings/D", "/meta/ground_rules", "/chains", ""].map((p) => finding(p)));
   assert.deepEqual(modelOf(doc).groups.map((g) => g.locations), [
@@ -282,4 +288,21 @@ test("actions: ties keep document order, and both closed statuses go last", () =
     "ch-1 b2 open", "ch-9 a2 open", "ch-9 a4 open", "ch-1 b1 open",
     "ch-9 a3 closed", "ch-1 b3 closed", "ch-9 a1 closed",
   ]);
+});
+
+test("actions cell: the fixture's open, open-of-total and none forms, each with its earliest open date", () => {
+  const model = modelOf(fixture());
+  assert.deepEqual(rowById(model, "ch-1").actionsCell, { text: "1 open", due: "2026-10-15" });
+  assert.deepEqual(rowById(model, "ch-3").actionsCell, { text: "1 open of 2", due: "2026-10-30" });
+  assert.deepEqual(rowById(model, "ch-8").actionsCell, { text: "2 open", due: "2026-10-16" });
+  assert.deepEqual(rowById(model, "ch-5").actionsCell, { text: "none", due: null });
+});
+
+test("actions cell: all actions closed reads all T closed with no date; due is the earliest, not the first", () => {
+  const model = modelOf(docOf(
+    { actions: [action("a1", "Completed", "2026-09-01"), action("a2", "Not Implemented", "2026-08-01")] },
+    { actions: [action("b1", "Open", "2026-11-01"), action("b2", "Decision pending", "2026-10-01")] },
+  ));
+  assert.deepEqual(rowById(model, "ch-1").actionsCell, { text: "all 2 closed", due: null });
+  assert.deepEqual(rowById(model, "ch-2").actionsCell, { text: "2 open", due: "2026-10-01" });
 });
