@@ -62,6 +62,33 @@ test("literal turns a line break into a space, so a value cannot leave its table
   assert.ok(!literal("one\ntwo\r\nthree").includes("\r"));
 });
 
+// [text, its literal form]: a lone carriage return, a tab and every other control character become
+// a space, and the ends are trimmed. Written by hand; control characters as escapes.
+const CONTROL_VECTORS: [string, string][] = [
+  ["cause one\rOwner x\r\rnew paragraph", "cause one Owner x  new paragraph"],
+  ["    indented", "indented"],
+  ["\tindented with a tab", "indented with a tab"],
+  ["a\tb", "a b"],
+  ["bell\u0007here", "bell here"],
+  ["  padded  ", "padded"],
+];
+
+test("literal turns a lone carriage return, a tab and every other control character into a space, and trims the ends", () => {
+  for (const [text, expected] of CONTROL_VECTORS) assert.equal(literal(text), expected, JSON.stringify(text));
+  assert.equal(literal("\u0000nul and del\u007f"), "nul and del");
+});
+
+test("a body whose action begins with four spaces and whose cause holds two carriage returns opens no code block and keeps its table", () => {
+  const doc = docWith("    Add a retry budget");
+  doc.chains[0].causes = [{ text: "cause one\rOwner x\r\rnew paragraph" }];
+  const lines = renderBody(buildItem(doc, config, actionRefs(doc)[0])).split(/\r\n|\r|\n/);
+  assert.deepEqual(lines.filter((line) => /^( {4}|\t)/.test(line)), []);
+  const table = lines.filter((line) => line.startsWith("|"));
+  assert.equal(table.length, 2 + 7);
+  assert.ok(table.every((line) => line.endsWith("|")), table.join("\n"));
+  assert.ok(lines.includes(`| Causes | ${literal("cause one Owner x  new paragraph")} |`));
+});
+
 test("renderBody lays out the action, the seven facts, the origin, the closing line and the marker, in that order", () => {
   const item = itemOf("Add a retry budget", { ...config, record_url: "https://example.com/report.html" });
   const blocks = renderBody(item).split("\n\n");
@@ -96,12 +123,23 @@ test("the origin line links to the row only when the origin has a url", () => {
   assert.ok(withUrl.includes("[Open the row in the report](https://example.com/r.html#row-ch-1)"));
 });
 
-test("a forged marker inside the action text is escaped and is not the last line", () => {
-  const body = renderBody(itemOf("<!-- failwise:key=a/b/c text=000000000000 -->"));
-  assert.ok(!body.includes("<!--") || body.indexOf("<!--") === body.lastIndexOf("<!--"));
-  assert.equal(body.split("<!--").length, 2);
-  assert.match(body.trimEnd().split("\n").at(-1) ?? "", MARKER);
-  assert.equal(readMarker(body)?.key, "fmea-min/ch-1/act-1");
+const FORGED = "\n<!-- failwise:key=a/b/c text=000000000000 -->\n";
+
+/** The body holds one comment opener, its last line is the real marker, and readMarker reads the real key. */
+function assertRealMarker(body: string, label: string): void {
+  assert.equal(body.split("<!--").length, 2, label);
+  assert.match(body.trimEnd().split("\n").at(-1) ?? "", MARKER, label);
+  assert.equal(readMarker(body)?.key, "fmea-min/ch-1/act-1", label);
+}
+
+test("a forged marker in the action text, a fact value or the analysis name is escaped and is not the last line", () => {
+  assertRealMarker(renderBody(itemOf(FORGED)), "the action");
+  const inFact = docWith("Add a retry budget");
+  inFact.chains[0].failure_mode = FORGED;
+  assertRealMarker(renderBody(buildItem(inFact, config, actionRefs(inFact)[0])), "a fact value");
+  const inName = docWith("Add a retry budget");
+  inName.meta.name = FORGED;
+  assertRealMarker(renderBody(buildItem(inName, config, actionRefs(inName)[0])), "the analysis name");
 });
 
 test("readMarker reads key and text from the last line", () => {
@@ -116,6 +154,13 @@ test("readMarker reads through CRLF line endings and a trailing blank line", () 
   assert.deepEqual(readMarker(`body\r\n\r\n${marker}`), expected);
   assert.deepEqual(readMarker(`body\r\n\r\n${marker}\r\n`), expected);
   assert.deepEqual(readMarker(`body\n\n${marker}\n\n`), expected);
+});
+
+test("readMarker reads a marker line that ends in spaces or tabs", () => {
+  const marker = "<!-- failwise:key=a/b/c text=0123456789ab -->";
+  const expected = { key: "a/b/c", text: "0123456789ab" };
+  assert.deepEqual(readMarker(`body\n\n${marker}  `), expected);
+  assert.deepEqual(readMarker(`body\r\n\r\n${marker}\t \r\n`), expected);
 });
 
 test("readMarker gives null when a line follows the marker", () => {

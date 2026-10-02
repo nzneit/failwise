@@ -20,14 +20,21 @@ function escapeCharacter(ch: string): string {
   return /[!-/:-@[-`{-~]/.test(ch) ? `\\${ch}${WORD_JOINER}` : ch;
 }
 
+/** A space for a C0 control character (the tab, a lone carriage return and a line feed included) or DEL. */
+function spaceControl(ch: string): string {
+  const code = ch.codePointAt(0) ?? 0;
+  return code <= 0x1f || code === 0x7f ? " " : ch;
+}
+
 /**
- * Text from the analysis, made literal on GitHub (§8.3, §19.1): line breaks become spaces, long
- * hexadecimal runs are broken so no commit reference forms, and every ASCII punctuation character
- * is escaped, with a word joiner after it so no autolink forms across the gap.
+ * Text from the analysis, made literal on GitHub (§8.3, §19.1): every line break and every other
+ * control character becomes one space and the ends are trimmed, so no text leaves its table cell or
+ * opens a code block; long hexadecimal runs are broken so no commit reference forms; and every
+ * ASCII punctuation character is escaped, with a word joiner after it so no autolink forms across the gap.
  */
 export function literal(text: string): string {
-  const spaced = text.replace(/\r\n|\n/g, " ").replace(HEX_RUN, breakHexRun);
-  return Array.from(spaced, escapeCharacter).join("");
+  const spaced = Array.from(text.replace(/\r\n/g, " "), spaceControl).join("").trim();
+  return Array.from(spaced.replace(HEX_RUN, breakHexRun), escapeCharacter).join("");
 }
 
 /** A title is not interpreted by GitHub (the probe of §19.1), so it is written as it is. */
@@ -54,10 +61,11 @@ export function renderBody(item: TrackedItem): string {
   ].join("\n\n");
 }
 
-/** The marker on the last non-empty line of a body, or null when there is none or a line follows it. */
+/** The marker on the last non-empty line of a body, whatever spaces or tabs end that line, or null
+ *  when there is none or a line follows it. */
 export function readMarker(body: string | null): Marker | null {
   if (body === null) return null;
-  const lines = body.replace(/\r\n/g, "\n").split("\n").filter((line) => line.trim() !== "");
+  const lines = body.replace(/\r\n/g, "\n").split("\n").map((line) => line.trimEnd()).filter((line) => line !== "");
   const match = MARKER_LINE.exec(lines.at(-1) ?? "");
   if (match === null || splitKey(match[1]) === null) return null;
   return { key: match[1], text: match[2] };
