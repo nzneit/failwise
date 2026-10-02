@@ -48,8 +48,8 @@ export function notAsserted(check: CheckId, width: number): NotAsserted | undefi
   return NOT_ASSERTED.find((open) => open.check === check && open.width === width);
 }
 
-/** Selectors of elements that may scroll sideways inside themselves; empty until the narrow-screen design. */
-export const SCROLL_CONTAINERS: readonly string[] = [];
+/** Selectors of elements that may scroll sideways inside themselves: the frames every table of the report sits in. */
+export const SCROLL_CONTAINERS: readonly string[] = [".frame"];
 
 /** The ids of the report's sections photographed one by one: every <section> but the chains. */
 export const SECTION_PARTS = ["header", "ground-rules", "assumptions", "reviews", "structure", "actions", "lints", "provenance"] as const;

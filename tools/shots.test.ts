@@ -118,6 +118,14 @@ test("a report with no chains owes no key, no index and no row", () => {
   assert.equal(result.lines.at(-2), "## shots: 46 files under build/shots/"); // 5 widths × 9 files, and the PDF
 });
 
+test("an index inside a frame still owes the key and the index", () => {
+  const html = HTML.replace('<table class="index">', '<div class="frame" tabindex="0" role="region" aria-label="Index of failure chains"><table class="index" aria-labelledby="index-caption">');
+  assert.equal(run([], { html }).status, 0);
+  const lacking = run([], { html, drop: ["chromium/375/index.png"] });
+  assert.equal(lacking.status, 1);
+  assert.deepEqual(lacking.errors, ["error UNVERIFIED: build/shots/chromium/375/ lacks index"]);
+});
+
 test("without chromium among the engines no PDF is owed", () => {
   assert.equal(run(["--engines", "firefox"], { dryRun: DRY_RUN.replaceAll("chromium", "firefox") }).status, 0);
 });

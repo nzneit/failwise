@@ -108,7 +108,7 @@ const attnItem = (what: string, list: string, why: string): string =>
 const SOD_TEXT = "Severity, Occurrence and Detection, each rated 1 to 10 against the scales. Higher is worse: more harm, more likely, caught later or not at all.";
 const PRIORITY_TEXT = "Priority, highest first, looked up from S, O and D in the priority table. Rows are sorted by it.";
 const RPN_TEXT = "S × O × D, kept for comparison with older sheets. It is not used to rank rows.";
-const indexTable = (html: string): string => between(html, '<table class="index">', "</table>");
+const indexTable = (html: string): string => between(html, '<table class="index"', "</table>");
 const rowSection = (html: string, id: string): string => between(html, `<article class="row" id="row-${id}">`, "</article>");
 const lint = (severity: Severity, rule: string, pointer: string, message: string): Lint => ({ rule, severity, pointer, message });
 const stripTags = (html: string): string => html.replace(/<[^>]+>/g, "");
@@ -196,7 +196,7 @@ test("the automated checks section explains the checks, states the score and gro
   // the intro's two marks, then one per group: one blocker group and three warning groups
   assert.equal(occurrences(checks, 'class="mark mark-blocker"'), 2);
   assert.equal(occurrences(checks, 'class="mark mark-warning"'), 4);
-  assert.ok(checks.includes("<caption>Blockers first. Findings with the same rule and message share a line; each row location links to its row.</caption>"));
+  assert.ok(checks.includes('<p class="caption" id="checks-caption">Blockers first. Findings with the same rule and message share a line; each row location links to its row.</p>'));
   assert.ok(checks.includes("<thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th>Finding</th></tr></thead>"));
   assert.equal(occurrences(checks, "<tr>"), 5, "a head row and four groups");
   const order = ["detection-1-without-evidenced-control", "occurrence-estimate-without-trigger", "rating-provisional", "seeded-action-without-incident"]
@@ -383,10 +383,46 @@ test("chains sort by priority, then by severity descending, then by id", () => {
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
-test("the chain table's caption states the sort order and that actions do not move a row", () => {
+const INDEX_CAPTION_TEXT = "Rows are sorted by the pre-action priority, then by severity; a row keeps its place after actions. A row id links to the row's full section below.";
+const FRAME = /<div class="frame" tabindex="0" role="region" aria-label="([^"]+)"><table[ >]/g;
+
+test("every table is inside a frame that takes focus, is a region and has a label, and no two labels repeat", () => {
   const html = renderHtml(golden(), table, template);
-  const caption = "Rows are sorted by the pre-action priority, then by severity; a row keeps its place after actions. A row id links to the row's full section below.";
-  assert.ok(html.includes(`<table class="index"><caption>${escapeHtml(caption)}</caption><thead>`));
+  const labels = [...html.matchAll(FRAME)].map((match) => match[1]);
+  assert.equal(labels.length, occurrences(html, "<table"));
+  assert.deepEqual(labels, [
+    "Index of failure chains",
+    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
+    "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
+  ]);
+  assert.equal(new Set(labels).size, labels.length);
+});
+
+test("no table carries a caption; each of the three that had one is named by the paragraph above its frame", () => {
+  const html = renderHtml(golden(), table, template);
+  assert.equal(occurrences(html, "<caption"), 0);
+  const named: [string, string, string, string][] = [
+    ["index-caption", INDEX_CAPTION_TEXT, "Index of failure chains", '<table class="index" aria-labelledby="index-caption">'],
+    ["actions-caption", "Open actions first, by target date; closed actions last.", "Actions", '<table aria-labelledby="actions-caption">'],
+    ["checks-caption", "Blockers first. Findings with the same rule and message share a line; each row location links to its row.", "Automated checks", '<table aria-labelledby="checks-caption">'],
+  ];
+  for (const [id, text, label, opening] of named) {
+    assert.equal(occurrences(html, `id="${id}"`), 1, id);
+    assert.ok(html.includes(`<p class="caption" id="${id}">${escapeHtml(text)}</p><div class="frame" tabindex="0" role="region" aria-label="${label}">${opening}`), id);
+  }
+});
+
+test("the template lets a frame scroll sideways, keeps a framed table's shape, and styles a caption paragraph as the caption was", () => {
+  for (const rule of [
+    ".frame { overflow-x:auto; }",
+    ".frame > table { min-width:40rem; }",
+    ".grid { display:grid; grid-template-columns:minmax(0,1fr); gap:.7rem; }",
+    ".caption { margin:.5rem 0 0; padding-bottom:.3rem; text-align:left; color:var(--muted); font-size:.9rem; }",
+    ".caption + .frame > table { margin-top:0; }",
+    // A frame is a block formatting context, so its table's top margin no longer collapses with the heading's.
+    "h2 + .frame > table { margin-top:0; }",
+  ]) assert.ok(template.includes(rule), rule);
+  assert.doesNotMatch(template, /^caption \{/m, "no rule styles a <caption> any more");
 });
 
 test("the key lists the loaded table's vocabulary and all five marks; a document with no chains has no key and no index", () => {
@@ -435,8 +471,8 @@ test("an expanded row shows the post-action priority letter and RPN in its post-
   doc.chains[0].post_priority = computePriority(table, doc.chains[0].post_ratings);
   const section = rowSection(renderHtml(doc, table, template), "ch-1");
   assert.ok(section.includes('<br><span class="muted">after actions:</span> <span class="pri pri-mid">M</span> <span class="muted">RPN 24</span></div></header>'), "the header's second line");
-  assert.ok(section.includes('<span class="lbl">Post-action ratings — priority M, RPN 24</span><table>'), "the post-action block leads with the post-action priority");
-  assert.ok(section.includes('<span class="lbl">Ratings</span><table>'), "the pre-action block carries no such line");
+  assert.ok(section.includes('<span class="lbl">Post-action ratings — priority M, RPN 24</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1 after actions"><table>'), "the post-action block leads with the post-action priority");
+  assert.ok(section.includes('<span class="lbl">Ratings</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1"><table>'), "the pre-action block carries no such line");
   assert.ok(section.includes('<td class="num">4 <span class="muted">(was 8)</span></td>'), "S changed from 8");
   assert.ok(section.includes('<td class="num">2 <span class="muted">(was 4)</span></td>'), "D changed from 4");
   assert.ok(!section.includes("(was 3)"), "O did not change");
@@ -459,8 +495,8 @@ test("a row section carries its parts in order on a row that has every part", ()
     '<span class="lbl">Trigger</span>a deploy restarts the process',
     '<span class="lbl">Causes</span><ul><li>process crash</li></ul>',
     '<span class="lbl">Controls</span><ul><li><b>detection</b> &mdash; crash alerting <span class="muted">(existing, evidence test_result <code>alert suite</code>)</span></li></ul>',
-    '<span class="lbl">Ratings</span><table>',
-    `<span class="lbl">Post-action ratings — priority ${post.value}, RPN ${post.rpn}</span><table>`,
+    '<span class="lbl">Ratings</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1"><table>',
+    `<span class="lbl">Post-action ratings — priority ${post.value}, RPN ${post.rpn}</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1 after actions"><table>`,
     '<span class="lbl">Actions</span><ul><li><code>act-1</code> add a supervisor <span class="muted">(T. Tester, Completed, target 2026-08-01, completed 2026-08-15, incident <code>INC-1</code>)</span></li></ul>',
     '<span class="lbl">Row history</span><ul><li>v2 2026-09-07 &mdash; element renamed</li></ul>',
     '<p class="back"><a href="#chains">',
@@ -481,7 +517,8 @@ test("a row section leaves out each part it has nothing for", () => {
     assert.ok(!article.includes(absent), `the row has ${absent}`);
   }
   for (const present of ['<span class="lbl">Function</span>serve requests', '<span class="lbl">Effects</span>', '<span class="lbl">Causes</span><ul>',
-    '<span class="lbl">Controls</span><p class="empty">No controls recorded.</p>', '<span class="lbl">Ratings</span><table>',
+    '<span class="lbl">Controls</span><p class="empty">No controls recorded.</p>',
+    '<span class="lbl">Ratings</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1"><table>',
     '<span class="lbl">Actions</span><p class="empty">No actions on this row.</p>', '<p class="back"><a href="#chains">']) {
     assert.ok(article.includes(present), `the row lacks ${present}`);
   }
@@ -619,6 +656,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
     "article.row, tr, .attn-item, .tiles, .key { break-inside: avoid; }",
     "thead { display: table-header-group; }",
     "a { color:inherit; text-decoration:none; }",
+    ".frame { overflow-x:visible; }",
   ]) {
     assert.ok(print.includes(rule), `the print block is missing: ${rule}`);
   }
@@ -730,7 +768,7 @@ test("the structure tree and the actions table carry the document's rows", () =>
 
 test("the actions table is in the order of section 5.2, open actions first and each row id a link", () => {
   const actions = sectionOf(renderHtml(golden(), table, template), "actions", "lints");
-  assert.ok(actions.includes("<caption>Open actions first, by target date; closed actions last.</caption>"));
+  assert.ok(actions.includes('<p class="caption" id="actions-caption">Open actions first, by target date; closed actions last.</p>'));
   assert.ok(actions.includes("<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th></tr></thead>"));
   const rows = [...actions.matchAll(/<td class="nw">([0-9-]+)<\/td><td><a href="#row-([^"]+)"><code>[^<]+<\/code><\/a><\/td><td><code>([^<]+)<\/code>/g)]
     .map((m) => `${m[1]} ${m[2]} ${m[3]}`);

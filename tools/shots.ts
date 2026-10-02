@@ -29,7 +29,7 @@ interface Owed {
 }
 
 function owedBy(html: string): Owed {
-  const chains = html.includes('<table class="index">') ? ["key", "index"] : [];
+  const chains = html.includes('<table class="index"') ? ["key", "index"] : [];
   return { parts: [...SECTION_PARTS, ...chains], rows: html.split('<article class="row" id="').length - 1 };
 }
 

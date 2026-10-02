@@ -53,6 +53,16 @@ function list(items: string[], emptyText: string): string {
   return `<ul>${items.map((i) => `<li>${i}</li>`).join("")}</ul>`;
 }
 
+/** A table in a frame that scrolls sideways on its own, takes focus and carries a label no other frame shares (§4.1). */
+function frameHtml(label: string, tableHtml: string): string {
+  return `<div class="frame" tabindex="0" role="region" aria-label="${e(label)}">${tableHtml}</div>`;
+}
+
+/** A table's caption as a paragraph above its frame; the table names itself from it with aria-labelledby. */
+function captionHtml(id: string, text: string): string {
+  return `<p class="caption" id="${e(id)}">${e(text)}</p>`;
+}
+
 function badgeHtml(value: string, style: RankStyle): string {
   return `<span class="pri pri-${style}">${e(value)}</span>`;
 }
@@ -204,7 +214,8 @@ function indexHtml(rows: RowModel[]): string {
   const sod = FACTORS.map((f) => `<th class="num"><abbr title="${e(KEY_TEXT.sod)}">${f}</abbr></th>`).join("");
   const head = `<thead><tr><th><abbr title="${e(KEY_TEXT.priority)}">Priority</abbr></th><th>Row</th><th>Element</th><th>Failure mode</th><th>End effect</th>` +
     `${sod}<th class="num"><abbr title="${e(KEY_TEXT.rpn)}">RPN</abbr></th><th>Actions</th></tr></thead>`;
-  return `<table class="index"><caption>${e(INDEX_CAPTION)}</caption>${head}<tbody>${rows.map(indexRowHtml).join("")}</tbody></table>`;
+  return captionHtml("index-caption", INDEX_CAPTION) +
+    frameHtml("Index of failure chains", `<table class="index" aria-labelledby="index-caption">${head}<tbody>${rows.map(indexRowHtml).join("")}</tbody></table>`);
 }
 
 function part(label: string, body: string): string {
@@ -254,19 +265,19 @@ function reviewHtml(review: Ratings[Factor]["review"]): string {
   return review.by && review.date ? `${e(review.status)} by ${e(review.by)} on ${e(review.date)}` : e(review.status);
 }
 
-function ratingsTableHtml(ratings: Ratings, before?: Ratings): string {
+function ratingsTableHtml(label: string, ratings: Ratings, before?: Ratings): string {
   const rows = FACTORS.map((f) => {
     const r = ratings[f];
     const was = before && before[f].value !== r.value ? ` <span class="muted">(was ${before[f].value})</span>` : "";
     return `<tr><th>${f}</th><td class="num">${r.value}${was}</td><td>${e(r.rationale)}</td><td>${e(r.evidence_kind)}${r.evidence_ref ? ` <code>${e(r.evidence_ref)}</code>` : ""}</td><td>${reviewHtml(r.review)}</td></tr>`;
   }).join("");
-  return `<table><tr><th>Factor</th><th class="num">Value</th><th>Rationale</th><th>Evidence</th><th>Review</th></tr>${rows}</table>`;
+  return frameHtml(label, `<table><tr><th>Factor</th><th class="num">Value</th><th>Rationale</th><th>Evidence</th><th>Review</th></tr>${rows}</table>`);
 }
 
 function postRatingsHtml(chain: Chain): string {
   if (!chain.post_ratings) return "";
   const label = chain.post_priority ? `Post-action ratings — priority ${chain.post_priority.value}, RPN ${chain.post_priority.rpn}` : "Post-action ratings";
-  return part(label, ratingsTableHtml(chain.post_ratings, chain.ratings));
+  return part(label, ratingsTableHtml(`Ratings of ${chain.id} after actions`, chain.post_ratings, chain.ratings));
 }
 
 function rowActionsHtml(chain: Chain): string {
@@ -287,7 +298,7 @@ function gridHtml(row: RowModel): string {
     part("Effects", effectsHtml(c)),
     row.trigger === null ? "" : part("Trigger", e(row.trigger)),
     `<div class="two">${causesHtml(row)}${controlsHtml(c)}</div>`,
-    part("Ratings", ratingsTableHtml(c.ratings)),
+    part("Ratings", ratingsTableHtml(`Ratings of ${c.id}`, c.ratings)),
     postRatingsHtml(c),
     rowActionsHtml(c),
     c.history.length === 0 ? "" : part("Row history", list(c.history.map((h) => `v${h.version} ${e(h.date)} &mdash; ${e(h.change)}`), "")),
@@ -316,7 +327,8 @@ function actionRowHtml({ chainId, action, open }: ActionRow): string {
 function actionsHtml(actions: ActionRow[]): string {
   if (actions.length === 0) return `<p class="empty">No actions.</p>`;
   const head = `<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th></tr></thead>`;
-  return `<table><caption>${e(ACTIONS_CAPTION)}</caption>${head}<tbody>${actions.map(actionRowHtml).join("")}</tbody></table>`;
+  return captionHtml("actions-caption", ACTIONS_CAPTION) +
+    frameHtml("Actions", `<table aria-labelledby="actions-caption">${head}<tbody>${actions.map(actionRowHtml).join("")}</tbody></table>`);
 }
 
 const CHECKS_INTRO: [string, string, string] = [
@@ -347,7 +359,8 @@ function checksHtml(groups: CheckGroup[], qualityScore: number | null): string {
   const score = `<p><strong>Quality score: ${qualityScore} of 100</strong> <span class="muted">${e(SCORE_NOTE)}</span></p>`;
   if (groups.length === 0) return `${intro}${score}<p class="empty">No findings.</p>`;
   const head = `<thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th>Finding</th></tr></thead>`;
-  return `${intro}${score}<table><caption>${e(CHECKS_CAPTION)}</caption>${head}<tbody>${groups.map(checkRowHtml).join("")}</tbody></table>`;
+  return intro + score + captionHtml("checks-caption", CHECKS_CAPTION) +
+    frameHtml("Automated checks", `<table aria-labelledby="checks-caption">${head}<tbody>${groups.map(checkRowHtml).join("")}</tbody></table>`);
 }
 
 function provenanceHtml(doc: FmeaDocument): string {
@@ -359,7 +372,7 @@ function provenanceHtml(doc: FmeaDocument): string {
     }
   }
   if (rows.length === 0) return `<p class="empty">No catalog references.</p>`;
-  return `<table><thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  return frameHtml("Provenance", `<table><thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>${rows.join("")}</tbody></table>`);
 }
 
 export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string): string {
