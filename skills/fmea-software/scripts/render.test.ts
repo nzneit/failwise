@@ -333,6 +333,18 @@ test("with nothing to list, the Needs attention block holds its one sentence", (
   assert.equal(occurrences(header, "attn-item"), 0);
 });
 
+test("a rating-provisional finding of severity blocker is listed in the Needs attention block and in its row", () => {
+  const doc = withComputed(minimalDoc(), [lint("blocker", "rating-provisional", "/chains/0/ratings/S", "The rating is still provisional and needs re-scoring")]);
+  const html = renderHtml(doc, table, template);
+  const header = sectionOf(html, "header", "ground-rules");
+  assert.ok(header.includes(`<div class="attn-item"><div class="what">1 row fails an automated check<br>${mark("blocker")}</div>`), "the blocker item");
+  assert.ok(!header.includes("attn-none"), "the nothing-needs-attention sentence");
+  const article = rowSection(html, "ch-1");
+  assert.equal(occurrences(article, '<p class="finding'), 1, "one finding line in the row");
+  assert.ok(article.includes(`<p class="finding">${mark("blocker")} &nbsp;S &mdash; The rating is still provisional and needs re-scoring <span class="muted"><code>rating-provisional</code></span></p>`),
+    "the line names the rule");
+});
+
 test("a document without a computed block shows an em dash in the quality score tile", () => {
   const header = headerOf(minimalDoc());
   assert.ok(header.includes('<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">&mdash;</span><span class="sub">share of rows with no blocker</span></a>'));

@@ -476,6 +476,18 @@ test("attention: blocker lines are row findings by index order, then unknown-row
   assert.equal(noChains.blockers?.label, "The document fails an automated check");
 });
 
+test("attention: a rating-provisional finding of severity blocker stays in its row and in the blocker item", () => {
+  const blocker = finding("/chains/0/ratings/S", "blocker", "rating-provisional", PROVISIONAL);
+  const placed = { severity: "blocker", rule: "rating-provisional", message: PROVISIONAL, where: { kind: "row", chainId: "ch-1", label: "S", raw: false } };
+  const model = modelOf(withComputed(minimalDoc(), [blocker]));
+  assert.deepEqual(model.rows[0].marks, ["blocker"]);
+  assert.deepEqual(model.rows[0].findings, [placed]);
+  assert.deepEqual(model.attention.blockers, { label: "1 row fails an automated check", lines: [placed] });
+
+  const withWarning = modelOf(withComputed(minimalDoc(), [finding("/chains/0/ratings/O", "warning", "rating-provisional", PROVISIONAL), blocker]));
+  assert.deepEqual(withWarning.rows[0].findings, [placed], "the warning of the rule is still left out");
+});
+
 test("attention: the checkout fixture's block", () => {
   const a = attentionOf(fixture());
   assert.deepEqual(Object.keys(a), ["blockers", "stale", "provisional", "handoffs", "nextActions"]);

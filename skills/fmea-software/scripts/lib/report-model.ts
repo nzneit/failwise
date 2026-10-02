@@ -45,7 +45,7 @@ export interface RowModel {
   style: RankStyle;                // the badge style of chain.priority.value
   postStyle: RankStyle | null;     // the badge style of chain.post_priority.value; null without post_priority
   marks: RowMark[];                // §5.7 order: stale, handoff, provisional, blocker
-  findings: PlacedFinding[];       // row findings pointing into this chain, without rule "rating-provisional", in §5.8 order
+  findings: PlacedFinding[];       // row findings pointing into this chain, without warnings of rule "rating-provisional", in §5.8 order
   actionsCell: { text: string; due: string | null };   // "1 open" | "1 open of 2" | "all 2 closed" | "none"; due = earliest open target date
   trigger: string | null;          // the trimmed trigger, when it gets its own part (§5.3); else null
   triggerCauses: number[];         // indexes into chain.causes of every cause whose trimmed text equals the trimmed trigger
@@ -298,7 +298,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
     const index = doc.chains.indexOf(chain);
     const own = located.filter((l) => l.index === index).map((l) => l.finding);
     const fn = doc.functions.find((f) => f.id === chain.function);
-    const shown = own.filter((f) => f.rule !== "rating-provisional");
+    const shown = own.filter((f) => !(f.rule === "rating-provisional" && f.severity === "warning"));
     return {
       chain,
       element: fn?.element ?? "",
