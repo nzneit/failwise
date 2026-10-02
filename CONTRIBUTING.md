@@ -28,6 +28,14 @@ The maintainer audits every change to `skills/fmea-software/references/` for res
 before merging it. A pull request merged on GitHub does not pass through the maintainer's local
 push hook, so the maintainer fetches the change and runs the audit on it first.
 
+The research the skill rests on (the research reports with their findings, and the records
+file), the design-panel records, the implementation plan and the publication design live in the
+private repository `nzneit/failwise-research`, because the records file quotes paywalled
+standards and no-derivatives material verbatim. Two kinds of reference in this repository point
+into it and do not resolve here: finding ids of the form `F-WSn-NN`, in the design spec and in
+the schema, and "plan reference §X" in code comments. A record id `Cnnn` does resolve, through
+the register.
+
 ## Before every commit
 
 ```
@@ -39,7 +47,8 @@ The first runs both test suites under `node --test`. The second runs the static 
 type check (`tsc`), the linter (`oxlint`) and the dead-code, duplication and complexity analysis
 (`fallow`), which the CI workflow also runs on every pull request. Both need Node.js 24.2 or later
 on PATH (`bun tools/run-tests.ts` and `bun tools/check.ts` also work and find Node through nvm).
-The commands are the same in bash and fish.
+The commands are the same in bash and fish. If you call `node --test` directly, use the glob
+form; `node --test <directory>` is not the same on Node 24.
 
 The checkers are development tools declared in `dev/package.json`. Install them once with
 `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. Do not add
@@ -59,3 +68,22 @@ Commit messages carry no AI attribution lines: no `Co-Authored-By` trailer namin
 - Every command must behave the same in bash and fish. Where a shell snippet would differ
   between them, write the step as a TypeScript script that does the shell's work itself, as
   `tools/run-tests.ts` expands its own globs.
+
+## Evals
+
+```
+tools/run-eval.sh <1|5|6|7> <high|medium> <run-n>      # one unattended eval run into build/evals/
+node tools/eval-report.ts                              # build/evals/results.json → docs/specs/2026-09-07-eval-results.md
+```
+
+An eval run is made at a model capability (`high`, `medium`), not a model name: the environment
+variable `FMEA_EVAL_MODELS`, as `high=<model>,medium=<model>`, names the model that fills each
+capability for any provider, and defaults to the Anthropic table when unset. A full eval is
+sixteen runs, the four prompts at both capabilities twice each. After the sixteen runs, judge
+them with Claude Code's Workflow tool,
+`{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which writes
+`build/evals/results.json` for `eval-report.ts` to read.
+
+Sixteen unattended runs and their judging spend real model time and money. An eval run loads the
+runner's global Claude Code configuration (bare mode is not used) and grants Read with no path
+restriction, so run it from a machine and login you are content to expose.
