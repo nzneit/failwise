@@ -24,6 +24,9 @@ test("itemKey joins three ids with a slash and splitKey takes them apart", () =>
   assert.deepEqual(splitKey("fmea-min/ch-1/act-1"), ["fmea-min", "ch-1", "act-1"]);
   assert.equal(splitKey("fmea-min/ch-1"), null);
   assert.equal(splitKey("a/b c/d"), null);
+  assert.deepEqual(splitKey("team:checkout/ch.1_a/act:1-b"), ["team:checkout", "ch.1_a", "act:1-b"]);
+  assert.equal(splitKey("a/b/c/d"), null);
+  assert.equal(splitKey("a//c"), null);
 });
 
 test("textHash is 12 hex characters and ignores how whitespace is laid out", () => {
