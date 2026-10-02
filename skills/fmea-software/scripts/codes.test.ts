@@ -303,7 +303,7 @@ test("a CLI on a runtime without import.meta.main exits 1 with the NODE line and
 });
 
 test("every shipped CLI ends with the isEntry guard, never a bare import.meta.main check", () => {
-  for (const name of ["validate.ts", "priority.ts", "render.ts"]) {
+  for (const name of ["validate.ts", "priority.ts", "render.ts", "track.ts"]) {
     const src = readFileSync(join(SKILL_ROOT, "scripts", name), "utf8");
     assert.ok(src.endsWith("\nif (isEntry(import.meta)) run(main);\n"), `${name} must end with the isEntry guard`);
     assert.ok(!src.includes("if (import.meta.main)"), `${name} reads import.meta.main without the guard`);
