@@ -8,6 +8,11 @@ export type View = (typeof WIDTHS)[number] | "print";
 export const VIEWS: readonly View[] = [...WIDTHS, "print"];
 /** The first width with the wide layout; the template's one width query is BREAKPOINT - 1 px. */
 export const BREAKPOINT = 768;
+/** The widths the stepped check visits, ascending: 320 to 1280 in steps of 4, and BREAKPOINT - 1. */
+export const STEPPED_WIDTHS: readonly number[] = [
+  ...Array.from({ length: (1280 - 320) / 4 + 1 }, (_, step) => 320 + 4 * step),
+  BREAKPOINT - 1,
+].sort((a, b) => a - b);
 export const VIEWPORT_HEIGHT = 900;
 /** The width the print checks open the report at: a landscape page less its margins, in CSS pixels. */
 export const PRINT_WIDTH = 965;

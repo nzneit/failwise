@@ -25,9 +25,18 @@ export async function sidewaysScroll(page: Page): Promise<number> {
   });
 }
 
+/** Each element as tag#id.class. Run in the page, on a handle to the elements, so every check names elements alike. */
+function tagLabels(elements: Element[]): string[] {
+  return elements.map((element) => {
+    const id = element.id === "" ? "" : `#${element.id}`;
+    const classes = [...element.classList].map((name) => `.${name}`).join("");
+    return `${element.tagName.toLowerCase()}${id}${classes}`;
+  });
+}
+
 /** Up to ten elements under <main> whose box passes the viewport's right edge, each as tag#id.class. */
 export async function pastRightEdge(page: Page): Promise<string[]> {
-  return page.evaluate((containers) => {
+  const passing = await page.evaluateHandle((containers) => {
     const edge = document.documentElement.clientWidth;
     const inContainer = (element: Element): boolean =>
       containers.some((selector) => element.parentElement?.closest(selector) != null);
@@ -35,13 +44,35 @@ export async function pastRightEdge(page: Page): Promise<string[]> {
       const box = element.getBoundingClientRect();
       return box.width > 0 && box.height > 0 && box.right - edge > 0.5 && !inContainer(element);
     };
-    const label = (element: Element): string => {
-      const id = element.id === "" ? "" : `#${element.id}`;
-      const classes = [...element.classList].map((name) => `.${name}`).join("");
-      return `${element.tagName.toLowerCase()}${id}${classes}`;
-    };
-    return [...document.querySelectorAll("main *")].filter(passes).slice(0, 10).map(label);
+    return [...document.querySelectorAll("main *")].filter(passes).slice(0, 10);
   }, [...SCROLL_CONTAINERS]);
+  return passing.evaluate(tagLabels);
+}
+
+/** Up to ten faults of the report's frames: "table outside a frame: <tag#id.class>" for a table whose parent
+ *  element is not a `.frame`; "frame overflow-x <value>: <aria-label>" for a frame whose computed overflow-x is
+ *  not `overflow`; and, when `atRest`, "table past its frame by <n>px: <aria-label>" for a table whose box's
+ *  right edge passes its frame's box's right edge by more than 0.5 px. */
+export async function frameFaults(page: Page, overflow: "auto" | "visible", atRest: boolean): Promise<string[]> {
+  const unframed = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("table")].filter((table) => table.parentElement?.matches(".frame") !== true),
+  );
+  const outside = (await unframed.evaluate(tagLabels)).map((label) => `table outside a frame: ${label}`);
+  const framed = await page.evaluate(({ overflow, atRest }) => {
+    const faults: string[] = [];
+    for (const frame of document.querySelectorAll(".frame")) {
+      const name = frame.getAttribute("aria-label") ?? "";
+      const value = getComputedStyle(frame).overflowX;
+      if (value !== overflow) faults.push(`frame overflow-x ${value}: ${name}`);
+      const tables = atRest ? frame.querySelectorAll(":scope > table") : [];
+      for (const table of tables) {
+        const past = table.getBoundingClientRect().right - frame.getBoundingClientRect().right;
+        if (past > 0.5) faults.push(`table past its frame by ${past.toFixed(1)}px: ${name}`);
+      }
+    }
+    return faults;
+  }, { overflow, atRest });
+  return [...outside, ...framed].slice(0, 10);
 }
 
 /** Whether `check` at `width` is measured but not asserted. When it is, records the entry's reason and
