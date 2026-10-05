@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compareVersions, defaultHost, findNode, MIN_VERSION, parseVersion, type DirEntry, type Host } from "./lib/host.ts";
@@ -263,7 +263,12 @@ test("runSuites end to end: real node --test over a temporary tree", () => {
     assert.equal(runSuites(root, quiet, () => {}, () => {}), 0);
     mkdirSync(join(root, SUITES[1].dir, "lib", "node_modules"), { recursive: true });
     writeFileSync(join(root, SUITES[1].dir, "lib", "node_modules", "pkg.test.ts"), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("pkg", () => { assert.equal(1, 2); });\n');
-    assert.equal(runSuites(root, quiet, () => {}, () => {}), 0, "a test under node_modules is not run");
+    const before: string[] = [];
+    assert.equal(runSuites(root, quiet, (line) => before.push(line), () => {}), 0, "a test under node_modules is not run");
+    symlinkSync(join(root, SUITES[1].dir), join(root, SUITES[1].dir, "lib", "loop"));
+    const after: string[] = [];
+    assert.equal(runSuites(root, quiet, (line) => after.push(line), () => {}), 0, "a link back to the suite folder is not followed");
+    assert.deepEqual(after, before, "a link back to the suite folder adds no file");
     writeFileSync(join(root, SUITES[1].dir, "lib", "fails.test.ts"), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("nested", () => { assert.equal(1, 2); });\n');
     assert.equal(runSuites(root, quiet, () => {}, () => {}), 1, "a failing test in a subfolder fails the run");
     rmSync(join(root, SUITES[1].dir, "lib", "fails.test.ts"));

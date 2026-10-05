@@ -68,7 +68,8 @@ function walk(root: string, dir: string, listEntries: (path: string) => DirEntry
 }
 
 // Every *.test.ts file in the folder and the folders below it, node_modules left out, sorted and
-// relative to the root. A symbolic link to a folder is not followed.
+// relative to the root. A symbolic link to a folder is not walked; a symbolic link whose own name
+// ends in .test.ts is handed to node --test as it is.
 export function collectTests(root: string, dir: string, listEntries: (path: string) => DirEntry[]): Collected {
   const files: string[] = [];
   return walk(root, dir, listEntries, files) ?? { files: files.sort() };

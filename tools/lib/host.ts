@@ -18,7 +18,9 @@ export type Spawn = (
   options: { cwd: string; stdio: "inherit" | "pipe"; env?: Record<string, string | undefined> },
 ) => { status: number | null; stdout?: string | null; stderr?: string | null };
 
-/** One entry of a folder: its name, and whether it is a folder itself (a symbolic link is not). */
+/** One entry of a folder: its name, and whether it is a folder itself. A symbolic link never counts
+ *  as a folder, so a link to a folder is not walked, and a link whose own name ends in .test.ts is
+ *  handed to node --test as it is. */
 export interface DirEntry {
   name: string;
   dir: boolean;

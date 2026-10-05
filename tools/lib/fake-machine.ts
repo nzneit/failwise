@@ -7,9 +7,8 @@
 // further files a test names. On a compare run the fake children also leave what the real ones
 // would: the tar file, the unpacked renderer, each rendered report, each pass's JSON report, the
 // first pass's reference images and every attachment a pass reports. `host.listDir` throws for a
-// folder with nothing under it, as the real one does for an absent folder. `host.listEntries`
-// throws whatever it is asked, because the browser runners do not use it. It holds no test and no
-// entry point.
+// folder with nothing under it, as the real one does for an absent folder. `host.listEntries` throws
+// for any path, because the browser runners do not use it. It holds no test and no entry point.
 
 import { isAbsolute, join } from "node:path";
 import { VIEWS } from "../../dev/browser/matrix.ts";
