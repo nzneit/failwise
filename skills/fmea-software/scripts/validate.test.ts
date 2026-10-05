@@ -8,7 +8,7 @@ import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { clone, fixturePath, loadFixture, runCli, withTempDir } from "./test-helpers.ts";
-import type { FmeaDocument } from "./lib/types.ts";
+import type { FmeaDocument, Lint } from "./lib/types.ts";
 
 const table = loadTable();
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
@@ -231,6 +231,24 @@ test("staleComputed gives one COMPUTED_STALE issue for the score and one for a s
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints",
       message: "computed.lints, written by validator 0.1.0, holds 11 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again" },
   ]);
+});
+
+test("staleComputed gives one COMPUTED_STALE issue at the stored lint whose rule, severity or pointer alone differs", () => {
+  const doc = golden();
+  const fresh = validateDocument(doc, table);
+  assert.deepEqual(staleComputed(doc.computed!, fresh), []);
+  const i = 2;
+  const cases: { field: string; change: (lint: Lint) => Lint }[] = [
+    { field: "rule", change: (lint) => ({ ...lint, rule: `${lint.rule}-renamed` }) },
+    { field: "severity", change: (lint) => ({ ...lint, severity: lint.severity === "warning" ? "blocker" : "warning" }) },
+    { field: "pointer", change: (lint) => ({ ...lint, pointer: `${lint.pointer}/moved` }) },
+  ];
+  for (const { field, change } of cases) {
+    const lints = doc.computed!.lints.map((lint, j) => (j === i ? change(lint) : lint));
+    const issues = staleComputed({ ...doc.computed!, lints }, fresh);
+    assert.deepEqual(issues.map((e) => [e.code, e.pointer]), [["COMPUTED_STALE", `/computed/lints/${i}`]],
+      `a stored lint whose ${field} alone differs`);
+  }
 });
 
 test("staleComputed points at the first stored lint past the validator's list when the stored list runs longer", () => {

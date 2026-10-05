@@ -312,12 +312,29 @@ test("every shipped CLI ends with the isEntry guard, never a bare import.meta.ma
   }
 });
 
+/** Every specifier of a sibling file a source imports: `from "./x.ts"`, a side-effect
+ *  `import "./x.ts"` and a dynamic `import("./x.ts")`, in double or single quotes. */
+function siblingImports(src: string): string[] {
+  return [...src.matchAll(/\b(?:from|import)\s*\(?\s*(["'])\.\/([^"'/]+)\1/g)].map((m) => m[2]);
+}
+
+test("the import scan sees a from clause, a side-effect import and a dynamic import, in either quote", () => {
+  assert.deepEqual(siblingImports([
+    `import { a } from "./validate.ts";`,
+    `import { b } from './render.ts';`,
+    `import "./track.ts";`,
+    `import './priority.ts';`,
+    `const m = await import("./validate.ts");`,
+    `const n = await import( './render.ts' );`,
+    `import { c } from "./lib/validation.ts";`,
+  ].join("\n")), ["validate.ts", "render.ts", "track.ts", "priority.ts", "validate.ts", "render.ts"]);
+});
+
 test("no shipped CLI imports another, so a command on a runtime without import.meta.main prints one NODE line, not two", () => {
   const clis = ["validate.ts", "priority.ts", "render.ts", "track.ts"];
   for (const name of clis) {
     const src = readFileSync(join(SKILL_ROOT, "scripts", name), "utf8");
-    const imported = [...src.matchAll(/\bfrom\s+"\.\/([^"/]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(imported.filter((spec) => clis.includes(spec)), [], `${name} imports another CLI, whose isEntry guard then runs too`);
+    assert.deepEqual(siblingImports(src).filter((spec) => clis.includes(spec)), [], `${name} imports another CLI, whose isEntry guard then runs too`);
   }
 });
 
