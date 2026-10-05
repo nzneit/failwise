@@ -1,13 +1,13 @@
 // The document commands the skill text gives, run as given. SKILL.md's Scripts block lists
-// priority.ts, validate.ts and render.ts in the order a run uses them, and work-tracking.md rule 7
-// repeats validate.ts and render.ts; this test reads those lines, fills in their placeholders and
-// runs them on a copy of the checkout fixture: once on a document whose priorities are not yet
-// written, as the model first writes it, and again after a re-score that changes a rating, with
-// the report of the first round still at the --out path. Any non-zero exit fails the test.
-// A bracketed optional part such as [--table-file path] is dropped, so each line runs in its
-// shortest form, the one a document on the shipped table uses. No shell is involved: each line
-// is split on spaces and its script started with this Node, so the test behaves the same under
-// bash and fish.
+// priority.ts, validate.ts and render.ts in the order a run uses them, with --force on the render
+// line as an optional group, and work-tracking.md rule 7 repeats validate.ts and render.ts; this
+// test reads those lines, fills in their placeholders and runs them on a copy of the checkout
+// fixture. The first round runs every line with its optional groups left out, as the first report
+// is rendered: to a path where no file exists, without --force. The same render command run again
+// must then refuse with IO_EXISTS, which is why the flag exists. The second round, after a re-score
+// that changes a rating, takes the optional --force on the render line, as every re-render does.
+// Any other non-zero exit fails the test. No shell is involved: each line is split on spaces and
+// its script started with this Node, so the test behaves the same under bash and fish.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,7 +20,8 @@ const ROOT = join(import.meta.dirname, "..");
 const SKILL_DIR = join(ROOT, "skills", "fmea-software");
 const FIXTURE = join(SKILL_DIR, "evals", "fixtures", "checkout-service.fmea.json");
 const PREFIX = "node ${CLAUDE_SKILL_DIR}/scripts/";
-const DOCUMENT_SCRIPTS = new Set(["priority.ts", "validate.ts", "render.ts"]);
+const DOCUMENT_SCRIPTS = ["priority.ts", "validate.ts", "render.ts"];
+const EXIT_IO = 3;
 
 /** The lines of the first fenced block under SKILL.md's "## Scripts" heading. */
 function scriptsBlock(skillMd: string): string[] {
@@ -35,16 +36,21 @@ function scriptOf(command: string): string {
   return command.startsWith(PREFIX) ? command.slice(PREFIX.length).split(" ")[0] : "";
 }
 
-/** The block's priority.ts, validate.ts and render.ts lines, in the block's order, each exactly once. */
+/** The block's priority.ts, validate.ts and render.ts lines, each exactly once and in that order. */
 function documentCommands(block: string[]): string[] {
-  const commands = block.filter((line) => DOCUMENT_SCRIPTS.has(scriptOf(line)));
-  assert.deepEqual(commands.map(scriptOf).sort(), [...DOCUMENT_SCRIPTS].sort(), "the block gives each document script once");
+  const commands = block.filter((line) => DOCUMENT_SCRIPTS.includes(scriptOf(line)));
+  assert.deepEqual(commands.map(scriptOf), DOCUMENT_SCRIPTS, "the block gives priority.ts, validate.ts and render.ts once each, in that order");
   return commands;
 }
 
-/** A command line without its bracketed optional parts, such as " [--table-file path]". */
+/** A command line with its bracketed optional groups, such as " [--table-file path]", left out. */
 function required(command: string): string {
   return command.replace(/ \[[^\]]*\]/g, "");
+}
+
+/** A command line with its optional " [--force]" taken and its other optional groups left out. */
+function forced(command: string): string {
+  return required(command.replace(" [--force]", " --force"));
 }
 
 /** The validate.ts and render.ts commands of work-tracking.md rule 7, as full command lines. */
@@ -55,9 +61,9 @@ function ruleSevenCommands(workTracking: string): string[] {
   return spans.filter((span) => /^(validate|render)\.ts /.test(span)).map((span) => PREFIX + span);
 }
 
-/** argv for one command line, optional parts dropped and placeholders filled; refuses a line it cannot run as given. */
+/** argv for one expanded command line, placeholders filled; refuses a line it cannot run as given. */
 function argv(command: string, doc: string, report: string): string[] {
-  const tokens = required(command).split(" ");
+  const tokens = command.split(" ");
   assert.equal(tokens[0], "node", `${command}: starts with node`);
   const filled = tokens.slice(1).map((t) =>
     t.replace("${CLAUDE_SKILL_DIR}", SKILL_DIR).replace("<file>", doc).replace("<report.html>", report),
@@ -66,9 +72,13 @@ function argv(command: string, doc: string, report: string): string[] {
   return filled;
 }
 
+function run(command: string, doc: string, report: string) {
+  return spawnSync(process.execPath, argv(command, doc, report), { encoding: "utf8" });
+}
+
 function runAll(commands: string[], doc: string, report: string, round: string): void {
   for (const command of commands) {
-    const result = spawnSync(process.execPath, argv(command, doc, report), { encoding: "utf8" });
+    const result = run(command, doc, report);
     assert.equal(result.status, 0, `${round}: '${command}' exited ${result.status}: ${result.stderr.trim()}`);
   }
 }
@@ -107,27 +117,33 @@ function withDocument(body: (doc: string, report: string) => void): void {
 const skillMd = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
 const workTracking = readFileSync(join(SKILL_DIR, "references", "work-tracking.md"), "utf8");
 
-test("SKILL.md's document commands run as given on a new document, and again after a re-score", () => {
+test("SKILL.md's document commands render a first report without --force, and re-render with it after a re-score", () => {
   const commands = documentCommands(scriptsBlock(skillMd));
+  const render = commands[2];
+  assert.ok(render.includes(" [--force]"), `the render line '${render}' carries --force as an optional group, in brackets`);
+  assert.ok(!required(render).includes("--force"), `the render line '${render}' carries --force only in brackets`);
   withDocument((doc, report) => {
-    runAll(commands, doc, report, "first round");
+    assert.ok(!existsSync(report), "no file is at the --out path before the first render");
+    runAll(commands.map(required), doc, report, "first round, every optional group left out");
     assert.ok(existsSync(report), "the first round wrote the report");
+    const again = run(required(render), doc, report);
+    assert.equal(again.status, EXIT_IO, `a second render without --force exited ${again.status}, not ${EXIT_IO}`);
+    assert.match(again.stderr, /IO_EXISTS/, "a second render without --force refuses with IO_EXISTS");
     rescore(doc);
-    runAll(commands, doc, report, "second round, after a re-score");
+    runAll(commands.map(forced), doc, report, "second round, after a re-score, with --force on the render");
     const after = JSON.parse(readFileSync(doc, "utf8"));
     assert.equal(after.chains[0].priority.value, "L", "the stored priority follows the re-scored rating");
     assert.equal(after.chains[0].priority.rpn, 2 * after.chains[0].ratings.O.value * after.chains[0].ratings.D.value);
   });
 });
 
-test("work-tracking.md rule 7 gives validate.ts and render.ts as the Scripts block does, and they run over an existing report", () => {
-  const block = documentCommands(scriptsBlock(skillMd));
+test("work-tracking.md rule 7 gives validate.ts and render.ts --force as the Scripts block does, and they run over an existing report", () => {
+  const commands = documentCommands(scriptsBlock(skillMd));
+  const [, validate, render] = commands;
   const rule = ruleSevenCommands(workTracking);
-  assert.deepEqual(rule.map(scriptOf), ["validate.ts", "render.ts"], "rule 7 gives validate.ts, then render.ts");
-  const blockRequired = block.map(required);
-  for (const command of rule) assert.ok(blockRequired.includes(required(command)), `rule 7's '${command}' is the Scripts block's line, optional parts aside`);
+  assert.deepEqual(rule, [required(validate), forced(render)], "rule 7 gives the block's validate line without its optional groups, then its render line with --force taken");
   withDocument((doc, report) => {
-    runAll(block, doc, report, "the run before tracking");
+    runAll(commands.map(required), doc, report, "the run before tracking");
     runAll(rule, doc, report, "rule 7");
   });
 });
