@@ -11,20 +11,22 @@ import { applyPriorities, assertPriorityInput } from "./priority.ts";
 import { clone, fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument } from "./lib/types.ts";
 
-// Writes the minimal document, with its priority block removed, to <dir>/analysis.json and
-// returns the path; the CLI must put the block back.
+// Writes the minimal document as it is first written, with its priority block and its
+// meta.scales.priority_table removed, to <dir>/analysis.json and returns the path; the CLI must
+// put both back, the record naming the table it loaded.
 function writeMinimalWithoutPriority(dir: string): string {
-  const doc = minimalDoc() as unknown as { chains: Record<string, unknown>[] };
+  const doc = minimalDoc() as unknown as { meta: { scales: Record<string, unknown> }; chains: Record<string, unknown>[] };
+  delete doc.meta.scales.priority_table;
   delete doc.chains[0].priority;
   const path = join(dir, "analysis.json");
   writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
   return path;
 }
 
-test("applyPriorities writes M/96 on the minimal document and pins the table id", () => {
+test("applyPriorities writes M/96 on a document that records no table and records the table id", () => {
   const table = loadTable();
   const doc = minimalDoc();
-  doc.meta.scales.priority_table = "something-else";
+  delete (doc.meta.scales as Partial<FmeaDocument["meta"]["scales"]>).priority_table;
   doc.meta.scales.version = 3;
   doc.chains[0].priority = { value: "?", table: "?", rpn: 0 };
   const out = applyPriorities(doc, table);
@@ -215,6 +217,7 @@ test("applyPriorities removes post_priority when post_ratings is absent", () => 
 test("post_priority uses the loaded table, not the shipped one, under --table-file", () => {
   const alt = loadTable(fixturePath("tables", "well-formed-alt.json"));
   const doc = withPostRatings();
+  delete (doc.meta.scales as Partial<FmeaDocument["meta"]["scales"]>).priority_table;
   applyPriorities(doc, alt);
   assert.deepEqual(doc.chains[0].post_priority, { value: "M", table: "priority-alt-3band-v1", rpn: 24 });
   assert.deepEqual(doc.chains[0].priority, { value: "H", table: "priority-alt-3band-v1", rpn: 96 });
@@ -241,4 +244,185 @@ test("CLI with --write fills post_priority beside post_ratings", () => {
     const doc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.deepEqual(doc.chains[0].post_priority, { value: "M", table: "priority-fmea-software-v1", rpn: 24 });
   });
+});
+
+// ---- The recorded table: a run that loads another table is refused unless --change-table is given.
+
+const SHIPPED_ID = "priority-fmea-software-v1";
+const ALT_ID = "priority-alt-3band-v1";
+const ALT_TABLE = fixturePath("tables", "well-formed-alt.json");
+
+/** The one stderr line of a refused run whose document records `recorded` and whose command loaded `loaded`. */
+function mismatchLine(recorded: string, loaded: string): string {
+  return `error TABLE_ID_MISMATCH: priority-table-mismatch: meta.scales.priority_table is ${recorded} but the loaded table id is ${loaded}; pass the --table-file of the recorded table, or pass --change-table to record the loaded one at /meta/scales/priority_table\n`;
+}
+
+// Writes `doc` to <dir>/analysis.json and returns the path and the text written.
+function writeDoc(dir: string, doc: unknown): { path: string; text: string } {
+  const path = join(dir, "analysis.json");
+  const text = JSON.stringify(doc, null, 2) + "\n";
+  writeFileSync(path, text);
+  return { path, text };
+}
+
+// Two rows, the second with a post-action re-rating, recording `recorded` (or nothing when undefined)
+// and carrying the priorities of that table, as a document written by an earlier run does.
+function recordedDoc(recorded: unknown): FmeaDocument {
+  const doc = withPostRatings();
+  const second = clone(minimalDoc().chains[0]);
+  second.id = "ch-2";
+  second.ratings = { S: rating(9), O: rating(9), D: rating(9) };
+  doc.chains.push(second);
+  const table = loadTable(recorded === ALT_ID ? ALT_TABLE : undefined);
+  delete (doc.meta.scales as Partial<FmeaDocument["meta"]["scales"]>).priority_table;
+  applyPriorities(doc, table);
+  if (recorded === undefined) delete (doc.meta.scales as Partial<FmeaDocument["meta"]["scales"]>).priority_table;
+  else (doc.meta.scales as unknown as Record<string, unknown>).priority_table = recorded;
+  return doc;
+}
+
+test("CLI on a document that records the alternative table, run without --table-file: exit 2, TABLE_ID_MISMATCH, the file untouched", () => {
+  withTempDir((dir) => {
+    const { path, text } = writeDoc(dir, recordedDoc(ALT_ID));
+    const result = runCli("priority.ts", [path, "--write"]);
+    assert.equal(result.status, 2);
+    assert.equal(result.stderr, mismatchLine(ALT_ID, SHIPPED_ID));
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), text);
+  });
+});
+
+test("CLI on a document that records the shipped table, run with the alternative --table-file: exit 2, TABLE_ID_MISMATCH, the file untouched", () => {
+  withTempDir((dir) => {
+    const { path, text } = writeDoc(dir, recordedDoc(SHIPPED_ID));
+    const result = runCli("priority.ts", [path, "--write", "--table-file", ALT_TABLE]);
+    assert.equal(result.status, 2);
+    assert.equal(result.stderr, mismatchLine(SHIPPED_ID, ALT_ID));
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), text);
+  });
+});
+
+test("the table guard runs before the ratings are range-checked", () => {
+  withTempDir((dir) => {
+    const doc = recordedDoc(SHIPPED_ID);
+    doc.chains[0].ratings.O.value = 11;
+    const { path, text } = writeDoc(dir, doc);
+    const result = runCli("priority.ts", [path, "--write", "--table-file", ALT_TABLE]);
+    assert.equal(result.status, 2);
+    assert.equal(result.stderr, mismatchLine(SHIPPED_ID, ALT_ID));
+    assert.equal(readFileSync(path, "utf8"), text);
+  });
+});
+
+test("CLI with --change-table records the loaded table on the document and every row, and names the old one on stdout", () => {
+  const cases: { recorded: string; args: string[]; loaded: string }[] = [
+    { recorded: SHIPPED_ID, args: ["--table-file", ALT_TABLE], loaded: ALT_ID },
+    { recorded: ALT_ID, args: [], loaded: SHIPPED_ID },
+  ];
+  for (const { recorded, args, loaded } of cases) {
+    withTempDir((dir) => {
+      const { path } = writeDoc(dir, recordedDoc(recorded));
+      const result = runCli("priority.ts", [path, "--write", ...args, "--change-table"]);
+      assert.equal(result.stderr, "");
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, `{"table": ${JSON.stringify(loaded)}, "rows": 2, "changed_from": ${JSON.stringify(recorded)}}\n`);
+      const doc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+      assert.equal(doc.meta.scales.priority_table, loaded);
+      assert.deepEqual(doc.chains.map((c) => c.priority.table), [loaded, loaded]);
+      assert.equal(doc.chains[0].post_priority?.table, loaded);
+      const expected = recordedDoc(undefined);
+      applyPriorities(expected, loadTable(loaded === ALT_ID ? ALT_TABLE : undefined));
+      assert.deepEqual(doc.chains.map((c) => [c.priority, c.post_priority]), expected.chains.map((c) => [c.priority, c.post_priority]), "every priority is recomputed with the loaded table");
+    });
+  }
+});
+
+test("CLI with --change-table on a document that already records the loaded table: exit 1, USAGE, the file untouched", () => {
+  const cases: { recorded: string; args: string[] }[] = [
+    { recorded: SHIPPED_ID, args: [] },
+    { recorded: ALT_ID, args: ["--table-file", ALT_TABLE] },
+  ];
+  for (const { recorded, args } of cases) {
+    withTempDir((dir) => {
+      const { path, text } = writeDoc(dir, recordedDoc(recorded));
+      const result = runCli("priority.ts", [path, "--write", ...args, "--change-table"]);
+      assert.equal(result.status, 1);
+      assert.equal(result.stderr, `error USAGE: --change-table changes the table a document records, and this document already records the loaded table ${recorded}\n`);
+      assert.equal(result.stdout, "");
+      assert.equal(readFileSync(path, "utf8"), text);
+    });
+  }
+});
+
+test("CLI with --change-table on a document that records no table: exit 1, USAGE, the file untouched", () => {
+  withTempDir((dir) => {
+    const { path, text } = writeDoc(dir, recordedDoc(undefined));
+    const result = runCli("priority.ts", [path, "--write", "--change-table"]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "error USAGE: --change-table changes the table a document records, and this document records none\n");
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), text);
+  });
+});
+
+test("CLI on a first run records the loaded table, with and without --table-file, and prints the line as before", () => {
+  const cases: { args: string[]; loaded: string }[] = [
+    { args: [], loaded: SHIPPED_ID },
+    { args: ["--table-file", ALT_TABLE], loaded: ALT_ID },
+  ];
+  for (const { args, loaded } of cases) {
+    withTempDir((dir) => {
+      const { path } = writeDoc(dir, recordedDoc(undefined));
+      const result = runCli("priority.ts", [path, "--write", ...args]);
+      assert.equal(result.stderr, "");
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, `{"table": ${JSON.stringify(loaded)}, "rows": 2}\n`);
+      const doc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+      assert.equal(doc.meta.scales.priority_table, loaded);
+      assert.deepEqual(doc.chains.map((c) => c.priority.table), [loaded, loaded]);
+    });
+  }
+});
+
+test("CLI run again with the recorded table recomputes the priorities and prints the line as before", () => {
+  withTempDir((dir) => {
+    const doc = recordedDoc(ALT_ID);
+    doc.chains[1].priority = { value: "?", table: ALT_ID, rpn: 0 };
+    const { path } = writeDoc(dir, doc);
+    const result = runCli("priority.ts", [path, "--write", "--table-file", ALT_TABLE]);
+    assert.equal(result.stderr, "");
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, `{"table": "${ALT_ID}", "rows": 2}\n`);
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.equal(after.meta.scales.priority_table, ALT_ID);
+    assert.equal(after.chains[1].priority.rpn, 729);
+  });
+});
+
+test("CLI on a document whose recorded table is not a string refuses with TABLE_ID_MISMATCH and leaves the file untouched", () => {
+  for (const recorded of [7, null]) {
+    withTempDir((dir) => {
+      const { path, text } = writeDoc(dir, recordedDoc(recorded));
+      const result = runCli("priority.ts", [path, "--write"]);
+      assert.equal(result.status, 2);
+      assert.equal(result.stderr, mismatchLine(String(recorded), SHIPPED_ID));
+      assert.equal(result.stdout, "");
+      assert.equal(readFileSync(path, "utf8"), text);
+    });
+  }
+});
+
+test("applyPriorities refuses a document that records another table unless changeTable is set", () => {
+  const table = loadTable();
+  const doc = recordedDoc(ALT_ID);
+  assert.throws(() => applyPriorities(doc, table), (err: unknown) => {
+    assert.ok(err instanceof ScriptError);
+    assert.equal(err.code, "TABLE_ID_MISMATCH");
+    assert.equal(err.pointer, "/meta/scales/priority_table");
+    return true;
+  });
+  assert.equal(doc.meta.scales.priority_table, ALT_ID, "a refusal changes nothing");
+  applyPriorities(doc, table, { changeTable: true });
+  assert.equal(doc.meta.scales.priority_table, SHIPPED_ID);
 });
