@@ -90,7 +90,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/track.ts refresh <file> [--write] [--table-file
 
 `validate.ts` runs the schema checks, the invariants, the priority recomputation and the machine lints, and `--write` replaces the `computed` block only on a clean run. [skill-authored]
 `priority.ts` writes each row's `priority` from its `ratings`, and `post_priority` from `post_ratings` where one is present. [skill-authored]
-`render.ts` refuses a document with no `computed` block, so a report never carries a score or a lint list the validator did not write. [skill-authored]
+`render.ts` runs the same checks as `validate.ts` and refuses a document `validate.ts` refuses, printing the same coded lines. [skill-authored] It also refuses a document with no `computed` block (`COMPUTED_MISSING`) and one whose `computed` score or lint list is not what `validate.ts` now finds in the document (`COMPUTED_STALE`), so a report never carries a score or a lint list that is not the current document's; after either, run `validate.ts --write`, then `render.ts` again. [skill-authored]
 `track.ts plan` writes nothing, in the document or on GitHub, and prints the target with its visibility, each action's outcome, every finding, and the digest that `apply` takes. [skill-authored]
 `track.ts apply` recomputes that plan, refuses when its digest is not the one given, and creates or adopts a GitHub issue for each action it carries out, writing the link into the action as soon as the issue exists. [skill-authored]
 `track.ts refresh` reads the state of each linked issue and prints a proposal or a finding where it bears on the action's status, which it never changes; `--write` stores what it saw in each link. [skill-authored]

@@ -1,10 +1,9 @@
 import { join } from "node:path";
-import { ScriptError, formatError } from "./lib/codes.ts";
+import { ScriptError } from "./lib/codes.ts";
 import type { Action, Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
-import { checkSchema } from "./lib/schema.ts";
-import { checkPriorities } from "./lib/invariants.ts";
+import { staleComputed, validateDocument, writeIssues } from "./lib/validation.ts";
 import { escapeHtml, escapeJsonForScript } from "./lib/escape.ts";
 import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
@@ -416,20 +415,19 @@ function main(argv: string[]): number {
   const raw = readJsonFile(input);
   const tableFile = typeof parsed.flags["table-file"] === "string" ? parsed.flags["table-file"] : undefined;
   const table = loadTable(tableFile);
-  const schemaIssues = checkSchema(raw);
-  if (schemaIssues.length > 0) {
-    for (const issue of schemaIssues) process.stderr.write(formatError(issue.code, `${issue.rule}: ${issue.message}`, issue.pointer) + "\n");
+  // The gate is the validateDocument validate.ts runs, so render.ts refuses exactly what validate.ts
+  // refuses, with the same coded lines, and then refuses a computed block that is missing or that no
+  // longer matches the document: the report prints computed's score and lints as the document's.
+  const result = validateDocument(raw, table);
+  if (!result.ok) {
+    writeIssues(result.errors);
     return 2;
   }
   const doc = raw as FmeaDocument;
   if (!doc.computed) throw new ScriptError("COMPUTED_MISSING", "the document has no computed block; run validate.ts --write first", "/computed");
-  // The table-id check is the validator's, not a second copy of it: `checkPriorities` returns that
-  // one issue and nothing else when the ids differ, so both CLIs print the same coded line, rule
-  // id included. The per-row mismatch rules it returns when the ids agree are validate.ts's to
-  // report, and the report never renders them.
-  const tableIdMismatch = checkPriorities(doc, table).find((issue) => issue.code === "TABLE_ID_MISMATCH");
-  if (tableIdMismatch) {
-    process.stderr.write(formatError(tableIdMismatch.code, `${tableIdMismatch.rule}: ${tableIdMismatch.message}`, tableIdMismatch.pointer) + "\n");
+  const stale = staleComputed(doc.computed, result);
+  if (stale.length > 0) {
+    writeIssues(stale);
     return 2;
   }
   writeFileAtomic(out, renderHtml(doc, table, readTextFile(TEMPLATE_PATH)));

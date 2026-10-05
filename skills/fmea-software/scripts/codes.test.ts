@@ -86,7 +86,7 @@ test("formatError escapes a line separator in the pointer, the class the message
   assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u2028b\\u2029c");
 });
 
-test("CODES holds exactly the eighteen codes of the closed list", () => {
+test("CODES holds exactly the nineteen codes of the closed list", () => {
   assert.deepEqual(Object.keys(CODES), [
     "USAGE",
     "NODE",
@@ -98,6 +98,7 @@ test("CODES holds exactly the eighteen codes of the closed list", () => {
     "TABLE_ID_MISMATCH",
     "RATING_RANGE",
     "COMPUTED_MISSING",
+    "COMPUTED_STALE",
     "TRACKER_CONFIG",
     "IO_READ",
     "IO_WRITE",
@@ -118,6 +119,7 @@ test("exitStatus maps every code to 1 usage, 2 validation, or 3 I/O", () => {
   assert.equal(exitStatus("TABLE_ID_MISMATCH"), 2);
   assert.equal(exitStatus("RATING_RANGE"), 2);
   assert.equal(exitStatus("COMPUTED_MISSING"), 2);
+  assert.equal(exitStatus("COMPUTED_STALE"), 2);
   assert.equal(exitStatus("IO_READ"), 3);
   assert.equal(exitStatus("IO_WRITE"), 3);
   assert.equal(exitStatus("IO_EXISTS"), 3);
@@ -307,6 +309,15 @@ test("every shipped CLI ends with the isEntry guard, never a bare import.meta.ma
     const src = readFileSync(join(SKILL_ROOT, "scripts", name), "utf8");
     assert.ok(src.endsWith("\nif (isEntry(import.meta)) run(main);\n"), `${name} must end with the isEntry guard`);
     assert.ok(!src.includes("if (import.meta.main)"), `${name} reads import.meta.main without the guard`);
+  }
+});
+
+test("no shipped CLI imports another, so a command on a runtime without import.meta.main prints one NODE line, not two", () => {
+  const clis = ["validate.ts", "priority.ts", "render.ts", "track.ts"];
+  for (const name of clis) {
+    const src = readFileSync(join(SKILL_ROOT, "scripts", name), "utf8");
+    const imported = [...src.matchAll(/\bfrom\s+"\.\/([^"/]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(imported.filter((spec) => clis.includes(spec)), [], `${name} imports another CLI, whose isEntry guard then runs too`);
   }
 });
 

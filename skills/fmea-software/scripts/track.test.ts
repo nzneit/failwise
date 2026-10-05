@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { main } from "./track.ts";
-import { validateDocument } from "./validate.ts";
+import { validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
 import { exitStatus } from "./lib/codes.ts";
 import { textHash } from "./lib/tracker/items.ts";

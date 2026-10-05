@@ -13,7 +13,7 @@ import type { ArgSpec, ParsedArgs } from "./lib/args.ts";
 import { assertExtension, readJsonFile, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
 import { isCalendarDate, nowIso } from "./lib/dates.ts";
 import { isEntry, run } from "./lib/cli.ts";
-import { reportValidation, validateDocument } from "./validate.ts";
+import { reportValidation, validateDocument } from "./lib/validation.ts";
 import { actionRefs } from "./lib/tracker/items.ts";
 import type { ActionRef } from "./lib/tracker/items.ts";
 import { computePlan } from "./lib/tracker/plan.ts";

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { validateDocument, validatorVersion } from "./validate.ts";
+import { validatorVersion } from "./validate.ts";
+import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { clone, fixturePath, loadFixture, runCli, withTempDir } from "./test-helpers.ts";
@@ -214,4 +215,30 @@ test("validateDocument leaves the document it is given untouched", () => {
   const before = clone(doc);
   validateDocument(doc, table);
   assert.deepEqual(doc, before);
+});
+
+test("staleComputed finds nothing in a computed block validate.ts --write would write", () => {
+  const doc = golden();
+  assert.deepEqual(staleComputed(doc.computed!, validateDocument(doc, table)), []);
+});
+
+test("staleComputed gives one COMPUTED_STALE issue for the score and one for a stored lint list that falls short", () => {
+  const doc = golden();
+  const issues = staleComputed({ ...doc.computed!, quality_score: 3, lints: [] }, validateDocument(doc, table));
+  assert.deepEqual(issues, [
+    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/quality_score",
+      message: "computed.quality_score is 3 but validate.ts now gives 88; run validate.ts --write, then render.ts again" },
+    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints",
+      message: "computed.lints, written by validator 0.1.0, holds 11 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again" },
+  ]);
+});
+
+test("staleComputed points at the first stored lint past the validator's list when the stored list runs longer", () => {
+  const doc = golden();
+  const fresh = validateDocument(doc, table);
+  const extra = { rule: "rating-provisional", severity: "warning" as const, pointer: "/chains/0/ratings/S", message: "an old finding" };
+  assert.deepEqual(staleComputed({ ...doc.computed!, lints: [...fresh.lints, extra] }, fresh), [
+    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/11",
+      message: "computed.lints, written by validator 0.1.0, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again" },
+  ]);
 });

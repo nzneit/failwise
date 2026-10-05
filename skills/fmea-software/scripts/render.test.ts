@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TEMPLATE_PATH, renderHtml, sortChains } from "./render.ts";
 import { escapeHtml } from "./lib/escape.ts";
 import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
+import { applyPriorities } from "./priority.ts";
 import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir, withoutTracker } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
@@ -552,7 +553,7 @@ test("a finding on the row alone prints no location label", () => {
   ));
 });
 
-test("a chain with no function, and two chains with one id, still render", () => {
+test("renderHtml still renders a chain with no function and two chains with one id; render.ts refuses both before it renders", () => {
   const lost = minimalDoc();
   lost.chains[0].function = "fn-missing";
   const html = renderHtml(lost, table, template);
@@ -760,6 +761,114 @@ test("a schema violation exits 2 with the same coded lines validate.ts prints", 
     const r = runCli("render.ts", [path, "--out", join(dir, "report.html")]);
     assert.equal(r.status, 2);
     assert.match(r.stderr, /^error SCHEMA: schema: missing required property "scope" at \/meta$/m);
+  });
+});
+
+/** Writes `doc` to analysis.json in `dir`, runs render.ts and validate.ts on it, and returns both. */
+function renderAndValidate(dir: string, doc: FmeaDocument): { render: ReturnType<typeof runCli>; validate: ReturnType<typeof runCli>; path: string; out: string } {
+  const path = join(dir, "analysis.json");
+  const out = join(dir, "report.html");
+  writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+  return { render: runCli("render.ts", [path, "--out", out]), validate: runCli("validate.ts", [path]), path, out };
+}
+
+/** Runs the cure the COMPUTED_STALE line names, validate.ts --write and then render.ts, and checks both pass. */
+function assertCureRenders(path: string, out: string): void {
+  const write = runCli("validate.ts", [path, "--write"]);
+  assert.equal(write.status, 0, write.stderr);
+  const again = runCli("render.ts", [path, "--out", out]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(again.stderr, "");
+  assert.ok(existsSync(out));
+}
+
+test("a computed block left stale by priority.ts --write is refused with COMPUTED_STALE, exit 2, and no report", () => {
+  // Chain 7's Detection from 1 to 5 and the priorities rewritten, as priority.ts --write does, with computed left as it was.
+  withTempDir((dir) => {
+    const doc = golden();
+    doc.chains[6].ratings.D.value = 5;
+    const { render, path, out } = renderAndValidate(dir, applyPriorities(doc, table));
+    assert.equal(render.status, 2);
+    assert.equal(render.stdout, "");
+    assert.equal(render.stderr,
+      "error COMPUTED_STALE: computed-stale: computed.quality_score is 88 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
+    assert.equal(existsSync(out), false);
+    assertCureRenders(path, out);
+  });
+});
+
+test("a stored priority the table does not give is refused with validate.ts's PRIORITY_MISMATCH lines, exit 2", () => {
+  // Chain 1's Severity changed and priority.ts not run again.
+  withTempDir((dir) => {
+    const doc = golden();
+    doc.chains[0].ratings.S.value = 2;
+    const { render, validate, out } = renderAndValidate(dir, doc);
+    assert.equal(render.status, 2);
+    assert.match(render.stderr, /^error PRIORITY_MISMATCH: priority-value-mismatch: stored priority H but the table gives L at \/chains\/0\/priority\/value$/m);
+    assert.equal(render.stderr, validate.stderr);
+    assert.equal(render.stdout, "");
+    assert.equal(existsSync(out), false);
+  });
+});
+
+test("every invariant validate.ts refuses, render.ts refuses with the same coded lines and exit 2", () => {
+  const cases: [string, (doc: FmeaDocument) => void, RegExp][] = [
+    ["a rescored rating with no by or date", (d) => { d.chains[0].ratings.S.review = { status: "rescored" }; }, /rating-review-by-date/],
+    ["a post_priority with no post_ratings", (d) => { d.chains[0].post_priority = { ...d.chains[0].priority }; }, /post-priority-presence/],
+    ["an element whose parent names no element", (d) => { d.elements[1].parent = "nowhere"; }, /element-parent-resolves/],
+    ["a second element with an existing id, parented to it", (d) => { d.elements.push({ ...d.elements[1], parent: d.elements[1].id }); }, /element-id-unique/],
+    ["two chains with one id", (d) => { d.chains.push({ ...d.chains[0], failure_mode: "second" }); }, /chain-id-unique/],
+    ["a chain whose function names no function", (d) => { d.chains[0].function = "fn-missing"; }, /chain-function-resolves/],
+  ];
+  for (const [name, mutate, rule] of cases) {
+    withTempDir((dir) => {
+      const doc = golden();
+      mutate(doc);
+      const { render, validate, out } = renderAndValidate(dir, doc);
+      assert.equal(validate.status, 2, name);
+      assert.equal(render.status, 2, name);
+      assert.match(render.stderr, rule, name);
+      assert.equal(render.stderr, validate.stderr, name);
+      assert.equal(existsSync(out), false, name);
+    });
+  }
+});
+
+test("a computed block whose validated_at and validator_version alone differ still renders", () => {
+  withTempDir((dir) => {
+    const doc = golden();
+    doc.computed = { ...doc.computed!, validated_at: "2020-01-01T00:00:00Z", validator_version: "0.0.1" };
+    const { render, out } = renderAndValidate(dir, doc);
+    assert.equal(render.status, 0, render.stderr);
+    assert.equal(render.stderr, "");
+    assert.ok(existsSync(out));
+  });
+});
+
+test("a computed block whose lints hold the right findings in another order is refused", () => {
+  withTempDir((dir) => {
+    const doc = golden();
+    doc.computed!.lints.reverse();
+    const { render, out } = renderAndValidate(dir, doc);
+    assert.equal(render.status, 2);
+    assert.equal(render.stderr,
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
+    assert.equal(existsSync(out), false);
+  });
+});
+
+test("a stored lint whose message alone differs from the validator's is refused, and validate.ts --write cures it", () => {
+  // An earlier plugin version worded this lint's message differently; the document itself is unchanged.
+  withTempDir((dir) => {
+    const doc = golden();
+    doc.computed!.lints[2].message = "S is still provisional and needs re-scoring";
+    const { render, path, out } = renderAndValidate(dir, doc);
+    assert.equal(render.status, 2);
+    assert.equal(render.stderr,
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
+    assert.equal(existsSync(out), false);
+    assertCureRenders(path, out);
   });
 });
 

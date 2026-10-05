@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MACHINE_RULES, runLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
-import { validateDocument } from "./validate.ts";
+import { validateDocument } from "./lib/validation.ts";
 import { loadFixture, minimalDoc, rating } from "./test-helpers.ts";
 import type { Control, FmeaDocument, Lint, TrackerLink } from "./lib/types.ts";
 

@@ -34,7 +34,7 @@
     },
     "computed": {
       "$ref": "#/$defs/computed",
-      "description": "Written whole by validate.ts --write on a passing run and never by hand; absent until the first such run. render.ts refuses a document without it."
+      "description": "Written whole by validate.ts --write on a passing run and never by hand; absent until the first such run. render.ts refuses a document without it, and one whose quality_score or lints differ from a fresh validation."
     }
   },
   "$defs": {
@@ -845,7 +845,7 @@
     },
     "computed": {
       "title": "Computed",
-      "description": "Replaced whole by validate.ts --write on exit 0 and by nothing else; never hand-authored; schema-checked on read but never compared against a later run's values. render.ts refuses a document without it.",
+      "description": "Replaced whole by validate.ts --write on exit 0 and by nothing else; never hand-authored; validate.ts schema-checks it on read and never compares it against a later run's values. render.ts refuses a document without it, and one whose quality_score or lints differ from a fresh validation (COMPUTED_STALE).",
       "type": "object",
       "additionalProperties": false,
       "required": ["quality_score", "lints", "validated_at", "validator_version"],
