@@ -236,7 +236,7 @@ Every sourced statement in a reference file cites a record id. Every unsourced s
 
 ## 10. Testing and evals
 
-**Unit tests, `node --test skills/fmea-software/scripts/*.test.ts`, before every commit.**
+**Unit tests, every `*.test.ts` file under `skills/fmea-software/scripts/` and its subfolders, run under `node --test` by `node tools/run-tests.ts`, before every commit.** (amended 2026-10-05: the command was `node --test skills/fmea-software/scripts/*.test.ts`, which leaves out a test file in a subfolder.)
 - Priority: all 1,000 S, O, D combinations yield a vocabulary value; monotonicity in each rating; S 9 or 10 never below M; S 1 always L; the two severity-swap inequalities of §7; RPN equals the product. Scoped to the shipped table.
 - Table shape check: a malformed `--table-file` is refused, including one whose bands for any factor leave a rating in 1 to 10 uncovered or overlap; a well-formed one with a different vocabulary or a different band count is accepted.
 - Escaping: a fixture of injection vectors including a closing script tag, an HTML comment opener, and U+2028 and U+2029 inside field values, for both the entity escaper and the JSON-block escaper.
