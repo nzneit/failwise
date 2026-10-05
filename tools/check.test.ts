@@ -57,6 +57,7 @@ function fakeHost(
     env: options.env ?? { PATH: "/usr/bin:/bin" },
     exists: (path) => !(options.missing ?? []).some((gone) => path === join(ROOT, gone) || path.startsWith(join(ROOT, gone) + "/")),
     listDir: () => [],
+    listEntries: () => [],
     spawn,
     home: "/home/u",
   };
