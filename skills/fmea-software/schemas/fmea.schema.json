@@ -168,7 +168,7 @@
         },
         "priority_table": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The id declared by the priority table file every row's priority was computed with: the shipped table or a user-supplied --table-file. Set by priority.ts --write, and changed afterwards only by priority.ts --write --change-table. Every chains[].priority.table and post_priority.table must equal it; validate.ts and render.ts refuse the document, naming both ids, when it differs from the loaded table's id. The table file, not the document, holds the priority vocabulary, its order and the S/O/D cell map."
+          "description": "The id declared by the priority table file every row's priority was computed with: the shipped table or a user-supplied --table-file. Set by priority.ts --write, and changed afterwards only by priority.ts --write --change-table. Every chains[].priority.table and post_priority.table must equal it; validate.ts, render.ts, track.ts and priority.ts --write without --change-table refuse the document, naming both ids, when it differs from the loaded table's id. The table file, not the document, holds the priority vocabulary, its order and the S/O/D cell map."
         }
       }
     },
