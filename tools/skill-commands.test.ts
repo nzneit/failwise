@@ -5,8 +5,9 @@
 // written, as the model first writes it, and again after a re-score that changes a rating, with
 // the report of the first round still at the --out path. Any non-zero exit fails the test.
 // A bracketed optional part such as [--table-file path] is dropped, so each line runs in its
-// shortest form, the one a document on the shipped table uses. No shell is involved: each line is split on spaces and its script started with this Node, so the
-// test behaves the same under bash and fish.
+// shortest form, the one a document on the shipped table uses. No shell is involved: each line
+// is split on spaces and its script started with this Node, so the test behaves the same under
+// bash and fish.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
