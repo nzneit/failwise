@@ -1,5 +1,7 @@
 // Runs both test suites with Node's test runner, expanding the file lists here
-// instead of in the shell, so the command behaves the same in bash and fish.
+// instead of in the shell, so the command behaves the same in bash and fish. A suite
+// is every *.test.ts file in its folder and in the folders below it, node_modules
+// left out.
 //
 //   node tools/run-tests.ts        # Node 24.2 or later on PATH (bash: source ~/.nvm/nvm.sh)
 //   bun tools/run-tests.ts         # a shell where only Bun is on PATH
@@ -10,13 +12,14 @@
 // 24.2 is the floor, not 24.0, because every entry point reads `import.meta.main`,
 // which Node 24 has only from 24.2: on 23.6 to 24.1, which strip types but lack
 // it, a script that does not check first loads, runs nothing, and exits 0, so this
-// file checks. Exit status 0 when every suite passes, 1 when a suite fails or no
-// Node 24.2 or later can be found.
+// file checks. Every suite runs even after one fails. Exit status 0 when every suite
+// passes, 1 when a suite fails, when a suite has no test file or a folder of it
+// cannot be listed (an EMPTY line naming the folder), or when no Node 24.2 or later
+// can be found (a NODE line).
 
-import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { isEntry } from "./lib/entry.ts";
-import { defaultHost, findNode, MIN_LABEL, type Host } from "./lib/host.ts";
+import { defaultHost, findNode, MIN_LABEL, type DirEntry, type Host } from "./lib/host.ts";
 
 export interface Suite {
   name: string;
@@ -28,18 +31,47 @@ export const SUITES: readonly Suite[] = [
   { name: "tools", dir: "tools" },
 ];
 
-export function collectTests(root: string, dir: string, listDir: (path: string) => string[] = readdirSync): string[] {
-  const full = join(root, dir);
-  let names: string[];
+/** A folder of a suite that could not be listed, relative to the root, and the error's message. */
+export interface Unlisted {
+  unlisted: string;
+  reason: string;
+}
+
+/** The suite's files, or the first folder that could not be listed. */
+export type Collected = { files: string[] } | Unlisted;
+
+// node_modules holds packages, never this repository's tests.
+const SKIPPED_FOLDER = "node_modules";
+
+function listOrUnlisted(root: string, dir: string, listEntries: (path: string) => DirEntry[]): DirEntry[] | Unlisted {
   try {
-    names = listDir(full);
-  } catch {
-    return [];
+    return listEntries(join(root, dir));
+  } catch (err) {
+    return { unlisted: dir, reason: err instanceof Error ? err.message : String(err) };
   }
-  return names
-    .filter((name) => name.endsWith(".test.ts"))
-    .sort()
-    .map((name) => join(dir, name));
+}
+
+function walk(root: string, dir: string, listEntries: (path: string) => DirEntry[], files: string[]): Unlisted | null {
+  const entries = listOrUnlisted(root, dir, listEntries);
+  if (!Array.isArray(entries)) return entries;
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (!entry.dir) {
+      if (entry.name.endsWith(".test.ts")) files.push(path);
+      continue;
+    }
+    if (entry.name === SKIPPED_FOLDER) continue;
+    const failed = walk(root, path, listEntries, files);
+    if (failed) return failed;
+  }
+  return null;
+}
+
+// Every *.test.ts file in the folder and the folders below it, node_modules left out, sorted and
+// relative to the root. A symbolic link to a folder is not followed.
+export function collectTests(root: string, dir: string, listEntries: (path: string) => DirEntry[]): Collected {
+  const files: string[] = [];
+  return walk(root, dir, listEntries, files) ?? { files: files.sort() };
 }
 
 // The suites run in a fresh test context: `node --test` marks its child
@@ -64,9 +96,16 @@ export function runSuites(
   }
   let status = 0;
   for (const suite of SUITES) {
-    const files = collectTests(root, suite.dir, host.listDir);
+    const collected = collectTests(root, suite.dir, host.listEntries);
+    if ("unlisted" in collected) {
+      writeError(`error EMPTY: the ${suite.name} suite ran nothing: ${collected.unlisted}/ could not be listed (${collected.reason})`);
+      status = 1;
+      continue;
+    }
+    const { files } = collected;
     if (files.length === 0) {
-      write(`## ${suite.name}: no *.test.ts files under ${suite.dir}/`);
+      writeError(`error EMPTY: the ${suite.name} suite ran nothing: no *.test.ts file under ${suite.dir}/`);
+      status = 1;
       continue;
     }
     write(`## ${suite.name}: node --test over ${files.length} file(s) under ${suite.dir}/ (node v${node.version.join(".")})`);

@@ -10,8 +10,10 @@ node tools/run-tests.ts
 node tools/check.ts
 ```
 
-The first runs both suites under `node --test` (`skills/fmea-software/scripts/*.test.ts` and
-`tools/*.test.ts`) with the globs expanded by the script. The second runs the static checks:
+The first runs both suites under `node --test`, every `*.test.ts` file under
+`skills/fmea-software/scripts/` and under `tools/`, subfolders included and `node_modules` left
+out, with the file lists built by the script; it exits 1 when a suite has no test file.
+The second runs the static checks:
 the type check (`tsc`), the linter (`oxlint`) and the dead-code, duplication and complexity
 analysis (`fallow`); it exits 1 on any finding, and on a missing tool. Both are the same command in
 bash and fish. Node 24.2 or later must be on PATH (`source ~/.nvm/nvm.sh` in bash, `nvm use 24` in

@@ -43,7 +43,9 @@ node tools/run-tests.ts
 node tools/check.ts
 ```
 
-The first runs both test suites under `node --test`. The second runs the static checks: the
+The first runs both test suites under `node --test`: every `*.test.ts` file under
+`skills/fmea-software/scripts/` and under `tools/`, subfolders included and `node_modules` left
+out. It fails when a suite has no test file. The second runs the static checks: the
 type check (`tsc`), the linter (`oxlint`) and the dead-code, duplication and complexity analysis
 (`fallow`), which the CI workflow also runs on every pull request. Both need Node.js 24.2 or later
 on PATH (`bun tools/run-tests.ts` and `bun tools/check.ts` also work and find Node through nvm).

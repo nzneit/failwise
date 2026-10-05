@@ -2,7 +2,7 @@
 // the first Node 24.2 or later on PATH, in NVM_BIN, or under nvm's versions directory. A runner
 // starts its children with the Node `findNode` returns. Everything it touches goes through an
 // injected `Host`, so the tests can stand in for the machine. Its tests are in
-// tools/run-tests.test.ts, because the runner collects tests from tools/ and not from tools/lib/.
+// tools/run-tests.test.ts.
 
 import { existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -18,12 +18,19 @@ export type Spawn = (
   options: { cwd: string; stdio: "inherit" | "pipe"; env?: Record<string, string | undefined> },
 ) => { status: number | null; stdout?: string | null; stderr?: string | null };
 
+/** One entry of a folder: its name, and whether it is a folder itself (a symbolic link is not). */
+export interface DirEntry {
+  name: string;
+  dir: boolean;
+}
+
 export interface Host {
   execPath: string;
   isNode: boolean;
   env: Record<string, string | undefined>;
   exists: (path: string) => boolean;
   listDir: (path: string) => string[];
+  listEntries: (path: string) => DirEntry[];
   spawn: Spawn;
   home: string;
 }
@@ -84,6 +91,7 @@ export function defaultHost(): Host {
     env: process.env,
     exists: existsSync,
     listDir: readdirSync,
+    listEntries: (path) => readdirSync(path, { withFileTypes: true }).map((entry) => ({ name: entry.name, dir: entry.isDirectory() })),
     spawn: (command, args, options) => spawnSync(command, args, { ...options, encoding: "utf8" }),
     home: homedir(),
   };

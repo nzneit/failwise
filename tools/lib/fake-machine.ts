@@ -7,7 +7,8 @@
 // further files a test names. On a compare run the fake children also leave what the real ones
 // would: the tar file, the unpacked renderer, each rendered report, each pass's JSON report, the
 // first pass's reference images and every attachment a pass reports. `host.listDir` throws for a
-// folder with nothing under it, as the real one does for an absent folder. It holds no test and no
+// folder with nothing under it, as the real one does for an absent folder. `host.listEntries`
+// throws whatever it is asked, because the browser runners do not use it. It holds no test and no
 // entry point.
 
 import { isAbsolute, join } from "node:path";
@@ -288,6 +289,9 @@ export function fakeMachine(run: Run["name"], root: string, options: FakeOptions
         const below = [...disk.keys()].filter((key) => key.startsWith(path + "/"));
         if (below.length === 0) throw new Error(`ENOENT: no such directory, scandir '${path}'`);
         return [...new Set(below.map((key) => key.slice(path.length + 1).split("/")[0]))];
+      },
+      listEntries: () => {
+        throw new Error("listEntries: not used by the browser runners");
       },
       spawn,
       home: "/home/u",

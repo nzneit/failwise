@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compareVersions, defaultHost, findNode, MIN_VERSION, parseVersion, type Host } from "./lib/host.ts";
+import { compareVersions, defaultHost, findNode, MIN_VERSION, parseVersion, type DirEntry, type Host } from "./lib/host.ts";
 import { collectTests, runSuites, suiteEnv, SUITES } from "./run-tests.ts";
 
 function fakeHost(overrides: Partial<Host> & { calls?: string[][] }): Host {
@@ -14,6 +14,7 @@ function fakeHost(overrides: Partial<Host> & { calls?: string[][] }): Host {
     env: {},
     exists: () => false,
     listDir: () => [],
+    listEntries: () => [],
     spawn: (command, args) => {
       calls.push([command, ...args]);
       if (args[0] === "--version") return { status: 0, stdout: "v24.17.0\n" };
@@ -24,16 +25,45 @@ function fakeHost(overrides: Partial<Host> & { calls?: string[][] }): Host {
   };
 }
 
+/** A folder listing from a map of folder path to its entries; a name ending in "/" is a folder. */
+function tree(folders: Record<string, string[]>): (path: string) => DirEntry[] {
+  return (path) => {
+    const names = folders[path];
+    if (!names) throw new Error(`ENOENT: no such file or directory, scandir '${path}'`);
+    return names.map((name) => (name.endsWith("/") ? { name: name.slice(0, -1), dir: true } : { name, dir: false }));
+  };
+}
+
 test("collectTests keeps only *.test.ts, sorted, relative to the root", () => {
-  const listDir = () => ["z.test.ts", "helper.ts", "a.test.ts", "notes.md"];
-  assert.deepEqual(collectTests("/root", "tools", listDir), ["tools/a.test.ts", "tools/z.test.ts"]);
+  const listEntries = tree({ "/root/tools": ["z.test.ts", "helper.ts", "a.test.ts", "notes.md"] });
+  assert.deepEqual(collectTests("/root", "tools", listEntries), { files: ["tools/a.test.ts", "tools/z.test.ts"] });
 });
 
-test("collectTests returns [] for a directory that does not exist", () => {
-  const listDir = () => {
-    throw new Error("ENOENT");
-  };
-  assert.deepEqual(collectTests("/root", "tools", listDir), []);
+test("collectTests collects *.test.ts in subfolders at any depth and skips node_modules", () => {
+  const listEntries = tree({
+    "/root/tools": ["b.test.ts", "lib/", "node_modules/"],
+    "/root/tools/lib": ["host.ts", "fails.test.ts", "deep/"],
+    "/root/tools/lib/deep": ["a.test.ts"],
+    "/root/tools/node_modules": ["pkg.test.ts"],
+  });
+  assert.deepEqual(collectTests("/root", "tools", listEntries), {
+    files: ["tools/b.test.ts", "tools/lib/deep/a.test.ts", "tools/lib/fails.test.ts"],
+  });
+});
+
+test("collectTests names a suite folder that cannot be listed", () => {
+  assert.deepEqual(collectTests("/root", "tools", tree({})), {
+    unlisted: "tools",
+    reason: "ENOENT: no such file or directory, scandir '/root/tools'",
+  });
+});
+
+test("collectTests names a subfolder that cannot be listed, and returns no files", () => {
+  const listEntries = tree({ "/root/tools": ["a.test.ts", "lib/"] });
+  assert.deepEqual(collectTests("/root", "tools", listEntries), {
+    unlisted: "tools/lib",
+    reason: "ENOENT: no such file or directory, scandir '/root/tools/lib'",
+  });
 });
 
 test("parseVersion and compareVersions handle nvm directory names", () => {
@@ -140,24 +170,26 @@ test("findNode returns null when nothing qualifies", () => {
   assert.equal(findNode(host), null);
 });
 
-test("runSuites spawns node --test once per non-empty suite and reports failure", () => {
+test("runSuites spawns node --test once per suite with files, reports an empty suite as EMPTY and still runs the next", () => {
   const calls: string[][] = [];
   const lines: string[] = [];
+  const errors: string[] = [];
   const host = fakeHost({
     calls,
-    listDir: (path) => (path.endsWith("/tools") ? ["b.test.ts", "a.test.ts"] : ["x.ts"]),
+    listEntries: tree({ "/root/skills/fmea-software/scripts": ["x.ts"], "/root/tools": ["b.test.ts", "a.test.ts"] }),
     spawn: (command, args) => {
       calls.push([command, ...args]);
       if (args[0] === "--version") return { status: 0, stdout: "v24.17.0\n" };
       return { status: args.includes("tools/b.test.ts") ? 1 : 0 };
     },
   });
-  const status = runSuites("/root", host, (line) => lines.push(line));
+  const status = runSuites("/root", host, (line) => lines.push(line), (line) => errors.push(line));
   assert.equal(status, 1);
   const runs = calls.filter((call) => call[1] === "--test");
   assert.deepEqual(runs, [["/fake/node", "--test", "tools/a.test.ts", "tools/b.test.ts"]]);
-  assert.equal(lines[0], "## skill: no *.test.ts files under skills/fmea-software/scripts/");
-  assert.match(lines[1], /^## tools: node --test over 2 file\(s\) under tools\/ \(node v24\.17\.0\)$/);
+  assert.deepEqual(errors, ["error EMPTY: the skill suite ran nothing: no *.test.ts file under skills/fmea-software/scripts/"]);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^## tools: node --test over 2 file\(s\) under tools\/ \(node v24\.17\.0\)$/);
 });
 
 test("runSuites returns 1 and prints the coded line when no Node 24.2 or later is found", () => {
@@ -173,19 +205,46 @@ test("suiteEnv drops the test-runner context mark and keeps everything else", ()
   assert.deepEqual(suiteEnv({ PATH: "/bin", NODE_TEST_CONTEXT: "child-v8" }), { PATH: "/bin" });
 });
 
-test("runSuites launches each suite with the cleaned environment", () => {
+test("runSuites launches each suite with the cleaned environment, and an empty skill folder fails the run", () => {
   const envs: Array<Record<string, string | undefined> | undefined> = [];
+  const errors: string[] = [];
   const host = fakeHost({
     env: { PATH: "/bin", NODE_TEST_CONTEXT: "child-v8" },
-    listDir: (path) => (path.endsWith("/tools") ? ["a.test.ts"] : []),
+    listEntries: tree({ "/root/skills/fmea-software/scripts": [], "/root/tools": ["a.test.ts"] }),
     spawn: (command, args, options) => {
       if (args[0] === "--version") return { status: 0, stdout: "v24.17.0\n" };
       envs.push(options.env);
       return { status: 0 };
     },
   });
-  assert.equal(runSuites("/root", host, () => {}), 0);
+  assert.equal(runSuites("/root", host, () => {}, (line) => errors.push(line)), 1);
   assert.deepEqual(envs, [{ PATH: "/bin" }]);
+  assert.deepEqual(errors, ["error EMPTY: the skill suite ran nothing: no *.test.ts file under skills/fmea-software/scripts/"]);
+});
+
+test("runSuites: a suite folder that cannot be listed is EMPTY with the reason, the other suite runs, exit 1", () => {
+  const calls: string[][] = [];
+  const errors: string[] = [];
+  const host = fakeHost({ calls, listEntries: tree({ "/root/tools": ["a.test.ts"] }) });
+  assert.equal(runSuites("/root", host, () => {}, (line) => errors.push(line)), 1);
+  assert.deepEqual(errors, [
+    "error EMPTY: the skill suite ran nothing: skills/fmea-software/scripts/ could not be listed (ENOENT: no such file or directory, scandir '/root/skills/fmea-software/scripts')",
+  ]);
+  assert.deepEqual(calls.filter((call) => call[1] === "--test"), [["/fake/node", "--test", "tools/a.test.ts"]]);
+});
+
+test("runSuites with both suites empty spawns no suite, prints two EMPTY lines and exits 1", () => {
+  const calls: string[][] = [];
+  const lines: string[] = [];
+  const errors: string[] = [];
+  const host = fakeHost({ calls, listEntries: tree({ "/root/skills/fmea-software/scripts": [], "/root/tools": ["lib/"], "/root/tools/lib": [] }) });
+  assert.equal(runSuites("/root", host, (line) => lines.push(line), (line) => errors.push(line)), 1);
+  assert.deepEqual(calls.filter((call) => call[1] === "--test"), []);
+  assert.deepEqual(lines, []);
+  assert.deepEqual(errors, [
+    "error EMPTY: the skill suite ran nothing: no *.test.ts file under skills/fmea-software/scripts/",
+    "error EMPTY: the tools suite ran nothing: no *.test.ts file under tools/",
+  ]);
 });
 
 test("runSuites end to end: real node --test over a temporary tree", () => {
@@ -194,13 +253,24 @@ test("runSuites end to end: real node --test over a temporary tree", () => {
     for (const suite of SUITES) mkdirSync(join(root, suite.dir), { recursive: true });
     writeFileSync(join(root, "package.json"), '{"type": "module"}\n');
     writeFileSync(join(root, SUITES[0].dir, "pass.test.ts"), 'import { test } from "node:test";\ntest("ok", () => {});\n');
+    writeFileSync(join(root, SUITES[1].dir, "pass.test.ts"), 'import { test } from "node:test";\ntest("ok", () => {});\n');
     writeFileSync(join(root, SUITES[1].dir, "fail.test.ts"), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("no", () => { assert.equal(1, 2); });\n');
     const quiet: Host = { ...defaultHost(), spawn: (command, args, options) => defaultHost().spawn(command, args, { ...options, stdio: "pipe" }) };
     const lines: string[] = [];
-    assert.equal(runSuites(root, quiet, (line) => lines.push(line)), 1);
+    assert.equal(runSuites(root, quiet, (line) => lines.push(line), () => {}), 1);
     assert.equal(lines.length, 2);
     rmSync(join(root, SUITES[1].dir, "fail.test.ts"));
-    assert.equal(runSuites(root, quiet, () => {}), 0);
+    assert.equal(runSuites(root, quiet, () => {}, () => {}), 0);
+    mkdirSync(join(root, SUITES[1].dir, "lib", "node_modules"), { recursive: true });
+    writeFileSync(join(root, SUITES[1].dir, "lib", "node_modules", "pkg.test.ts"), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("pkg", () => { assert.equal(1, 2); });\n');
+    assert.equal(runSuites(root, quiet, () => {}, () => {}), 0, "a test under node_modules is not run");
+    writeFileSync(join(root, SUITES[1].dir, "lib", "fails.test.ts"), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("nested", () => { assert.equal(1, 2); });\n');
+    assert.equal(runSuites(root, quiet, () => {}, () => {}), 1, "a failing test in a subfolder fails the run");
+    rmSync(join(root, SUITES[1].dir, "lib", "fails.test.ts"));
+    rmSync(join(root, SUITES[0].dir, "pass.test.ts"));
+    const errors: string[] = [];
+    assert.equal(runSuites(root, quiet, () => {}, (line) => errors.push(line)), 1, "an empty skill folder fails the run");
+    assert.deepEqual(errors, [`error EMPTY: the skill suite ran nothing: no *.test.ts file under ${SUITES[0].dir}/`]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
