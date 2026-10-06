@@ -88,6 +88,28 @@ test("readTextFile returns the text and is IO_READ when the file is missing", ()
   });
 });
 
+test("readJsonFile reads a file that begins with a byte-order mark as the same document", () => {
+  withTempDir((dir) => {
+    const text = '{\n  "meta": { "id": "fmea-bom" },\n  "chains": []\n}\n';
+    const plain = join(dir, "plain.json");
+    const marked = join(dir, "marked.json");
+    writeFileSync(plain, text, "utf8");
+    writeFileSync(marked, `\uFEFF${text}`, "utf8");
+    assert.deepEqual([...readFileSync(marked).subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    assert.deepEqual(readJsonFile(marked), readJsonFile(plain));
+  });
+});
+
+test("readTextFile strips one leading byte-order mark and keeps any further mark", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "marks.md");
+    writeFileSync(path, "\uFEFF\uFEFFhello\uFEFF\n", "utf8");
+    assert.equal(readTextFile(path), "\uFEFFhello\uFEFF\n");
+    writeFileSync(path, "\uFEFF hello\n", "utf8");
+    assert.equal(readTextFile(path), " hello\n");
+  });
+});
+
 test("writeFileAtomic writes the content and leaves no temporary file behind", () => {
   withTempDir((dir) => {
     const path = join(dir, "out.json");

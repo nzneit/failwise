@@ -19,9 +19,18 @@ import process from "node:process";
 import { ScriptError } from "./codes.ts";
 import { findDuplicateKey } from "./duplicate-keys.ts";
 
+const BYTE_ORDER_MARK = "\uFEFF";
+
+/** The text less one leading byte-order mark (U+FEFF): some editors begin a UTF-8 file with one,
+ *  Node and Bun keep it when they decode the file, and JSON.parse refuses it. */
+function withoutByteOrderMark(text: string): string {
+  return text.startsWith(BYTE_ORDER_MARK) ? text.slice(BYTE_ORDER_MARK.length) : text;
+}
+
+/** The file's text, decoded as UTF-8, less one leading byte-order mark. */
 export function readTextFile(path: string): string {
   try {
-    return readFileSync(path, "utf8");
+    return withoutByteOrderMark(readFileSync(path, "utf8"));
   } catch (err) {
     throw new ScriptError("IO_READ", `cannot read ${path}: ${(err as Error).message}`);
   }
