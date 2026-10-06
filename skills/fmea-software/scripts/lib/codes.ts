@@ -30,8 +30,9 @@ export const CODES = {
 
 export type Code = keyof typeof CODES;
 
-/** Every failure a script raises deliberately. `pointer` is a JSON pointer into the
- *  analysis document, present only when the failure is located in the document. */
+/** Every failure a script raises deliberately. `pointer` is a JSON pointer, present only when the
+ *  failure is located in a document: the analysis document, or, for a repeated key, the JSON file
+ *  the message names. */
 export class ScriptError extends Error {
   readonly code: Code;
   readonly pointer: string | undefined;
