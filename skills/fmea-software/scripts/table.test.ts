@@ -201,6 +201,32 @@ test("checkTableProperties gives one message per broken property, in the order t
   assert.deepEqual(checkTableProperties(one), []);
 });
 
+test("checkTableProperties checks S of 9 and S of 10 each when they fall in different S bands", () => {
+  const split = (c: [string, string, string, string]): PriorityTable => ({
+    id: "split", vocabulary: ["H", "M", "L"],
+    bands: { S: [[1, 1], [2, 8], [9, 9], [10, 10]], O: [[1, 10]], D: [[1, 10]] },
+    cells: { "1-1-1": c[0], "2-1-1": c[1], "3-1-1": c[2], "4-1-1": c[3] },
+  });
+  assert.deepEqual(checkTableProperties(split(["L", "L", "L", "M"])), ['table split breaks "S of 9 or 10 is never below M" at 3-1-1 (L)']);
+  assert.deepEqual(checkTableProperties(split(["L", "L", "M", "L"])), [
+    'table split breaks "priority never decreases as S, O or D increases" at 4-1-1 (L) below 3-1-1 (M)',
+    'table split breaks "S of 9 or 10 is never below M" at 4-1-1 (L)',
+  ]);
+});
+
+test("checkTableProperties reads M and L by position from the bottom of a vocabulary other than H, M, L", () => {
+  const t: PriorityTable = {
+    id: "five", vocabulary: ["Critical", "High", "Medium", "Low", "None"],
+    bands: { S: [[1, 1], [2, 8], [9, 10]], O: [[1, 10]], D: [[1, 10]] },
+    cells: { "1-1-1": "Low", "2-1-1": "Low", "3-1-1": "None" },
+  };
+  assert.deepEqual(checkTableProperties(t), [
+    'table five breaks "priority never decreases as S, O or D increases" at 3-1-1 (None) below 2-1-1 (Low)',
+    'table five breaks "S of 9 or 10 is never below Low" at 3-1-1 (None)',
+    'table five breaks "S of 1 is always None" at 1-1-1 (Low)',
+  ]);
+});
+
 // ---- lookup
 
 test("bandIndex maps a rating to its 1-based band in the shipped table", () => {

@@ -11,6 +11,8 @@ import { applyPriorities, assertPriorityInput } from "./priority.ts";
 import { clone, fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument } from "./lib/types.ts";
 import { bandTable, writeTable } from "./test-helpers.ts";
+import { chmodSync, rmSync } from "node:fs";
+import process from "node:process";
 
 // Writes the minimal document as it is first written, with its priority block and its
 // meta.scales.priority_table removed, to <dir>/analysis.json and returns the path; the CLI must
@@ -438,6 +440,43 @@ test("CLI with a --table-file that breaks priority properties writes the priorit
     ].join(""));
     const doc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.deepEqual(doc.chains[0].priority, { value: "M", table: "priority-test-properties", rpn: 96 });
+  });
+});
+
+test("CLI with a --table-file that breaks priority properties prints the IO_WRITE line alone when the write fails", (t) => {
+  const broken = bandTable(["L", "M", "H"]);
+  broken.cells["1-3-3"] = "M";
+  withTempDir((dir) => {
+    const tableFile = writeTable(dir, broken);
+    const path = writeMinimalWithoutPriority(dir);
+    const before = readFileSync(path, "utf8");
+    if (typeof process.getuid === "function" && process.getuid() === 0) {
+      t.skip("this process runs as root, which writes into a read-only directory regardless of its mode");
+      return;
+    }
+    chmodSync(dir, 0o500); // the atomic write cannot create its sibling temporary file
+    try {
+      const probe = join(dir, "probe.tmp");
+      let honoured = false;
+      try {
+        writeFileSync(probe, "");
+        rmSync(probe, { force: true });
+      } catch {
+        honoured = true;
+      }
+      if (!honoured) {
+        t.skip("this filesystem does not honour a read-only directory mode, so the write cannot be made to fail");
+        return;
+      }
+      const r = runCli("priority.ts", [path, "--write", "--table-file", tableFile]);
+      assert.equal(r.status, 3);
+      assert.equal(r.stdout, "");
+      assert.equal(r.stderr.trimEnd().split("\n").length, 1, r.stderr);
+      assert.ok(r.stderr.startsWith("error IO_WRITE: "), r.stderr);
+      assert.equal(readFileSync(path, "utf8"), before);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
   });
 });
 
