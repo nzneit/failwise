@@ -17,12 +17,12 @@ One validator id may back more than one row, because two records can reach the s
 ## Enforcement
 
 `validator`: the schema or a section 6 invariant already enforces the rule, and the failure is reported in `errors[]`. [skill-authored]
-`machine`: the rule is decidable from the analysis JSON alone and is not already a validator rule, so it is a lint in `computed.lints[]`. [skill-authored]
+`machine`: the rule is decidable from the analysis JSON alone, or, for `priority-table-property` alone, from the loaded priority table, and is not already a validator rule, so it is a lint in `computed.lints[]`. [skill-authored]
 `reviewer`: everything else — a judgement, a check on the skill's own reference files, or a check on an artifact the JSON does not hold. [skill-authored]
 Each defect is reported once: a rule the validator enforces is never repeated as a machine or a reviewer rule. [skill-authored]
 
 The validator ids a row may name are exactly `schema`, `element-id-unique`, `function-id-unique`, `chain-id-unique`, `action-id-unique`, `function-element-resolves`, `chain-function-resolves`, `element-parent-resolves`, `element-parent-matches-id`, `element-source-non-catalog`, `element-dependency-required`, `rating-review-by-date`, `post-ratings-without-completed`, `post-priority-presence`, `handoff-without-adversarial`, `adversarial-without-handoff`, `handoff-cause-mismatch`, `stale-without-reason`, `stale-version-ahead`, `priority-table-mismatch`, `priority-row-table-mismatch`, `priority-value-mismatch` and `priority-rpn-mismatch`. [skill-authored]
-The machine lints the scripts implement are seven: `occurrence-estimate-without-trigger`, `detection-1-without-evidenced-control`, `rating-provisional`, `seeded-action-without-incident`, `metadata-without-ground-rules`, `tracker-link-without-config` and `tracker-link-shared`. [skill-authored]
+The machine lints the scripts implement are eight: `occurrence-estimate-without-trigger`, `detection-1-without-evidenced-control`, `rating-provisional`, `seeded-action-without-incident`, `metadata-without-ground-rules`, `tracker-link-without-config`, `tracker-link-shared` and `priority-table-property`. [skill-authored]
 A machine row carrying any other id states, in one sentence, a condition decidable from the analysis JSON alone over the fields of `schemas/fmea.schema.json`, so an implementer can code it without a further judgement call. [skill-authored]
 
 ## The quality score
@@ -216,6 +216,7 @@ All three primary studies are therefore off-domain: they justify guardrails and 
 | `occurrence-estimate-without-trigger` | A chain whose `ratings.O.evidence_kind` is `estimate`, whose `ratings.O.value` is 7 or more, and whose `trigger` is absent or empty is flagged. | warning | none | machine | [skill-authored] |
 | `tracker-link-without-config` | An action carries a `tracker` link while `meta.tracker` is absent or names a different provider than the link does. | warning | none | machine | [skill-authored] |
 | `tracker-link-shared` | Two or more actions in the document carry the same `tracker.id`; every one after the first is flagged. | warning | none | machine | [skill-authored] |
+| `priority-table-property` | The loaded priority table breaks one of the four properties `scales-software.md` states for the shipped table; one finding per broken property, at `/meta/scales/priority_table`, names every cell that breaks it, and the table is used all the same. | warning | none | machine | [skill-authored] |
 | `catalog-row-tied-to-element` | No catalog row enters the analysis except through a chain whose function resolves to a named element the system contains, rewritten for that element. | blocker | C103 | reviewer | [paraphrased:C103] |
 | `adversarial-cause-judgement` | Whether a cause is adversarial, and so whether the chain hands off to threat modeling, is the reviewer's judgement; the validator checks only that a handoff and an adversarial cause are present together and that `handoff.adversary_cause` repeats that cause's text. | blocker | none | reviewer | [skill-authored] |
 | `implemented-action-as-cause` | Every implemented action is re-analysed as a potential cause of a future failure, on the record's own second clause that today's action items can be tomorrow's contributing factors. | blocker | C076 | reviewer | [paraphrased:C076] |

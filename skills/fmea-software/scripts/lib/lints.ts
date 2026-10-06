@@ -1,5 +1,7 @@
 import type { FmeaDocument, Lint, Ratings, Factor, Severity } from "./types.ts";
 import { ptr } from "./pointer.ts";
+import type { PriorityTable } from "./table.ts";
+import { checkTableProperties } from "./table.ts";
 
 export interface MachineRule { id: string; severity: Severity; check: (doc: FmeaDocument) => Lint[] }
 
@@ -153,4 +155,17 @@ export function runLints(doc: FmeaDocument, rules: MachineRule[] = MACHINE_RULES
   const out: Lint[] = [];
   for (const rule of rules) out.push(...rule.check(doc));
   return out;
+}
+
+// The loaded table's broken properties (§7), one warning each at the field that names the table:
+// a finding of the table, not of a row, so it leaves the quality score as it is. validateDocument
+// adds them after the document's own lints; priority.ts prints the same findings as lines.
+export function tablePropertyLints(table: PriorityTable): Lint[] {
+  return checkTableProperties(table).map((message) => lint("priority-table-property", "warning", ptr("meta", "scales", "priority_table"), message));
+}
+
+// The stderr line of a finding that does not fail the run, `<severity> <rule>: <message>`, kept on
+// one line as formatError keeps its message, whatever the table id holds.
+export function formatLintLine(finding: Lint): string {
+  return `${finding.severity} ${finding.rule}: ${finding.message.replace(/\s+/g, " ").trim()}`;
 }

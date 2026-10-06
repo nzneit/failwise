@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MACHINE_RULES, runLints } from "./lib/lints.ts";
+import { MACHINE_RULES, formatLintLine, runLints, tablePropertyLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
 import { validateDocument } from "./lib/validation.ts";
-import { loadFixture, minimalDoc, rating } from "./test-helpers.ts";
+import { bandTable, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
 import type { Control, FmeaDocument, Lint, TrackerLink } from "./lib/types.ts";
 
 function ruleById(id: string) {
@@ -239,4 +239,21 @@ test("the golden fixture produces exactly the eleven lints the later tasks asser
   const lints = runLints(doc);
   assert.equal(lints.length, 11);
   assert.equal(lints.filter((l) => l.severity === "blocker").length, 1);
+});
+
+// ---- The loaded table's broken properties, which validateDocument adds after the document's lints.
+
+test("tablePropertyLints gives one priority-table-property warning per broken property, at /meta/scales/priority_table", () => {
+  const t = bandTable(["L", "M", "H"]);
+  t.cells["1-3-3"] = "M";
+  assert.deepEqual(tablePropertyLints(t), [{
+    rule: "priority-table-property", severity: "warning", pointer: "/meta/scales/priority_table",
+    message: 'table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)',
+  }]);
+  assert.deepEqual(tablePropertyLints(loadTable()), []);
+});
+
+test("formatLintLine prints a finding as one line, severity and rule first, whatever its message holds", () => {
+  const finding: Lint = { rule: "priority-table-property", severity: "warning", pointer: "/meta/scales/priority_table", message: 'table a\nb\u2028c breaks "x" at 1-1-1 (H)' };
+  assert.equal(formatLintLine(finding), 'warning priority-table-property: table a b c breaks "x" at 1-1-1 (H)');
 });
