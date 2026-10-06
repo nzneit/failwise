@@ -79,7 +79,7 @@
         },
         "change": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of elements and functions added, removed or changed and rows marked stale; each scales.version change. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
+          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of elements and functions added, removed or changed and rows marked stale; each scales.version change; a change of the recorded priority table through priority.ts --write --change-table, naming the table replaced and the one now recorded. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
         }
       }
     },
