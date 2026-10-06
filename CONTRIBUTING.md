@@ -110,6 +110,12 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
 
 - The TypeScript scripts and tools run directly under Node 24.2 or later and take no
   runtime dependencies, except that `track.ts` starts `gh`, the GitHub CLI; keep it that way.
+- No script needs a file outside `skills/fmea-software/` other than the files named on its command
+  line, so the skill folder also runs copied on its own, outside a `node_modules` folder and below
+  no `package.json` that sets another module type; `tools/skill-copy.test.ts` runs the four scripts
+  from such a copy and fails otherwise. For that reason the plugin's version is written twice, in
+  `.claude-plugin/plugin.json` and in `skills/fmea-software/scripts/lib/version.ts`: a release
+  changes both, and `validate.test.ts` fails when they differ.
 - Keep the one-line coded error contract: each failure is one line on stderr,
   `error <CODE>: <message>`, and exits 1 for usage, 2 for validation, 3 for I/O (design spec §9).
   The skill's codes come from the one list in `skills/fmea-software/scripts/lib/codes.ts`.

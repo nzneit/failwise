@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { validatorVersion } from "./validate.ts";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { clone, fixturePath, loadFixture, runCli, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument, Lint } from "./lib/types.ts";
+import { spawnSync } from "node:child_process";
+import { cpSync } from "node:fs";
+import { PLUGIN_VERSION } from "./lib/version.ts";
+import { SKILL_ROOT } from "./test-helpers.ts";
 
 const table = loadTable();
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
@@ -122,7 +125,7 @@ test("--write adds a computed block and leaves the authored parts alone", () => 
       { meta: first.meta, elements: first.elements, functions: first.functions, chains: first.chains },
       { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, chains: beforeDoc.chains },
     );
-    assert.equal(first.computed?.validator_version, validatorVersion());
+    assert.equal(first.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(first.computed?.quality_score, 88);
     assert.equal(first.computed?.lints.length, 11);
     assert.ok(isRfc3339DateTime(String(first.computed?.validated_at)));
@@ -142,7 +145,7 @@ test("--write replaces an existing computed block whole and keeps it where the f
     const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "chains"]);
     assert.equal(after.computed?.quality_score, 88);
-    assert.equal(after.computed?.validator_version, validatorVersion());
+    assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(after.computed?.lints.length, 11);
   });
 });
@@ -202,6 +205,27 @@ test("a missing input file exits 3 with IO_READ", () => {
   const r = runCli("validate.ts", ["/nonexistent/analysis.json"]);
   assert.equal(r.status, 3);
   assert.match(r.stderr, /^error IO_READ: .*\/nonexistent\/analysis\.json/m);
+});
+
+test("the version validate.ts --write records is the version in .claude-plugin/plugin.json", () => {
+  const manifest = JSON.parse(readFileSync(join(SKILL_ROOT, "..", "..", ".claude-plugin", "plugin.json"), "utf8")) as { version?: unknown };
+  assert.equal(PLUGIN_VERSION, manifest.version, "scripts/lib/version.ts and .claude-plugin/plugin.json give different versions; a release changes both");
+});
+
+test("--write works from a copy of the skill folder with no plugin manifest above it, and records the plugin version", () => {
+  withTempDir((dir) => {
+    const skill = join(dir, "skills", "fmea-software");
+    cpSync(SKILL_ROOT, skill, { recursive: true });
+    const path = join(dir, "analysis.json");
+    const doc = golden();
+    delete doc.computed;
+    writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+    const r = spawnSync(process.execPath, [join(skill, "scripts", "validate.ts"), path, "--write"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
+  });
 });
 
 test("a non-JSON input path exits 1 with USAGE", () => {
