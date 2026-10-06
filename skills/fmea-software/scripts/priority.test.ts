@@ -366,6 +366,18 @@ test("CLI with --change-table on a document that records no table: exit 1, USAGE
   });
 });
 
+test("CLI with --table-file given twice exits 1 with a USAGE line naming the flag and leaves the file untouched", () => {
+  withTempDir((dir) => {
+    const { path, text } = writeDoc(dir, recordedDoc(undefined));
+    const shipped = join(import.meta.dirname, "..", "data", "priority-fmea-software-v1.json");
+    const result = runCli("priority.ts", [path, "--write", "--table-file", shipped, "--table-file", ALT_TABLE]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "error USAGE: flag --table-file is given more than once\n");
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), text);
+  });
+});
+
 test("CLI on a first run records the loaded table, with and without --table-file, and prints the line as before", () => {
   const cases: { args: string[]; loaded: string }[] = [
     { args: [], loaded: SHIPPED_ID },
