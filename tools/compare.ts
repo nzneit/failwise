@@ -13,10 +13,13 @@
 // runner then runs dev/browser/compare.config.ts twice over the parts both reports have: the first
 // pass writes a reference image of each part at each view from the before report, the second
 // compares the after report with them at zero tolerance. Each view is same, changed or unverified,
-// read from the second pass's JSON report and never from the wording of a message. Under
-// build/compare/ it writes summary.md, and for each changed view the before, after and difference
-// images in changed/<engine>/<view>/; build/compare/html/ is Playwright's own viewer of the second
-// pass. build/compare is removed first, so an earlier run's files cannot stand in. With
+// read from the second pass's JSON report and never from the wording of a message. When the two
+// reports are byte for byte the same, by their SHA-256 hashes, neither pass runs: the same bytes in
+// the same browser give the same pixels, since the report loads no outside resource, so every view of
+// a part not collided is same without a photograph, and refs/, the passes' JSON reports and html/ are
+// absent. Under build/compare/ it writes summary.md, and for each changed view the before, after and
+// difference images in changed/<engine>/<view>/; build/compare/html/ is Playwright's own viewer of the
+// second pass. build/compare is removed first, so an earlier run's files cannot stand in. With
 // GITHUB_STEP_SUMMARY set the summary is appended to it; with GITHUB_OUTPUT set and exit status 0,
 // `changed=<count>`. Exit status 0 when every view is same or changed, 1 otherwise, and 1 when no
 // part of the report is on both sides, since then nothing was compared. The work of the
@@ -70,10 +73,12 @@ interface OwedView {
   part: string;
 }
 
-/** What the summary is written from: the before commit, both reports and the plan of their parts. */
+/** What the rest of the comparison works from: the before commit, both reports' SHA-256 hashes, whether they
+ *  are equal, decided once here, and the plan of their parts. */
 interface Compared {
   base: Base;
-  sides: Sides;
+  hashes: { before: string; after: string };
+  same: boolean;
   plan: PartPlan;
 }
 
@@ -195,10 +200,12 @@ function keepImages(session: Session, view: OwedView, verdict: Verdict & { kind:
   return copied ? verdict : unverified("its images could not be copied");
 }
 
-/** One owed view's class, from both passes' tests. */
-function classOf(session: Session, plan: PartPlan, passes: [ReportedTest[], ReportedTest[]], view: OwedView): Verdict {
-  const ids = plan.collided.get(view.part);
+/** One owed view's class: a collided part's unverified, else same when the two reports are the same, else from
+ *  both passes' tests. */
+function classOf(session: Session, compared: Compared, passes: [ReportedTest[], ReportedTest[]], view: OwedView): Verdict {
+  const ids = compared.plan.collided.get(view.part);
   if (ids !== undefined) return unverified(`more than one row id reduces to this file name (${ids.join(", ")})`);
+  if (compared.same) return { kind: "same" };
   const title = `${view.view} ${view.part}`;
   const [first, second] = passes.map((tests) => tests.find((one) => one.projectName === view.engine && one.title === title));
   const reference = join(session.machine.root, OUT, "refs", view.engine, String(view.view), `${view.part}.png`);
@@ -207,11 +214,13 @@ function classOf(session: Session, plan: PartPlan, passes: [ReportedTest[], Repo
 }
 
 /** Step 10: each owed view's class, with an UNVERIFIED line for each view that is neither same nor changed;
- *  when a pass left no JSON report, one line and every owed view unverified. With nothing photographed no
- *  pass ran, and every owed view is a collided one, unverified before any result is looked for. */
-function classify(session: Session, plan: PartPlan): Classes {
+ *  when a pass left no JSON report, one line and every owed view unverified. When the two reports are the same
+ *  no pass ran and no result is looked for: every owed view is same, but a collided one, which stays
+ *  unverified. With nothing photographed no pass ran either, and every owed view is a collided one. */
+function classify(session: Session, compared: Compared): Classes {
+  const { plan } = compared;
   const views = owedViews(session.engines, plan.owed);
-  const ran = plan.photographed.length > 0;
+  const ran = !compared.same && plan.photographed.length > 0;
   const passes = PASSES.map(({ pass }) => (ran ? session.readTests(`${OUT}/pass${pass}/results.json`) : []));
   const absent = passes.findIndex((tests) => tests === null);
   if (absent !== -1) {
@@ -221,7 +230,7 @@ function classify(session: Session, plan: PartPlan): Classes {
   }
   const classes: Classes = { changed: [], unverified: [] };
   for (const view of views) {
-    const verdict = classOf(session, plan, passes as [ReportedTest[], ReportedTest[]], view);
+    const verdict = classOf(session, compared, passes as [ReportedTest[], ReportedTest[]], view);
     if (verdict.kind === "changed") classes.changed.push(`${nameOf(view)}: ${verdict.detail}`);
     if (verdict.kind === "unverified") {
       classes.unverified.push(`${nameOf(view)}: ${verdict.reason}`);
@@ -238,13 +247,14 @@ function sha256(text: string): string {
 /** Step 11: writes the summary, and appends it to GITHUB_STEP_SUMMARY when that is set; the number of owed views. */
 function writeSummary(session: Session, compared: Compared, classes: Classes): number {
   const { machine, engines } = session;
-  const { base, sides, plan } = compared;
+  const { base, hashes, same, plan } = compared;
   const views = plan.owed.length * VIEWS.length * engines.length;
   const summary = summaryText({
     base: session.base,
     commit: base.sha,
     dirty: base.dirty,
-    hashes: { before: sha256(sides.before), after: sha256(sides.after) },
+    hashes,
+    same,
     engines,
     views,
     ...classes,
@@ -257,40 +267,47 @@ function writeSummary(session: Session, compared: Compared, classes: Classes): n
   return views;
 }
 
+/** Step 12's verdict line, from the number of owed views and of changed ones; when the two reports are the
+ *  same it says that none was photographed. */
+function verdictLine(compared: Compared, views: number, count: number): string {
+  const short = compared.base.sha.slice(0, 7);
+  if (count > 0) return `## compare: ${count} of ${views} views changed against ${short} (${OUT}/summary.md)`;
+  const why = compared.same ? ": the two reports are byte for byte the same, so none was photographed" : "";
+  return `## compare: no view of ${views} changed against ${short}${why}`;
+}
+
 /** Steps 11 and 12: the summary, then the verdict line; true when no view is unverified. */
 function conclude(session: Session, compared: Compared, classes: Classes): boolean {
   const views = writeSummary(session, compared, classes);
   if (classes.unverified.length > 0) return false;
   const { machine } = session;
-  const short = compared.base.sha.slice(0, 7);
   const count = classes.changed.length;
-  machine.write(
-    count === 0
-      ? `## compare: no view of ${views} changed against ${short}`
-      : `## compare: ${count} of ${views} views changed against ${short} (${OUT}/summary.md)`,
-  );
+  machine.write(verdictLine(compared, views, count));
   const output = machine.host.env.GITHUB_OUTPUT;
   if (output) machine.files.appendText(output, `changed=${count}\n`);
   return true;
 }
 
 /** Steps 6 to 10 of the runner, for the comparison: build/compare was removed before the browsers were checked.
- *  A comparison with no owed view compared nothing, so it is unverified and starts no pass; one whose owed parts
- *  all collided starts none either, since every view of them is unverified without a photograph. */
+ *  A comparison with no owed view compared nothing, so it is unverified and starts no pass, even when the two
+ *  reports are the same. One of two reports byte for byte the same starts no pass: the same bytes in the same
+ *  browser give the same pixels. One whose owed parts all collided starts none either, since every view of them
+ *  is unverified without a photograph. */
 function compareViews(session: Session): boolean {
   const base = findBase(session);
   if (base === null || !renderBefore(session, base.sha) || !renderSide(session, "after")) return false;
   const sides = readSides(session);
   if (sides === null) return false;
-  const compared: Compared = { base, sides, plan: planParts(partsOf(sides.before), partsOf(sides.after)) };
-  const { plan } = compared;
+  const hashes = { before: sha256(sides.before), after: sha256(sides.after) };
+  const plan = planParts(partsOf(sides.before), partsOf(sides.after));
+  const compared: Compared = { base, hashes, same: hashes.before === hashes.after, plan };
   if (plan.owed.length === 0) {
     session.machine.writeError("error UNVERIFIED: no part of the report is on both sides, so nothing was compared");
     writeSummary(session, compared, { changed: [], unverified: [] });
     return false;
   }
-  if (plan.photographed.length > 0 && !runPasses(session, plan.photographed)) return false;
-  return conclude(session, compared, classify(session, plan));
+  if (!compared.same && plan.photographed.length > 0 && !runPasses(session, plan.photographed)) return false;
+  return conclude(session, compared, classify(session, compared));
 }
 
 const COMPARE: Run = {
