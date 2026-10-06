@@ -462,6 +462,15 @@ test("apply stops with IO_CHANGED when another writer saves the file before an a
   assert.equal(stderr, `error IO_CHANGED: ${changedMessage(s.path)}\n`);
 });
 
+test("apply on a document with text outside ASCII records every link: each later write compares with the bytes the run wrote", async (t) => {
+  const doc = docWith(act(1), act(2));
+  doc.meta.name = "Kassendienst – Zahlung über Karte";
+  const s = session(t, doc);
+  const { status } = await applyPlanned(s);
+  assert.equal(status, 0);
+  assert.deepEqual(linksIn(s.doc()), [{ ...linkOf(1), linked: TODAY }, { ...linkOf(2), linked: TODAY }]);
+});
+
 test("a failure with no item behind it carries no link", async (t) => {
   const s = session(t, docWith(act(1)), { failCreateAt: 1 });
   const { result } = await applyPlanned(s);
