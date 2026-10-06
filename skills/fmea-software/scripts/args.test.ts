@@ -108,3 +108,43 @@ test("a flag named after an Object prototype member is still an unknown flag", (
     });
   }
 });
+
+test("a string flag given twice is a usage failure naming the flag, whatever its values", () => {
+  const cases = [
+    ["a.json", "--table-file", "t1.json", "--table-file", "t2.json"],
+    ["--table-file", "t.json", "--table-file", "t.json", "a.json"],
+    ["--table-file", "t1.json", "a.json", "--table-file", "t2.json"],
+  ];
+  for (const argv of cases) {
+    assert.throws(() => parseArgs(argv, spec()), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "USAGE");
+      assert.equal(err.message, "flag --table-file is given more than once");
+      return true;
+    }, argv.join(" "));
+  }
+});
+
+test("a string flag given a second time without a value is refused as given more than once", () => {
+  assert.throws(() => parseArgs(["a.json", "--table-file", "t.json", "--table-file"], spec()), (err: unknown) => {
+    assert.ok(err instanceof ScriptError);
+    assert.equal(err.code, "USAGE");
+    assert.equal(err.message, "flag --table-file is given more than once");
+    return true;
+  });
+});
+
+test("a boolean flag given twice is a usage failure naming the flag; a string flag's flag-shaped value does not count", () => {
+  assert.deepEqual(parseArgs(["a.json", "--table-file", "--write", "--write"], spec()), {
+    positional: ["a.json"],
+    flags: { write: true, "table-file": "--write" },
+  });
+  for (const argv of [["a.json", "--write", "--write"], ["--write", "a.json", "--write"]]) {
+    assert.throws(() => parseArgs(argv, spec()), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "USAGE");
+      assert.equal(err.message, "flag --write is given more than once");
+      return true;
+    }, argv.join(" "));
+  }
+});
