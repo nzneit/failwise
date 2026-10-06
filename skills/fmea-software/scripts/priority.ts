@@ -13,7 +13,7 @@
 import { parseArgs } from "./lib/args.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { ScriptError } from "./lib/codes.ts";
-import { assertExtension, readJsonFile, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
+import { assertExtension, readJsonWithBytes, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
 import { ptr } from "./lib/pointer.ts";
 import { formatLintLine, tablePropertyLints } from "./lib/lints.ts";
 import { computePriority, loadTable } from "./lib/table.ts";
@@ -111,10 +111,12 @@ function main(argv: string[]): number {
   const tableFile = typeof args.flags["table-file"] === "string" ? args.flags["table-file"] : undefined;
   const table = loadTable(tableFile);
   const changeTable = args.flags["change-table"] === true;
-  const doc = assertPriorityInput(readJsonFile(input));
+  const read = readJsonWithBytes(input);
+  const doc = assertPriorityInput(read.value);
   const recorded: unknown = (doc.meta.scales as { priority_table?: unknown }).priority_table;
   applyPriorities(doc, table, { changeTable });
-  writeFileAtomic(input, stringifyDocument(doc));
+  // Refused with IO_CHANGED, the file left as it is, when another writer saved it after the read.
+  writeFileAtomic(input, stringifyDocument(doc), read.bytes);
   const changedFrom = changeTable ? `, "changed_from": ${JSON.stringify(recorded)}` : "";
   process.stdout.write(`{"table": ${JSON.stringify(table.id)}, "rows": ${doc.chains.length}${changedFrom}}\n`);
   for (const finding of tablePropertyLints(table)) process.stderr.write(formatLintLine(finding) + "\n");

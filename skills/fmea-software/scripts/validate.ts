@@ -3,7 +3,7 @@ import type { FmeaDocument } from "./lib/types.ts";
 import { loadTable } from "./lib/table.ts";
 import { reportValidation, validateDocument } from "./lib/validation.ts";
 import { parseArgs } from "./lib/args.ts";
-import { assertExtension, readJsonFile, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
+import { assertExtension, readJsonWithBytes, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
 import { nowIso } from "./lib/dates.ts";
 import { isEntry, run } from "./lib/cli.ts";
 
@@ -12,7 +12,8 @@ function main(argv: string[]): number {
   const path = parsed.positional[0];
   assertExtension(path, ".json", "the analysis file");
   const tableFile = typeof parsed.flags["table-file"] === "string" ? parsed.flags["table-file"] : undefined;
-  const raw = readJsonFile(path);
+  const read = readJsonWithBytes(path);
+  const raw = read.value;
   const table = loadTable(tableFile);
   const result = validateDocument(raw, table);
   if (result.ok && parsed.flags.write === true) {
@@ -23,7 +24,7 @@ function main(argv: string[]): number {
       validated_at: nowIso(),
       validator_version: PLUGIN_VERSION,
     };
-    writeFileAtomic(path, stringifyDocument(doc));
+    writeFileAtomic(path, stringifyDocument(doc), read.bytes);
   }
   return reportValidation(result);
 }

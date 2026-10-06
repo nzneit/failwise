@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import type { FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus } from "./lib/types.ts";
 import { computePriority } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
@@ -69,10 +70,44 @@ export function withTempDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-/** Runs a script under the current Node; `env`, when given, replaces the inherited environment. */
-export function runCli(script: string, args: string[], options: { env?: NodeJS.ProcessEnv } = {}): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8", env: options.env });
+/** Runs a script under the current Node; `env`, when given, replaces the inherited environment, and
+ *  `execArgv` goes to Node before the script. */
+export function runCli(script: string, args: string[], options: { env?: NodeJS.ProcessEnv; execArgv?: string[] } = {}): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [...(options.execArgv ?? []), join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8", env: options.env });
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** A module, loaded before the script, that saves `content` to `path` as soon as the script has
+ *  first read that file: what a person's editor saving the analysis file in the middle of a run
+ *  does. It wraps fs.readFileSync, which every read of the skill goes through. */
+function otherWriterModule(path: string, content: string): string {
+  return [
+    'import fs from "node:fs";',
+    'import { syncBuiltinESMExports } from "node:module";',
+    "const readFileSync = fs.readFileSync;",
+    "let saved = false;",
+    "fs.readFileSync = function (file, ...rest) {",
+    "  const result = readFileSync.call(this, file, ...rest);",
+    `  if (!saved && file === ${JSON.stringify(path)}) { saved = true; fs.writeFileSync(file, ${JSON.stringify(content)}); }`,
+    "  return result;",
+    "};",
+    "syncBuiltinESMExports();",
+  ].join("\n");
+}
+
+/** Runs a script as runCli does while another writer saves `content` to `path` just after the
+ *  script has read it. */
+export function runCliWithOtherWriter(script: string, args: string[], path: string, content: string): { status: number; stdout: string; stderr: string } {
+  return withTempDir((dir) => {
+    const hook = join(dir, "other-writer.mjs");
+    writeFileSync(hook, otherWriterModule(path, content));
+    return runCli(script, args, { execArgv: ["--import", pathToFileURL(hook).href] });
+  });
+}
+
+/** The IO_CHANGED message for `path`, as io.ts words it. */
+export function changedMessage(path: string): string {
+  return `${path} changed after this command last read or wrote it, so it was not replaced and holds the other writer's change: run the command again on the file as it now is`;
 }
 
 /** A rating for test documents. A provisional review carries no `by` or `date`; any other status

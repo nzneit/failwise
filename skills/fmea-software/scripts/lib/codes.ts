@@ -22,6 +22,7 @@ export const CODES = {
   IO_READ: EXIT_IO,
   IO_WRITE: EXIT_IO,
   IO_EXISTS: EXIT_IO,
+  IO_CHANGED: EXIT_IO, // raised by writeFileAtomic in io.ts when the file changed between a script's read and its write
   TABLE_MALFORMED: EXIT_IO,
   TRACKER_UNAVAILABLE: EXIT_IO,
   TRACKER_REJECTED: EXIT_IO,

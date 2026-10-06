@@ -22,11 +22,13 @@ import {
   assertExtension,
   assertWritable,
   readJsonFile,
+  readJsonWithBytes,
   readTextFile,
   stringifyDocument,
   writeFileAtomic,
 } from "./lib/io.ts";
-import { withTempDir } from "./test-helpers.ts";
+import { changedMessage, withTempDir } from "./test-helpers.ts";
+import { rmSync } from "node:fs";
 
 test("readJsonFile parses a JSON file", () => {
   withTempDir((dir) => {
@@ -560,4 +562,51 @@ test("assertWritable refuses an existing path without force", () => {
 
 test("stringifyDocument uses two-space indentation and a trailing newline", () => {
   assert.equal(stringifyDocument({ a: 1, b: [2] }), '{\n  "a": 1,\n  "b": [\n    2\n  ]\n}\n');
+});
+
+test("readJsonWithBytes returns the parsed value and the file's exact bytes", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    const bytes = Buffer.from('{\r\n  "ok": true }  \n', "utf8");
+    writeFileSync(path, bytes);
+    const read = readJsonWithBytes(path);
+    assert.deepEqual(read.value, { ok: true });
+    assert.ok(read.bytes.equals(bytes));
+  });
+});
+
+test("writeFileAtomic given the bytes read replaces the file only while it still holds them", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    writeFileSync(path, "read"); // a save of the same bytes changes nothing
+    writeFileAtomic(path, "first", read);
+    assert.equal(readFileSync(path, "utf8"), "first");
+    writeFileSync(path, "other"); // another writer's save after the script's last write
+    assert.throws(() => writeFileAtomic(path, "second", Buffer.from("first")), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_CHANGED");
+      assert.equal(err.message, changedMessage(path));
+      return true;
+    });
+    assert.equal(readFileSync(path, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir), ["a.json"]);
+  });
+});
+
+test("writeFileAtomic given the bytes read does not write back a file removed since: IO_WRITE and no file", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    rmSync(path);
+    assert.throws(() => writeFileAtomic(path, "new", read), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_WRITE");
+      assert.ok(err.message.startsWith(`cannot write ${path}: ENOENT`), err.message);
+      return true;
+    });
+    assert.deepEqual(readdirSync(dir), []);
+  });
 });

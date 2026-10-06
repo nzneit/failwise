@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
 import { bandTable, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
-import { clone, fixturePath, loadFixture, runCli, withTempDir } from "./test-helpers.ts";
+import { changedMessage, clone, fixturePath, loadFixture, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument, Lint } from "./lib/types.ts";
 import { spawnSync } from "node:child_process";
 import { cpSync } from "node:fs";
@@ -198,6 +198,22 @@ test("a failing --write prints the coded line only, with nothing on stdout", (t)
     } finally {
       chmodSync(dir, 0o700);
     }
+  });
+});
+
+test("--write refuses with IO_CHANGED and keeps the save another writer made during the run", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, JSON.stringify(golden(), null, 2) + "\n");
+    const other = golden();
+    other.meta.name = "Saved by another writer";
+    const saved = JSON.stringify(other, null, 2) + "\n";
+    const r = runCliWithOtherWriter("validate.ts", [path, "--write"], path, saved);
+    assert.equal(r.stderr, `error IO_CHANGED: ${changedMessage(path)}\n`);
+    assert.equal(r.status, 3);
+    assert.equal(r.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), saved);
+    assert.deepEqual(readdirSync(dir), ["analysis.json"]);
   });
 });
 
