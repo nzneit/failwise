@@ -164,18 +164,29 @@ function headerHtml(doc: FmeaDocument, model: ReportModel): string {
   return `<h1>${e(m.name)}</h1>\n<dl class="header">${rows.map(([k, v]) => `<dt>${e(k)}</dt><dd>${v}</dd>`).join("")}</dl>\n${tilesHtml(model.tiles)}\n${attentionHtml(model.attention)}\n${contentsHtml()}`;
 }
 
+function elementIdHtml(el: Element): string {
+  const prefix = el.parent === null ? "" : `${el.parent}.`;
+  if (prefix === "" || !el.id.startsWith(prefix)) return e(el.id);
+  return `<span class="el-prefix">${e(prefix)}</span>${e(el.id.slice(prefix.length))}`;
+}
+
+function elementFactsHtml(el: Element): string {
+  const dep = el.dependency;
+  if (!dep) return "";
+  return `<dl class="el-facts"><dt>Dependency</dt><dd>${e(dep.strength)}</dd>${dep.sla ? `<dt>SLA</dt><dd>${e(dep.sla)}</dd>` : ""}${dep.limits ? `<dt>Limits</dt><dd>${e(dep.limits)}</dd>` : ""}</dl>`;
+}
+
 function structureHtml(elements: Element[]): string {
   const children = (parent: string | null): Element[] => elements.filter((el) => el.parent === parent);
-  const node = (el: Element): string => {
-    const dep = el.dependency
-      ? ` <span class="empty">(${e(el.dependency.strength)} dependency${el.dependency.sla ? `, SLA ${e(el.dependency.sla)}` : ""}${el.dependency.limits ? `, limits ${e(el.dependency.limits)}` : ""})</span>`
-      : "";
+  const node = (el: Element, depth: number): string => {
+    const who = `<div class="el-who"><span class="el-name">${e(el.name)}</span><span class="el-tag"><code class="el-id">${elementIdHtml(el)}</code><span class="el-kind">${e(el.kind.replaceAll("_", " "))}</span></span></div>`;
+    const what = `<div class="el-what">${el.description ? `<p class="el-desc">${e(el.description)}</p>` : ""}${elementFactsHtml(el)}</div>`;
     const kids = children(el.id);
-    return `<li><code>${e(el.id)}</code> &mdash; ${e(el.name)} <span class="empty">[${e(el.kind)}]</span>${dep}${el.description ? `<div>${e(el.description)}</div>` : ""}${kids.length > 0 ? `<ul class="tree">${kids.map(node).join("")}</ul>` : ""}</li>`;
+    return `<li><div class="el" style="--el-depth:${depth}">${who}${what}</div>${kids.length > 0 ? `<ul class="tree">${kids.map((k) => node(k, depth + 1)).join("")}</ul>` : ""}</li>`;
   };
   const roots = children(null);
   if (roots.length === 0) return `<p class="empty">No elements.</p>`;
-  return `<ul class="tree">${roots.map(node).join("")}</ul>`;
+  return `<ul class="tree">${roots.map((r) => node(r, 0)).join("")}</ul>`;
 }
 
 function marksHtml(marks: readonly RowMark[]): string {
