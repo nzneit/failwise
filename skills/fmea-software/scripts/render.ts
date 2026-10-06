@@ -29,6 +29,7 @@ const KEY_TEXT: Record<"sod" | "priority" | "rpn" | RowMark | "warning", string>
   warning: "An automated check found something for a reviewer to judge; it may be acceptable as it stands.",
 };
 const TILE_LABEL = { priorities: "Rows by priority", ratings: "Ratings not yet reviewed", checks: "Automated checks", actions: "Actions", score: "Quality score" };
+const STRIP_CAPTION = { found: "What the analysis found", relied: "How far the analysis can be relied on" };
 const SCORE_LINE = "share of rows with no blocker";
 const ATTENTION_TITLE = "Needs attention";
 const NEXT_ACTIONS_LABEL = "Next actions due";
@@ -91,13 +92,14 @@ function tilesHtml(t: Tiles): string {
   const actionsBig = t.actions.of === null ? e(t.actions.headline) : `${e(t.actions.headline)} <small>${e(t.actions.of)}</small>`;
   const actionsSub = t.actions.line === null ? "" : `<span class="sub">${e(t.actions.line)}</span>`;
   const score = t.qualityScore === null ? "&mdash;" : `${t.qualityScore} <small>of 100</small>`;
-  return `<div class="tiles">` +
-    `<a class="tile" href="#chains"><span class="lbl">${e(TILE_LABEL.priorities)}</span><span class="pcounts">${counts}</span><span class="sub">${e(t.chainsLine)}</span></a>` +
-    `<a class="tile" href="#chains"><span class="lbl">${e(TILE_LABEL.ratings)}</span><span class="big">${t.ratings.provisional} <small>of ${t.ratings.total}</small></span><span class="sub">${e(t.ratings.line)}</span></a>` +
-    `<a class="tile${t.checks.alert ? " alert" : ""}" href="#lints"><span class="lbl">${e(TILE_LABEL.checks)}</span><span class="big">${e(t.checks.blockers)}</span><span class="sub">${e(t.checks.warnings)}</span></a>` +
-    `<a class="tile" href="#actions"><span class="lbl">${e(TILE_LABEL.actions)}</span><span class="big">${actionsBig}</span>${actionsSub}</a>` +
-    `<a class="tile" href="#lints"><span class="lbl">${e(TILE_LABEL.score)}</span><span class="big">${score}</span><span class="sub">${e(SCORE_LINE)}</span></a>` +
-    `</div>`;
+  const priorities = `<a class="tile" href="#chains"><span class="lbl">${e(TILE_LABEL.priorities)}</span><span class="pcounts">${counts}</span><span class="sub">${e(t.chainsLine)}</span></a>`;
+  const ratings = `<a class="tile" href="#chains"><span class="lbl">${e(TILE_LABEL.ratings)}</span><span class="big">${t.ratings.provisional} <small>of ${t.ratings.total}</small></span><span class="sub">${e(t.ratings.line)}</span></a>`;
+  const checks = `<a class="tile${t.checks.alert ? " alert" : ""}" href="#lints"><span class="lbl">${e(TILE_LABEL.checks)}</span><span class="big">${e(t.checks.blockers)}</span><span class="sub">${e(t.checks.warnings)}</span></a>`;
+  const actions = `<a class="tile" href="#actions"><span class="lbl">${e(TILE_LABEL.actions)}</span><span class="big">${actionsBig}</span>${actionsSub}</a>`;
+  const quality = `<a class="tile" href="#lints"><span class="lbl">${e(TILE_LABEL.score)}</span><span class="big">${score}</span><span class="sub">${e(SCORE_LINE)}</span></a>`;
+  const group = (id: string, caption: string, tiles: string): string =>
+    `<section class="tile-group" aria-labelledby="strip-${id}"><h2 class="strip-cap" id="strip-${id}">${e(caption)}</h2><div class="tiles">${tiles}</div></section>`;
+  return `<div class="strip">${group("found", STRIP_CAPTION.found, priorities + actions)}${group("relied", STRIP_CAPTION.relied, ratings + checks + quality)}</div>`;
 }
 
 function attentionItemHtml(what: string, mark: RowMark | null, entries: string[], separator: string, why: string): string {
