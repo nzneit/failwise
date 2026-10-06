@@ -846,6 +846,18 @@ test("a computed block whose validated_at and validator_version alone differ sti
   });
 });
 
+test("a computed block whose validated_at is written with a lower-case t and z renders", () => {
+  withTempDir((dir) => {
+    const doc = golden();
+    doc.computed = { ...doc.computed!, validated_at: "2026-10-02t06:33:53.564z" };
+    const { render, validate, out } = renderAndValidate(dir, doc);
+    assert.equal(validate.status, 0, validate.stderr);
+    assert.equal(render.status, 0, render.stderr);
+    assert.equal(render.stderr, "");
+    assert.ok(existsSync(out));
+  });
+});
+
 test("a computed block whose lints hold the right findings in another order is refused", () => {
   withTempDir((dir) => {
     const doc = golden();

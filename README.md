@@ -108,6 +108,8 @@ Not in this version:
 
 The skill has Claude run four scripts during a session and take every priority from them instead of working one out itself. You can also run them directly with `node`. The first three have no dependencies; `track.ts` needs `gh` installed and signed in. All four are in `skills/fmea-software/scripts/`.
 
+All four scripts refuse a document in which one object carries the same key twice, as an edit by hand can leave it: the `IO_READ` line names the key and ends with the JSON pointer of the object, or says "the top-level object" when the repeat is at the top level. A JSON reader keeps only the last of the two values, so the first would be checked by nothing and the next `--write` would remove it from the file. Keep the value the analysis means, or join the two into one, and run the scripts again.
+
 | Script | What it does |
 |---|---|
 | `validate.ts <analysis.json> [--write]` | Runs the schema checks, the document invariants and the lint rules, recomputes the priorities, and computes the quality score. On a clean run, `--write` stores the results in the document; `render.ts` requires them and refuses them when they no longer match the document. |
