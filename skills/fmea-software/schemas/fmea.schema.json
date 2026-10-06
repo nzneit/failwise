@@ -870,7 +870,7 @@
         },
         "validator_version": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The version of the plugin manifest whose validate.ts wrote the block."
+          "description": "The version of the plugin whose validate.ts wrote the block."
         }
       }
     }
