@@ -181,6 +181,23 @@ function errnoError(code: string, message: string): Error {
   return Object.assign(new Error(`${code}: ${message}`), { code });
 }
 
+/** Runs `fn` with one function of node:fs replaced; io.ts imports it by name, so the named exports
+ *  are re-synced after the patch and after the restore. */
+function withFsPatched<K extends "closeSync" | "fchmodSync" | "fchownSync" | "openSync" | "rmSync">(name: K, implementation: (typeof fs)[K], fn: () => void): void {
+  const patched = mock.method(fs, name, implementation);
+  syncBuiltinESMExports();
+  try {
+    fn();
+  } finally {
+    patched.mock.restore();
+    syncBuiltinESMExports();
+  }
+}
+
+function modeText(mode: fs.Mode | null | undefined): string {
+  return typeof mode === "number" ? mode.toString(8) : String(mode);
+}
+
 const NO_MODES = process.platform === "win32" ? "Windows keeps no permission bits beyond read-only" : false;
 const NO_LINKS = process.platform === "win32" ? "a symbolic link needs a privilege on Windows" : false;
 
@@ -230,11 +247,30 @@ test("writeFileAtomic never holds the new content under permission bits other th
   });
 });
 
+test("writeFileAtomic creates the staged file of a replaced file with the owner's bits only", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "mode-640.json");
+    writeFileSync(path, "old", "utf8");
+    chmodSync(path, 0o640);
+    // The creation mode the temporary file is opened with, before its bits are changed.
+    const modes: string[] = [];
+    const realOpen = fs.openSync;
+    const open = (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode | null): number => {
+      if (String(file).includes(".tmp-")) modes.push(modeText(mode));
+      return realOpen(file, flags, mode);
+    };
+    withFsPatched("openSync", open, () => writeFileAtomic(path, "new"));
+    assert.deepEqual(modes, ["600"]);
+    assert.equal(readFileSync(path, "utf8"), "new");
+  });
+});
+
 /** A group the running user belongs to besides the one new files get, if there is one. */
 const OTHER_GROUP = process.platform === "win32" ? undefined : process.getgroups?.().find((gid) => gid !== process.getegid?.());
 
 test("writeFileAtomic keeps the group of the file it replaces", { skip: OTHER_GROUP === undefined ? "the user belongs to no second group" : false }, () => {
   withTempDir((dir) => {
+    chmodSync(dir, 0o700); // a setgid folder would give new files its group
     const path = join(dir, "grouped.json");
     writeFileSync(path, "old", "utf8");
     chownSync(path, statSync(path).uid, OTHER_GROUP ?? statSync(path).gid);
@@ -248,6 +284,7 @@ test("writeFileAtomic keeps the group of the file it replaces", { skip: OTHER_GR
 
 test("writeFileAtomic drops the group bits when it may not keep the group of the file it replaces", { skip: OTHER_GROUP === undefined ? "the user belongs to no second group" : false }, () => {
   withTempDir((dir) => {
+    chmodSync(dir, 0o700); // a setgid folder would give new files its group
     const path = join(dir, "grouped.json");
     writeFileSync(path, "old", "utf8");
     chownSync(path, statSync(path).uid, OTHER_GROUP ?? statSync(path).gid);
@@ -265,6 +302,34 @@ test("writeFileAtomic drops the group bits when it may not keep the group of the
     assert.equal(readFileSync(path, "utf8"), "new");
     assert.equal(statSync(path).gid, process.getegid?.());
     assert.equal((statSync(path).mode & 0o777).toString(8), "600");
+  });
+});
+
+test("writeFileAtomic asks for no change of the bits when the staged file already has them", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "mode-600.json");
+    writeFileSync(path, "old", "utf8");
+    chmodSync(path, 0o600);
+    const refuse = (): void => {
+      throw errnoError("EPERM", "operation not permitted, fchmod");
+    };
+    withFsPatched("fchmodSync", refuse, () => writeFileAtomic(path, "new"));
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.equal((statSync(path).mode & 0o777).toString(8), "600");
+  });
+});
+
+test("writeFileAtomic asks for no change of the group when the staged file already has it", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "mode-640.json");
+    writeFileSync(path, "old", "utf8");
+    chmodSync(path, 0o640);
+    const refuse = (): void => {
+      throw errnoError("EPERM", "operation not permitted, fchown");
+    };
+    withFsPatched("fchownSync", refuse, () => writeFileAtomic(path, "new"));
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.equal((statSync(path).mode & 0o777).toString(8), "640");
   });
 });
 
@@ -324,6 +389,32 @@ test("writeFileAtomic goes on when the platform refuses to sync the folder after
   });
 });
 
+test("writeFileAtomic closes the staged file and the folder it syncs", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    writeFileSync(path, "old", "utf8");
+    const opened: string[] = [];
+    const closed: number[] = [];
+    const descriptors: number[] = [];
+    const realOpen = fs.openSync;
+    const realClose = fs.closeSync;
+    const open = (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode | null): number => {
+      const fd = realOpen(file, flags, mode);
+      opened.push(fs.fstatSync(fd).isDirectory() ? "folder" : "file");
+      descriptors.push(fd);
+      return fd;
+    };
+    const close = (fd: number): void => {
+      closed.push(fd);
+      realClose(fd);
+    };
+    withFsPatched("openSync", open, () => withFsPatched("closeSync", close, () => writeFileAtomic(path, "new")));
+    assert.deepEqual(opened, ["file", "folder"]);
+    assert.deepEqual(closed, descriptors);
+    assert.equal(readFileSync(path, "utf8"), "new");
+  });
+});
+
 test("writeFileAtomic leaves the old file whole and removes the staged file when the staged file cannot be synced", () => {
   withTempDir((dir) => {
     const path = join(dir, "out.json");
@@ -340,6 +431,27 @@ test("writeFileAtomic leaves the old file whole and removes the staged file when
   });
 });
 
+test("writeFileAtomic names the path it was given when a write through a symbolic link fails", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "real"));
+    mkdirSync(join(dir, "view"));
+    const target = join(dir, "real", "doc.json");
+    const link = join(dir, "view", "doc.json");
+    writeFileSync(target, "old", "utf8");
+    symlinkSync(join("..", "real", "doc.json"), link);
+    const refuse = (kind: "file" | "folder"): Error | undefined => (kind === "file" ? errnoError("EIO", "i/o error, fsync") : undefined);
+    assert.throws(() => recordSyncs(refuse, () => writeFileAtomic(link, "new")), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_WRITE");
+      assert.equal(err.message, `cannot write ${link}: EIO: i/o error, fsync`);
+      return true;
+    });
+    assert.equal(lstatSync(link).isSymbolicLink(), true);
+    assert.equal(readFileSync(target, "utf8"), "old");
+    assert.deepEqual(readdirSync(join(dir, "real")), ["doc.json"]);
+  });
+});
+
 test("writeFileAtomic does not write through a symbolic link left at its temporary path", { skip: NO_LINKS }, () => {
   withTempDir((dir) => {
     const path = join(dir, "out.json");
@@ -351,6 +463,34 @@ test("writeFileAtomic does not write through a symbolic link left at its tempora
     assert.equal(readFileSync(elsewhere, "utf8"), "untouched");
     assert.equal(lstatSync(path).isSymbolicLink(), false);
     assert.equal(readFileSync(path, "utf8"), "new");
+    assert.deepEqual(readdirSync(dir).sort(), ["elsewhere.txt", "out.json"]);
+  });
+});
+
+test("writeFileAtomic does not follow a symbolic link put at its temporary path after the removal", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    const elsewhere = join(dir, "elsewhere.txt");
+    writeFileSync(path, "old", "utf8");
+    writeFileSync(elsewhere, "untouched", "utf8");
+    symlinkSync(elsewhere, `${path}.tmp-${process.pid}`);
+    // The first removal, before the open, does nothing, as if the link were put there just after it.
+    let removals = 0;
+    const realRemove = fs.rmSync;
+    const remove = (file: fs.PathLike, options?: fs.RmOptions): void => {
+      removals += 1;
+      if (removals > 1) realRemove(file, options);
+    };
+    withFsPatched("rmSync", remove, () => {
+      assert.throws(() => writeFileAtomic(path, "new"), (err: unknown) => {
+        assert.ok(err instanceof ScriptError);
+        assert.equal(err.code, "IO_WRITE");
+        assert.ok(err.message.startsWith(`cannot write ${path}: EEXIST`));
+        return true;
+      });
+    });
+    assert.equal(readFileSync(elsewhere, "utf8"), "untouched");
+    assert.equal(readFileSync(path, "utf8"), "old");
     assert.deepEqual(readdirSync(dir).sort(), ["elsewhere.txt", "out.json"]);
   });
 });

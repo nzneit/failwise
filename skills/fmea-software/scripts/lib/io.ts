@@ -38,9 +38,10 @@ export function readJsonFile(path: string): unknown {
 /** Write through a temporary file beside the file the path names and rename it into place, so
  *  neither a crash nor a power loss leaves a half-written analysis document behind. A symbolic
  *  link to an existing file is followed: the file it points to is replaced and the link stays. A
- *  replaced file's group and permission bits are kept; a new file gets the writer's group and the
- *  umask's bits. The temporary file is synced to disk before the rename, and the folder after it
- *  where the platform allows a folder to be synced. */
+ *  replaced file's group and permission bits are kept, except that a group the writer may not give
+ *  is left as the writer's own with the group bits dropped; a new file gets the writer's group and
+ *  the umask's bits. The temporary file is synced to disk before the rename, and the folder after
+ *  it where the platform allows a folder to be synced. */
 export function writeFileAtomic(path: string, content: string): void {
   const target = resolveTarget(path);
   const tmp = `${target}.tmp-${process.pid}`;
@@ -71,8 +72,9 @@ function resolveTarget(path: string): string {
 
 /** Creates the temporary file afresh (anything left at its path is removed first, and the exclusive
  *  flag never follows a link there). When it replaces a file it starts with the owner's bits only
- *  and is given the replaced file's group and permission bits before any content goes in, so no one
- *  the replaced file shuts out can open it. Then the content is written and synced to disk. */
+ *  and is given the replaced file's group and permission bits (as far as keepAccess may give them)
+ *  before any content goes in, so no one the replaced file shuts out can open it. Then the content
+ *  is written and synced to disk. */
 function stageFile(tmp: string, content: string, replaced: Stats | undefined): void {
   rmSync(tmp, { force: true });
   const fd = openSync(tmp, "wx", replaced === undefined ? 0o666 : replaced.mode & 0o700);
