@@ -189,6 +189,15 @@ test("a subprocess run of track.ts cannot find gh: a valid document stops at TRA
 
 // plan
 
+test("plan accepts a document whose validated_at is written with a lower-case t and z", async (t) => {
+  const doc = docWith(act(1));
+  doc.computed = { quality_score: 0, lints: [], validated_at: "2026-10-02t00:00:00z", validator_version: "0.0.1" };
+  const s = session(t, doc);
+  const { status, stderr } = await s.track("plan");
+  assert.equal(status, 0, stderr);
+  assert.equal(s.built(), 1);
+});
+
 test("plan prints the result of §6.6 and leaves the file byte for byte as it was", async (t) => {
   const a2 = linked(act(2), 2);
   const s = session(t, docWith(act(1), a2, act(3, "Completed")), { marked: [remote(2, a2)] });
