@@ -205,6 +205,21 @@ test("a document that already carries computed is validated, not compared agains
   assert.equal(result.quality_score, 88);
 });
 
+test("--write accepts a validated_at written with a lower-case t and z and replaces it with a new stamp", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    const doc = golden();
+    doc.computed = { quality_score: 3, lints: [], validated_at: "2020-01-01t00:00:00z", validator_version: "0.0.1" };
+    writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+    const r = runCli("validate.ts", [path, "--write"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.match(String(after.computed?.validated_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.equal(after.computed?.quality_score, 88);
+  });
+});
+
 test("the CLI exits 2 with TABLE_ID_MISMATCH when --table-file names another table", () => {
   const r = runCli("validate.ts", [fixturePath("checkout-service.fmea.json"), "--table-file", fixturePath("tables", "well-formed-alt.json")]);
   assert.equal(r.status, 2);
