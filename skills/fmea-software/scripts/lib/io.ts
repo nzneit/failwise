@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { ScriptError } from "./codes.ts";
+import { findDuplicateKey } from "./duplicate-keys.ts";
 
 export function readTextFile(path: string): string {
   try {
@@ -10,13 +11,29 @@ export function readTextFile(path: string): string {
   }
 }
 
+/** The parsed JSON at `path`. A text JSON.parse refuses, and a text in which an object carries one
+ *  key twice, are IO_READ, the second at the pointer of that object: JSON.parse would keep the last
+ *  of the values without a word, and the next --write would drop the first from the file. */
 export function readJsonFile(path: string): unknown {
-  const text = readTextFile(path);
+  return parseJsonText(path, readTextFile(path));
+}
+
+/** The value of the JSON text read from `path`: IO_READ when JSON.parse refuses it, and IO_READ at
+ *  the object's pointer when an object in it carries one key twice. Every function of this module
+ *  that parses a file's text calls it, so no second reader here can skip the check. */
+function parseJsonText(path: string, text: string): unknown {
+  let parsed: unknown;
   try {
-    return JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch (err) {
     throw new ScriptError("IO_READ", `cannot parse ${path} as JSON: ${(err as Error).message}`);
   }
+  const repeat = findDuplicateKey(text);
+  if (repeat !== null) {
+    const where = repeat.pointer === "" ? "the top-level object" : "the object";
+    throw new ScriptError("IO_READ", `cannot read ${path}: the key ${JSON.stringify(repeat.key)} appears more than once in ${where}`, repeat.pointer);
+  }
+  return parsed;
 }
 
 /** Write through a sibling temporary path and rename into place, so a crash mid-write never

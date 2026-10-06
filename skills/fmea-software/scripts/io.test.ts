@@ -47,6 +47,20 @@ test("readJsonFile on unparsable content is IO_READ", () => {
   });
 });
 
+test("readJsonFile refuses an object that repeats a key with IO_READ, at the object's pointer, naming the key", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "repeat.json");
+    writeFileSync(path, '{"meta": {"name": "First", "name": "Second"}}', "utf8");
+    assert.throws(() => readJsonFile(path), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_READ");
+      assert.equal(err.pointer, "/meta");
+      assert.equal(err.message, `cannot read ${path}: the key "name" appears more than once in the object`);
+      return true;
+    });
+  });
+});
+
 test("readTextFile returns the text and is IO_READ when the file is missing", () => {
   withTempDir((dir) => {
     const path = join(dir, "a.md");
