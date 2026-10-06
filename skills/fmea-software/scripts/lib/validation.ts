@@ -10,17 +10,19 @@ import type { PriorityTable } from "./table.ts";
 import { checkSchema } from "./schema.ts";
 import { checkInvariants, checkPriorities } from "./invariants.ts";
 import type { MachineRule } from "./lints.ts";
-import { MACHINE_RULES, runLints } from "./lints.ts";
+import { MACHINE_RULES, runLints, tablePropertyLints } from "./lints.ts";
 import { qualityScore } from "./quality.ts";
 
 export interface ValidateResult { ok: boolean; errors: Issue[]; lints: Lint[]; quality_score: number }
 
+/** Schema, then the invariants and the priority recomputation, then the lints: the document's
+ *  machine rules followed by one warning per property of §7 the loaded table breaks. */
 export function validateDocument(raw: unknown, table: PriorityTable, rules: MachineRule[] = MACHINE_RULES): ValidateResult {
   const schemaIssues = checkSchema(raw);
   if (schemaIssues.length > 0) return { ok: false, errors: schemaIssues, lints: [], quality_score: 0 };
   const doc = raw as FmeaDocument;
   const errors: Issue[] = [...checkInvariants(doc), ...checkPriorities(doc, table)];
-  const lints = runLints(doc, rules);
+  const lints = [...runLints(doc, rules), ...tablePropertyLints(table)];
   return { ok: errors.length === 0, errors, lints, quality_score: qualityScore(doc.chains.length, lints) };
 }
 

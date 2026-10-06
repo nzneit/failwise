@@ -6,6 +6,7 @@ import process from "node:process";
 import { validatorVersion } from "./validate.ts";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
+import { bandTable, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { clone, fixturePath, loadFixture, runCli, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument, Lint } from "./lib/types.ts";
@@ -196,6 +197,47 @@ test("the CLI exits 2 with TABLE_ID_MISMATCH when --table-file names another tab
   const r = runCli("validate.ts", [fixturePath("checkout-service.fmea.json"), "--table-file", fixturePath("tables", "well-formed-alt.json")]);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /^error TABLE_ID_MISMATCH: priority-table-mismatch: .* at \/meta\/scales\/priority_table$/m);
+});
+
+// ---- A loaded table that breaks a priority property: a warning after the document's lints.
+
+const S1_FINDING: Lint = {
+  rule: "priority-table-property", severity: "warning", pointer: "/meta/scales/priority_table",
+  message: 'table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)',
+};
+
+/** The test table with one cell of S band 1 raised to M, which breaks the S-of-1 property alone. */
+function s1Broken() {
+  const t = bandTable(["L", "M", "H"]);
+  t.cells["1-3-3"] = "M";
+  return t;
+}
+
+test("validateDocument adds the loaded table's broken properties after the document's lints, as warnings that change neither ok nor the score", () => {
+  const doc = minimalDocOn(s1Broken());
+  doc.meta.ground_rules = ["rate against the shipped anchors"];
+  doc.meta.assumptions = [{ text: "the gateway holds its published SLA", owner: "T. Tester", status: "open" }];
+  doc.chains[0].ratings.S = rating(8, "provisional");
+  const result = validateDocument(doc, s1Broken());
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(result.lints, [
+    { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/S", message: "The rating is still provisional and needs re-scoring" },
+    S1_FINDING,
+  ]);
+  assert.equal(result.quality_score, 100);
+});
+
+test("validate.ts --write with a --table-file that breaks a property exits 0 and stores the finding in computed.lints", () => {
+  withTempDir((dir) => {
+    const tableFile = writeTable(dir, s1Broken());
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, JSON.stringify(minimalDocOn(s1Broken()), null, 2) + "\n");
+    const r = runCli("validate.ts", [path, "--write", "--table-file", tableFile]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.deepEqual(after.computed?.lints.at(-1), S1_FINDING);
+  });
 });
 
 test("a missing input file exits 3 with IO_READ", () => {

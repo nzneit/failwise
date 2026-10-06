@@ -8,7 +8,7 @@ import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
-import { fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir, withoutTracker } from "./test-helpers.ts";
+import { bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
@@ -1018,4 +1018,21 @@ test("a row section's action line ends with the same tracker text when the actio
   assert.ok(section.includes(`target 2026-11-01)</span> ${text}</li>`), "the linked action line");
   assert.ok(section.includes("add a probe <span"), "the unlinked action");
   assert.ok(!section.includes("add a probe") || !/add a probe[^]*?<\/li>/.exec(section)?.[0].includes("seen"), "no tracker text on the unlinked line");
+});
+
+test("a document validated under a --table-file that breaks a priority property renders, the finding listed under Automated checks", () => {
+  const broken = bandTable(["L", "M", "H"]);
+  broken.cells["1-3-3"] = "M";
+  withTempDir((dir) => {
+    const tableFile = writeTable(dir, broken);
+    const path = join(dir, "analysis.json");
+    const out = join(dir, "report.html");
+    writeFileSync(path, JSON.stringify(minimalDocOn(broken), null, 2) + "\n");
+    assert.equal(runCli("validate.ts", [path, "--write", "--table-file", tableFile]).status, 0);
+    const r = runCli("render.ts", [path, "--out", out, "--table-file", tableFile]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const checks = sectionOf(readFileSync(out, "utf8"), "lints", "provenance");
+    assert.ok(checks.includes(escapeHtml('table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)')), checks);
+  });
 });
