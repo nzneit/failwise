@@ -22,11 +22,13 @@ import {
   assertExtension,
   assertWritable,
   readJsonFile,
+  readJsonWithBytes,
   readTextFile,
   stringifyDocument,
   writeFileAtomic,
 } from "./lib/io.ts";
-import { withTempDir } from "./test-helpers.ts";
+import { changedMessage, withTempDir } from "./test-helpers.ts";
+import { rmSync } from "node:fs";
 
 test("readJsonFile parses a JSON file", () => {
   withTempDir((dir) => {
@@ -560,4 +562,151 @@ test("assertWritable refuses an existing path without force", () => {
 
 test("stringifyDocument uses two-space indentation and a trailing newline", () => {
   assert.equal(stringifyDocument({ a: 1, b: [2] }), '{\n  "a": 1,\n  "b": [\n    2\n  ]\n}\n');
+});
+
+test("readJsonWithBytes returns the parsed value and the file's exact bytes", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    const bytes = Buffer.from('{\r\n  "ok": true }  \n', "utf8");
+    writeFileSync(path, bytes);
+    const read = readJsonWithBytes(path);
+    assert.deepEqual(read.value, { ok: true });
+    assert.ok(read.bytes.equals(bytes));
+  });
+});
+
+test("writeFileAtomic given the bytes read replaces the file only while it still holds them", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    writeFileSync(path, "read"); // a save of the same bytes changes nothing
+    writeFileAtomic(path, "first", read);
+    assert.equal(readFileSync(path, "utf8"), "first");
+    writeFileSync(path, "other"); // another writer's save after the script's last write
+    assert.throws(() => writeFileAtomic(path, "second", Buffer.from("first")), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_CHANGED");
+      assert.equal(err.message, changedMessage(path));
+      return true;
+    });
+    assert.equal(readFileSync(path, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir), ["a.json"]);
+  });
+});
+
+test("writeFileAtomic given the bytes read does not write back a file removed since: IO_WRITE and no file", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    rmSync(path);
+    assert.throws(() => writeFileAtomic(path, "new", read), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_WRITE");
+      assert.ok(err.message.startsWith(`cannot write ${path}: ENOENT`), err.message);
+      return true;
+    });
+    assert.deepEqual(readdirSync(dir), []);
+  });
+});
+
+test("writeFileAtomic through a symbolic link compares the linked file and names the link in IO_CHANGED", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const real = join(dir, "real.json");
+    const link = join(dir, "a.json");
+    writeFileSync(real, "read");
+    symlinkSync(real, link);
+    const read = readFileSync(link);
+    writeFileSync(real, "other");
+    assert.throws(() => writeFileAtomic(link, "new", read), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_CHANGED");
+      assert.equal(err.message, changedMessage(link));
+      return true;
+    });
+    assert.ok(lstatSync(link).isSymbolicLink());
+    assert.equal(readFileSync(real, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir).sort(), ["a.json", "real.json"]);
+  });
+});
+
+test("writeFileAtomic compares the file it resolved and will replace, not the path resolved again", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const first = join(dir, "first.json");
+    const second = join(dir, "second.json");
+    const link = join(dir, "a.json");
+    writeFileSync(first, "read");
+    writeFileSync(second, "read");
+    symlinkSync(first, link);
+    const read = readFileSync(link);
+    writeFileSync(first, "other");
+    const realRealpath = fs.realpathSync;
+    const realpath = mock.method(fs, "realpathSync", (p: string) => {
+      const resolved = realRealpath(p);
+      if (p === link) {
+        fs.rmSync(link);
+        symlinkSync(second, link); // the link is moved once the write has resolved it
+      }
+      return resolved;
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => writeFileAtomic(link, "new", read), { code: "IO_CHANGED" });
+    } finally {
+      realpath.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(readFileSync(first, "utf8"), "other");
+  });
+});
+
+test("writeFileAtomic compares after the temporary file is staged, just before the rename", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    const realFsync = fs.fsyncSync;
+    let saved = false;
+    const fsync = mock.method(fs, "fsyncSync", (fd: number) => {
+      realFsync(fd);
+      if (!saved) {
+        saved = true;
+        writeFileSync(path, "other"); // another writer saves while the temporary file is synced
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => writeFileAtomic(path, "new", read), { code: "IO_CHANGED" });
+    } finally {
+      fsync.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(readFileSync(path, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir), ["a.json"]);
+  });
+});
+
+test("readJsonWithBytes keeps the raw bytes: an invalid UTF-8 byte is compared as it is on disk", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    const bytes = Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d, 0x0a]); // {"a":"<FF>"}
+    writeFileSync(path, bytes);
+    const read = readJsonWithBytes(path);
+    assert.ok(read.bytes.equals(bytes));
+    writeFileAtomic(path, "{}\n", read.bytes);
+    assert.equal(readFileSync(path, "utf8"), "{}\n");
+  });
+});
+
+test("readJsonWithBytes on a missing file is IO_READ with the system message", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "missing.json");
+    assert.throws(() => readJsonWithBytes(path), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_READ");
+      assert.ok(err.message.startsWith(`cannot read ${path}: ENOENT`), err.message);
+      return true;
+    });
+  });
 });

@@ -121,8 +121,9 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
   `.claude-plugin/plugin.json` and in `skills/fmea-software/scripts/lib/version.ts`: a release
   changes both, and `validate.test.ts` fails when they differ.
 - Keep the one-line coded error contract: each failure is one line on stderr,
-  `error <CODE>: <message>`, and exits 1 for usage, 2 for validation, 3 for I/O (design spec §9).
-  The skill's codes come from the one list in `skills/fmea-software/scripts/lib/codes.ts`.
+  `error <CODE>: <message>`, and exits 1 for usage, 2 for validation, 3 for I/O and for `INTERNAL`
+  (design spec §9). The skill's codes come from the one list in
+  `skills/fmea-software/scripts/lib/codes.ts`.
   A run that exits 0 may also print, after its output, one line `warning <rule>: <message>` on
   stderr per finding that does not fail it, under the rule id of the lint `validate.ts` records for
   the same finding: `priority.ts` does so for each priority property a loaded table breaks.

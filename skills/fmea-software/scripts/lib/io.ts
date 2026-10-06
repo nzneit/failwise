@@ -61,18 +61,38 @@ function parseJsonText(path: string, text: string): unknown {
   return parsed;
 }
 
+/** A JSON file as a script that will replace it reads it: the parsed value, and the bytes the file
+ *  held before it was parsed, which writeFileAtomic compares just before its rename. The bytes are
+ *  read first, so a save that lands between the two reads makes the comparison refuse. */
+export interface JsonRead { value: unknown; bytes: Buffer }
+
+export function readJsonWithBytes(path: string): JsonRead {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path);
+  } catch (err) {
+    throw new ScriptError("IO_READ", `cannot read ${path}: ${(err as Error).message}`);
+  }
+  return { value: readJsonFile(path), bytes };
+}
+
 /** Write through a temporary file beside the file the path names and rename it into place, so
  *  neither a crash nor a power loss leaves a half-written analysis document behind. A symbolic
  *  link to an existing file is followed: the file it points to is replaced and the link stays. A
  *  replaced file's group and permission bits are kept, except that a group the writer may not give
  *  is left as the writer's own with the group bits dropped; a new file gets the writer's group and
  *  the umask's bits. The temporary file is synced to disk before the rename, and the folder after
- *  it where the platform allows a folder to be synced. */
-export function writeFileAtomic(path: string, content: string): void {
+ *  it where the platform allows a folder to be synced. Given `expected`, the bytes the script last
+ *  read or wrote the file as, it reads the file again just before the rename and, when they
+ *  differ, removes the temporary file and refuses with IO_CHANGED: another writer saved the file
+ *  after the script last read or wrote it, and the rename would put the script's version over
+ *  that writer's change. */
+export function writeFileAtomic(path: string, content: string, expected?: Uint8Array): void {
   const target = resolveTarget(path);
   const tmp = `${target}.tmp-${process.pid}`;
   try {
     stageFile(tmp, content, statSync(target, { throwIfNoEntry: false }));
+    if (expected !== undefined) assertUnchanged(path, target, expected);
     renameSync(tmp, target);
   } catch (err) {
     try {
@@ -80,6 +100,7 @@ export function writeFileAtomic(path: string, content: string): void {
     } catch {
       // the write already failed; the removal is best effort
     }
+    if (err instanceof ScriptError) throw err;
     throw new ScriptError("IO_WRITE", `cannot write ${path}: ${(err as Error).message}`);
   }
   syncFolder(dirname(target));
@@ -148,6 +169,13 @@ function syncFolder(folder: string): void {
     }
   } catch {
     // the document is in place; only the durability of the rename is lost
+  }
+}
+
+/** A file that cannot be read again is an IO_WRITE failure, through writeFileAtomic's catch. */
+function assertUnchanged(path: string, target: string, expected: Uint8Array): void {
+  if (!readFileSync(target).equals(expected)) {
+    throw new ScriptError("IO_CHANGED", `${path} changed after this command last read or wrote it, so it was not replaced and holds the other writer's change: run the command again on the file as it now is`);
   }
 }
 

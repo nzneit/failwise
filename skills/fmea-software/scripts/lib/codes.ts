@@ -1,6 +1,6 @@
 // The one closed list of failure codes shared by every script (spec section 9).
-// Each code maps to exactly one process exit status: 1 usage, 2 validation, 3 I/O. A command
-// started under a Node too old to run it is a usage failure.
+// Each code maps to exactly one process exit status: 1 usage, 2 validation, 3 I/O and INTERNAL.
+// A command started under a Node too old to run it is a usage failure.
 
 const EXIT_USAGE = 1;
 const EXIT_VALIDATION = 2;
@@ -22,6 +22,7 @@ export const CODES = {
   IO_READ: EXIT_IO,
   IO_WRITE: EXIT_IO,
   IO_EXISTS: EXIT_IO,
+  IO_CHANGED: EXIT_IO, // raised by writeFileAtomic in io.ts when the file changed between a script's read and its write
   TABLE_MALFORMED: EXIT_IO,
   TRACKER_UNAVAILABLE: EXIT_IO,
   TRACKER_REJECTED: EXIT_IO,

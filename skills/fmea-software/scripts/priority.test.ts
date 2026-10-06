@@ -3,12 +3,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ScriptError } from "./lib/codes.ts";
 import { loadTable } from "./lib/table.ts";
 import { applyPriorities, assertPriorityInput } from "./priority.ts";
-import { clone, fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
+import { changedMessage, clone, fixturePath, loadFixture, minimalDoc, rating, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument } from "./lib/types.ts";
 import { bandTable, writeTable } from "./test-helpers.ts";
 import { chmodSync, rmSync } from "node:fs";
@@ -115,6 +115,21 @@ test("CLI with a malformed --table-file exits 3 with a TABLE_MALFORMED line and 
     assert.match(result.stderr, /gap/);
     assert.equal(result.stdout, "");
     assert.equal(readFileSync(path, "utf8"), before);
+  });
+});
+
+test("CLI with --write refuses with IO_CHANGED and keeps the save another writer made during the run", () => {
+  withTempDir((dir) => {
+    const path = writeMinimalWithoutPriority(dir);
+    const other = minimalDoc();
+    other.meta.name = "Saved by another writer";
+    const saved = JSON.stringify(other, null, 2) + "\n";
+    const result = runCliWithOtherWriter("priority.ts", [path, "--write"], path, saved);
+    assert.equal(result.stderr, `error IO_CHANGED: ${changedMessage(path)}\n`);
+    assert.equal(result.status, 3);
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), saved);
+    assert.deepEqual(readdirSync(dir), ["analysis.json"]);
   });
 });
 
