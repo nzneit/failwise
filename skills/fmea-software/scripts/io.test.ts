@@ -77,6 +77,8 @@ test("readTextFile strips one leading byte-order mark and keeps any further mark
     const path = join(dir, "marks.md");
     writeFileSync(path, "\uFEFF\uFEFFhello\uFEFF\n", "utf8");
     assert.equal(readTextFile(path), "\uFEFFhello\uFEFF\n");
+    writeFileSync(path, "\uFEFF hello\n", "utf8");
+    assert.equal(readTextFile(path), " hello\n");
   });
 });
 
