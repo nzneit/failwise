@@ -49,6 +49,14 @@ test("isRfc3339DateTime refuses in lower case what it refuses in upper case, and
   assert.equal(isRfc3339DateTime("2026-09-07x10:00:00Z"), false);
 });
 
+test("isRfc3339DateTime refuses a doubled letter, a letter after an offset, and a trailing newline", () => {
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00z"), true);
+  assert.equal(isRfc3339DateTime("2026-09-07tt10:00:00Z"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00Zz"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00z+01:00"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07T10:00:00Z\n"), false);
+});
+
 test("isRfc3339DateTime rejects a bad hour, a bad offset, a space separator, and a missing seconds field", () => {
   assert.equal(isRfc3339DateTime("2026-09-07T24:00:00Z"), false);
   assert.equal(isRfc3339DateTime("2026-09-07T10:60:00Z"), false);
