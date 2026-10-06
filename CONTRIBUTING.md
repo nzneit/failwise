@@ -85,7 +85,9 @@ changed it writes a before, an after and a difference image to `build/compare/ch
 summary in `build/compare/summary.md` and a viewer in `build/compare/html/`. A changed view is not a
 failure: read the summary and look at every changed view before calling the change done. The command
 exits 1 only when a view could not be judged or the comparison could not be done. A change you did
-not intend is a finding. `--base <commit>` compares against another commit.
+not intend is a finding. When the two reports are byte for byte the same, the comparison
+photographs nothing, writes no viewer, and says so. `--base <commit>` compares against another
+commit.
 
 `node tools/shots.ts` writes a screenshot of every part of the report, at every width, to
 `build/shots/`, with the print PDF, for a look at the report as it is. A part image is cut at its
@@ -99,7 +101,8 @@ local run names the engines it did not run. CI runs the gate and the screenshots
 engines and uploads them, as the `browser-checks` artifact, only when one of them fails. On a pull
 request it also runs the comparison on Chromium against the pull request's base, shows its summary
 on the run's page, and uploads the summary and the viewer as the `report-changes` artifact when a
-view changed or the comparison itself failed.
+view changed or the comparison itself failed. In CI the gate uses every core of the runner; the
+screenshots, the comparison and every local run keep Playwright's default, half the logical cores.
 
 `EXPECTED_FAILURES` and `NOT_ASSERTED` in `dev/browser/matrix.ts` are empty. A gap found later is
 recorded there with its reason. The run fails when an expected failure starts to pass, so a change

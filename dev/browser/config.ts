@@ -1,7 +1,10 @@
 // The Playwright configurations of the three browser commands: the gate's checks, the screenshots
 // and the two passes of the report comparison. The gate and the screenshots each write under their
 // own folder of build/browser/, the comparison under build/compare/, and every path is absolute so
-// a configuration means the same wherever Playwright is started from.
+// a configuration means the same wherever Playwright is started from. In CI the gate runs one worker
+// per logical core of the runner; the screenshots, the comparison and every local run keep
+// Playwright's default, half the logical cores. The gate takes no screenshot, and a screenshot can
+// fail when the cores are contended.
 
 import { join } from "node:path";
 import type { PlaywrightTestConfig } from "@playwright/test";
@@ -42,11 +45,16 @@ export function compareConfig(): PlaywrightTestConfig {
   };
 }
 
-/** The configuration of one run: one project per engine, nothing retried, no `.only` allowed. */
+/** The configuration of one run: one project per engine, nothing retried, no `.only` allowed. The gate's, with CI
+ *  set to a non-empty value, read at each call, uses every core of the runner; the screenshots' never sets
+ *  workers and keeps Playwright's default, half the logical cores, since the gate takes no screenshot and a
+ *  screenshot can fail when the cores are contended. */
 export function browserConfig(run: "gate" | "shots", testMatch: string): PlaywrightTestConfig {
   const out = join(import.meta.dirname, "..", "..", "build", "browser", run);
+  const ci = process.env.CI;
   return {
     ...sharedConfig(),
+    ...(run === "gate" && ci !== undefined && ci !== "" ? { workers: "100%" } : {}),
     testMatch,
     use: { trace: "retain-on-failure" },
     outputDir: join(out, "output"),
