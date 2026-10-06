@@ -250,7 +250,7 @@ Every sourced statement in a reference file cites a record id. Every unsourced s
 - A write over a file that another writer saved after the script read or last wrote it is refused with `IO_CHANGED` and leaves that writer's save in place: `validate.ts --write`, `priority.ts --write`, `track.ts apply` and `track.ts refresh --write` (amended 2026-10-06: added.)
 - Every §6 invariant: one passing and one failing fixture; the failing fixture lands in `errors[]` with exit 2.
 - Every `machine` lint rule: one passing and one failing fixture; a fixture with lints and no errors exits 0.
-- Quality score: empty `chains[]` gives 0; a tie case, 8 rows with 1 blocker, gives 88; a blocker at a `/meta` pointer leaves the score unchanged.
+- Quality score: empty `chains[]` gives 0; a tie case, 8 rows with 1 blocker, gives 88; a blocker at a `/meta` pointer gives 0. (amended 2026-10-06: the item read "a blocker at a `/meta` pointer leaves the score unchanged"; a blocker whose pointer lies outside `chains[]` sets the score to 0, as §9 says and `quality.test.ts` holds.)
 - Plugin version: the version `validate.ts --write` records equals the `version` of `.claude-plugin/plugin.json`, and `validate.ts --write` works from a copy of the skill folder with no manifest above it. (amended 2026-10-06: added.)
 - Rendering golden test: the fixture analysis produces HTML containing every §9 section and no unescaped fixture input; a document without `computed` is refused; a document `validate.ts` refuses is refused with its lines; a stale `computed` block is refused (amended 2026-10-05: the last two clauses).
 
