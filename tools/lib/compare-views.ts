@@ -130,6 +130,7 @@ export interface Summary {
   commit: string;
   dirty: boolean;
   hashes: { before: string; after: string };
+  same: boolean; // the two hashes are equal, so no view was photographed
   engines: readonly Engine[];
   views: number;
   changed: string[]; // "<engine> <view> <part>: <detail>"
@@ -145,13 +146,13 @@ function listed(heading: string, lines: string[], preface: string[] = []): strin
 }
 
 export function summaryText(summary: Summary): string {
-  const { hashes } = summary;
+  const { hashes, same } = summary;
   const head = [
     `- Before: ${summary.commit}, where HEAD left ${summary.base}`,
     `- After: the working tree, ${summary.dirty ? "with uncommitted changes" : "with no uncommitted change"}`,
     `- before.html SHA-256: ${hashes.before}`,
     `- after.html SHA-256: ${hashes.after}`,
-    ...(hashes.before === hashes.after ? ["- The two reports are byte for byte the same."] : []),
+    ...(same ? ["- The two reports are byte for byte the same, so no view was photographed."] : []),
     `- Engines: ${summary.engines.join(", ")}`,
     `- Views owed: ${summary.views}`,
   ];
