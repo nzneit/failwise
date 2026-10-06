@@ -16,6 +16,8 @@ const HTML = SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join(""
   '<section id="chains"><div class="key"></div><table class="index"></table>' +
   '<article class="row" id="row-ch-1"></article><article class="row" id="row-ch-2"></article></section>';
 const N = PARTS.length * VIEWS.length; // views owed on one engine
+/** Bytes the after report adds by default: no part, so the two reports differ in bytes and have the same parts. */
+const TAIL = "<p>the working tree</p>";
 /** The Playwright version the messages below were recorded from, on 2026-10-02: a later one may word them otherwise. */
 const RECORDED_WITH = "1.63.0";
 const SIZED = "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveScreenshot\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#header')\n  Expected an image 327px by 2957px, received 351px by 1930px. 57668 pixels (ratio 0.06 of all image pixels) are different.\n\n  Snapshot: 375--header.png\n";
@@ -47,14 +49,20 @@ function withRow(html: string, id: string): string {
   return `${html.slice(0, at)}<article class="row" id="${id}"></article>${html.slice(at)}`;
 }
 
-/** Runs the comparison on a fake machine; `rendered` defaults to HTML on both sides. `calls` holds every child
+/** Two reports with the parts of `html` that differ in bytes, so the two passes run. */
+function differing(html: string): { before: string; after: string } {
+  return { before: html, after: html + TAIL };
+}
+
+/** Runs the comparison on a fake machine; `rendered` defaults to HTML before and HTML with TAIL after, the same
+ *  parts in different bytes. `calls` holds every child
  *  but `--version`, as "<command> <args>" for git and tar and as the arguments alone for Node. */
 function run(argv: string[], fake: FakeOptions = {}): {
   status: number; lines: string[]; errors: string[]; calls: string[];
   env: Record<string, string | undefined>[]; removed: string[]; writes: string[];
   read: (path: string) => string | null; // the fake disk after the run
 } {
-  const recorded = fakeMachine("compare", ROOT, { ...fake, rendered: { before: HTML, after: HTML, ...fake.rendered } });
+  const recorded = fakeMachine("compare", ROOT, { ...fake, rendered: { ...differing(HTML), ...fake.rendered } });
   const status = runCompare(argv, recorded.machine);
   const { lines, errors, removed, writes } = recorded;
   const calls = recorded.calls.map((call) => (call.command === NODE ? call.args : [call.command, ...call.args]).join(" "));
@@ -127,7 +135,7 @@ test("a part on one side only is named as added or removed and is not photograph
 
 test("two rows that reduce to one file name: every view of both UNVERIFIED, neither photographed", () => {
   const html = HTML.replace("row-ch-1", "row-a/b").replace("row-ch-2", "row-a b");
-  const result = run([], { rendered: { before: html, after: html } });
+  const result = run([], { rendered: differing(html) });
   assert.equal(result.status, 1);
   assert.equal(result.errors.length, VIEWS.length);
   assert.equal(result.errors[0], `error UNVERIFIED: chromium ${VIEWS[0]} row-a-b: more than one row id reduces to this file name (row-a/b, row-a b)`);
@@ -173,13 +181,13 @@ test("the before render runs the unpacked tree's renderer on its own fixture, th
   ]);
 });
 
-test("the summary names the before commit and both hashes, and says when the reports are the same", () => {
+test("the summary names the before commit and both hashes, and says when the reports are the same and nothing was photographed", () => {
   const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
-  const same = run([]).read("/repo/build/compare/summary.md") ?? "";
+  const same = run([], { rendered: { before: HTML, after: HTML } }).read("/repo/build/compare/summary.md") ?? "";
   assert.ok(same.includes(`- Before: ${MERGE_BASE}, where HEAD left main\n`));
   assert.ok(same.includes("- After: the working tree, with no uncommitted change\n"));
   assert.ok(same.includes(`- Views owed: ${N}\n`));
-  assert.ok(same.includes(`- before.html SHA-256: ${sha(HTML)}\n- after.html SHA-256: ${sha(HTML)}\n- The two reports are byte for byte the same.\n`));
+  assert.ok(same.includes(`- before.html SHA-256: ${sha(HTML)}\n- after.html SHA-256: ${sha(HTML)}\n- The two reports are byte for byte the same, so no view was photographed.\n`));
   const after = HTML + "<p>changed</p>";
   const differ = run(["--base", "HEAD"], { rendered: { before: HTML, after }, git: { dirty: true } }).read("/repo/build/compare/summary.md") ?? "";
   assert.ok(differ.includes(`- after.html SHA-256: ${sha(after)}\n`));
@@ -295,7 +303,7 @@ test("no part on both sides: UNVERIFIED, exit 1, no pass started, the summary wr
 
 test("every owed part collided: each view UNVERIFIED with its reason, and no pass started with an empty list", () => {
   const html = '<article class="row" id="row-a/b"></article><article class="row" id="row-a b"></article>';
-  const result = run([], { rendered: { before: html, after: html } });
+  const result = run([], { rendered: differing(html) });
   assert.equal(result.status, 1);
   assert.equal(result.errors.length, VIEWS.length);
   assert.ok(result.errors.every((line) => line.endsWith("row-a-b: more than one row id reduces to this file name (row-a/b, row-a b)")));
@@ -310,7 +318,7 @@ test("a view the first pass reports as expected but whose reference file is abse
 // The Review Focus
 test("a row id holding escaped characters is compared under the stem the browser computes", () => {
   const html = HTML.replace('id="row-ch-2"', 'id="row-ch&amp;2&quot;"');
-  const result = run([], { rendered: { before: html, after: html } });
+  const result = run([], { rendered: differing(html) });
   assert.equal(result.status, 0);
   assert.ok(result.env.some((one) => one.FAILWISE_COMPARE_PARTS?.endsWith(",row-ch-2-")));
 });
@@ -339,7 +347,7 @@ test("--base with no value or an empty one: USAGE, nothing started", () => {
 
 test("two rows with one id: the views of that stem UNVERIFIED, exit 1", () => {
   const html = HTML.replace('id="row-ch-2"', 'id="row-ch-1"');
-  const result = run([], { rendered: { before: html, after: html } });
+  const result = run([], { rendered: differing(html) });
   assert.equal(result.status, 1);
   assert.equal(result.errors[0], `error UNVERIFIED: chromium ${VIEWS[0]} row-ch-1: more than one row id reduces to this file name (row-ch-1, row-ch-1)`);
 });
@@ -389,4 +397,47 @@ test("a failing git archive shows its own stderr before the coded line, and only
   assert.deepEqual([said.status, said.errors], [1, ["fatal: not a tree object", line]]);
   const silent = run([], { statuses: { archive: 128 } });
   assert.deepEqual([silent.status, silent.errors], [1, [line]]);
+});
+
+// The same reports
+/** The comparison of two reports that are byte for byte `html`, with no pass results for the fake to give. */
+function same(html: string, env: Record<string, string> = {}): ReturnType<typeof run> {
+  return run([], { env, rendered: { before: html, after: html }, passes: { 1: null, 2: null } });
+}
+
+/** Whether a run started a pass of Playwright's tests or wrote a pass's line. */
+function passStarted(result: ReturnType<typeof run>): boolean {
+  return result.calls.some((call) => call.startsWith(`${PW} test`)) || result.lines.some((line) => line.includes("playwright test"));
+}
+
+test("two reports byte for byte the same: no pass started, no view changed, the line says none was photographed, exit 0", () => {
+  const result = same(HTML);
+  assert.deepEqual([result.status, result.errors, passStarted(result)], [0, [], false]);
+  assert.equal(result.lines.at(-2), `## compare: no view of ${N} changed against ${SHORT}: the two reports are byte for byte the same, so none was photographed`);
+  assert.ok(!result.writes.some((path) => path.startsWith("/repo/build/compare/changed/")));
+});
+
+test("two reports byte for byte the same: changed=0 in the output and the summary appended to the step summary", () => {
+  const result = same(HTML, { GITHUB_STEP_SUMMARY: "/gh/summary", GITHUB_OUTPUT: "/gh/output" });
+  assert.equal(result.read("/gh/output"), "changed=0\n");
+  assert.equal(result.read("/gh/summary"), result.read("/repo/build/compare/summary.md"));
+});
+
+test("two reports byte for byte the same with two rows of one id: the views of that stem UNVERIFIED, the others not, exit 1", () => {
+  const result = same(HTML.replace('id="row-ch-2"', 'id="row-ch-1"'));
+  assert.deepEqual([result.status, passStarted(result)], [1, false]);
+  assert.deepEqual(result.errors, VIEWS.map((view) => `error UNVERIFIED: chromium ${view} row-ch-1: more than one row id reduces to this file name (row-ch-1, row-ch-1)`));
+  assert.match(result.read("/repo/build/compare/summary.md") ?? "", new RegExp(`## Unverified views: ${VIEWS.length}\n`));
+});
+
+test("two reports byte for byte the same with no part: UNVERIFIED, nothing compared, exit 1, no pass started", () => {
+  const result = same("<p>no part</p>");
+  assert.deepEqual([result.status, result.errors, passStarted(result)], [1, ["error UNVERIFIED: no part of the report is on both sides, so nothing was compared"], false]);
+});
+
+test("two reports that differ in bytes and in no view: the plain no-change line, both passes started", () => {
+  const result = run([]);
+  assert.equal(result.status, 0);
+  assert.equal(result.lines.at(-2), `## compare: no view of ${N} changed against ${SHORT}`);
+  assert.equal(result.calls.filter((call) => call.startsWith(`${PW} test`)).length, 2);
 });
