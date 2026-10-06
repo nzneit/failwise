@@ -1,14 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { validatorVersion } from "./validate.ts";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
+import { bandTable, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
-import { clone, fixturePath, loadFixture, runCli, withTempDir } from "./test-helpers.ts";
+import { changedMessage, clone, fixturePath, loadFixture, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument, Lint } from "./lib/types.ts";
+import { spawnSync } from "node:child_process";
+import { cpSync } from "node:fs";
+import { PLUGIN_VERSION } from "./lib/version.ts";
+import { SKILL_ROOT } from "./test-helpers.ts";
 
 const table = loadTable();
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
@@ -86,6 +90,19 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
   });
 });
 
+test("validate.ts --write reads an analysis that begins with a byte-order mark and writes it back without the mark", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, `\uFEFF${readFileSync(fixturePath("checkout-service.fmea.json"), "utf8")}`, "utf8");
+    const r = runCli("validate.ts", [path, "--write"]);
+    assert.equal(r.stderr, "");
+    assert.equal(r.status, 0);
+    const after = readFileSync(path, "utf8");
+    assert.equal(after.startsWith("\uFEFF"), false);
+    assert.equal((JSON.parse(after) as FmeaDocument).computed?.quality_score, 88);
+  });
+});
+
 test("the CLI exits 2, prints one coded stderr line per error, and --write leaves the file byte-identical", () => {
   withTempDir((dir) => {
     const path = join(dir, "analysis.json");
@@ -122,7 +139,7 @@ test("--write adds a computed block and leaves the authored parts alone", () => 
       { meta: first.meta, elements: first.elements, functions: first.functions, chains: first.chains },
       { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, chains: beforeDoc.chains },
     );
-    assert.equal(first.computed?.validator_version, validatorVersion());
+    assert.equal(first.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(first.computed?.quality_score, 88);
     assert.equal(first.computed?.lints.length, 11);
     assert.ok(isRfc3339DateTime(String(first.computed?.validated_at)));
@@ -142,7 +159,7 @@ test("--write replaces an existing computed block whole and keeps it where the f
     const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "chains"]);
     assert.equal(after.computed?.quality_score, 88);
-    assert.equal(after.computed?.validator_version, validatorVersion());
+    assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(after.computed?.lints.length, 11);
   });
 });
@@ -184,6 +201,22 @@ test("a failing --write prints the coded line only, with nothing on stdout", (t)
   });
 });
 
+test("--write refuses with IO_CHANGED and keeps the save another writer made during the run", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, JSON.stringify(golden(), null, 2) + "\n");
+    const other = golden();
+    other.meta.name = "Saved by another writer";
+    const saved = JSON.stringify(other, null, 2) + "\n";
+    const r = runCliWithOtherWriter("validate.ts", [path, "--write"], path, saved);
+    assert.equal(r.stderr, `error IO_CHANGED: ${changedMessage(path)}\n`);
+    assert.equal(r.status, 3);
+    assert.equal(r.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), saved);
+    assert.deepEqual(readdirSync(dir), ["analysis.json"]);
+  });
+});
+
 test("a document that already carries computed is validated, not compared against this run", () => {
   const doc = golden();
   doc.computed = { quality_score: 3, lints: [], validated_at: "2020-01-01T00:00:00Z", validator_version: "0.0.1" };
@@ -192,16 +225,93 @@ test("a document that already carries computed is validated, not compared agains
   assert.equal(result.quality_score, 88);
 });
 
+test("--write accepts a validated_at written with a lower-case t and z and replaces it with a new stamp", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    const doc = golden();
+    doc.computed = { quality_score: 3, lints: [], validated_at: "2020-01-01t00:00:00z", validator_version: "0.0.1" };
+    writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+    const r = runCli("validate.ts", [path, "--write"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.match(String(after.computed?.validated_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.equal(after.computed?.quality_score, 88);
+  });
+});
+
 test("the CLI exits 2 with TABLE_ID_MISMATCH when --table-file names another table", () => {
   const r = runCli("validate.ts", [fixturePath("checkout-service.fmea.json"), "--table-file", fixturePath("tables", "well-formed-alt.json")]);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /^error TABLE_ID_MISMATCH: priority-table-mismatch: .* at \/meta\/scales\/priority_table$/m);
 });
 
+// ---- A loaded table that breaks a priority property: a warning after the document's lints.
+
+const S1_FINDING: Lint = {
+  rule: "priority-table-property", severity: "warning", pointer: "/meta/scales/priority_table",
+  message: 'table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)',
+};
+
+/** The test table with one cell of S band 1 raised to M, which breaks the S-of-1 property alone. */
+function s1Broken() {
+  const t = bandTable(["L", "M", "H"]);
+  t.cells["1-3-3"] = "M";
+  return t;
+}
+
+test("validateDocument adds the loaded table's broken properties after the document's lints, as warnings that change neither ok nor the score", () => {
+  const doc = minimalDocOn(s1Broken());
+  doc.meta.ground_rules = ["rate against the shipped anchors"];
+  doc.meta.assumptions = [{ text: "the gateway holds its published SLA", owner: "T. Tester", status: "open" }];
+  doc.chains[0].ratings.S = rating(8, "provisional");
+  const result = validateDocument(doc, s1Broken());
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(result.lints, [
+    { rule: "rating-provisional", severity: "warning", pointer: "/chains/0/ratings/S", message: "The rating is still provisional and needs re-scoring" },
+    S1_FINDING,
+  ]);
+  assert.equal(result.quality_score, 100);
+});
+
+test("validate.ts --write with a --table-file that breaks a property exits 0 and stores the finding in computed.lints", () => {
+  withTempDir((dir) => {
+    const tableFile = writeTable(dir, s1Broken());
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, JSON.stringify(minimalDocOn(s1Broken()), null, 2) + "\n");
+    const r = runCli("validate.ts", [path, "--write", "--table-file", tableFile]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.deepEqual(after.computed?.lints.at(-1), S1_FINDING);
+  });
+});
+
 test("a missing input file exits 3 with IO_READ", () => {
   const r = runCli("validate.ts", ["/nonexistent/analysis.json"]);
   assert.equal(r.status, 3);
   assert.match(r.stderr, /^error IO_READ: .*\/nonexistent\/analysis\.json/m);
+});
+
+test("the version validate.ts --write records is the version in .claude-plugin/plugin.json", () => {
+  const manifest = JSON.parse(readFileSync(join(SKILL_ROOT, "..", "..", ".claude-plugin", "plugin.json"), "utf8")) as { version?: unknown };
+  assert.equal(PLUGIN_VERSION, manifest.version, "scripts/lib/version.ts and .claude-plugin/plugin.json give different versions; a release changes both");
+});
+
+test("--write works from a copy of the skill folder with no plugin manifest above it, and records the plugin version", () => {
+  withTempDir((dir) => {
+    const skill = join(dir, "skills", "fmea-software");
+    cpSync(SKILL_ROOT, skill, { recursive: true });
+    const path = join(dir, "analysis.json");
+    const doc = golden();
+    delete doc.computed;
+    writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+    const r = spawnSync(process.execPath, [join(skill, "scripts", "validate.ts"), path, "--write"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
+  });
 });
 
 test("a non-JSON input path exits 1 with USAGE", () => {

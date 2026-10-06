@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:fmea-software:schema:fmea:v1",
   "title": "fmea-software analysis document",
-  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
+  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
   "type": "object",
   "additionalProperties": false,
   "required": ["meta", "elements", "functions", "chains"],
@@ -79,7 +79,7 @@
         },
         "change": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of elements and functions added, removed or changed and rows marked stale; each scales.version change; a change of the recorded priority table through priority.ts --write --change-table, naming the table replaced and the one now recorded. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
+          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of elements and functions added, removed or changed and rows marked stale; each scales.version change; a change of the recorded priority table through priority.ts --write --change-table, naming the table replaced and the one now recorded; a person's answer on whether a loaded priority table breaks the priority properties on purpose. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
         }
       }
     },
@@ -870,7 +870,7 @@
         },
         "validator_version": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The version of the plugin manifest whose validate.ts wrote the block."
+          "description": "The version of the plugin whose validate.ts wrote the block."
         }
       }
     }

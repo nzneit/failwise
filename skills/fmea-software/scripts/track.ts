@@ -3,6 +3,7 @@
 // tracker through the four methods of the seam; the provider, the clock, the sleep and stdout are
 // injected, so the tests run against a fake and wait for nothing.
 
+import { Buffer } from "node:buffer";
 import process from "node:process";
 import { ScriptError, formatError } from "./lib/codes.ts";
 import type { Code } from "./lib/codes.ts";
@@ -10,7 +11,7 @@ import type { FmeaDocument, Observed, TrackerConfig, TrackerLink } from "./lib/t
 import { loadTable } from "./lib/table.ts";
 import { parseArgs } from "./lib/args.ts";
 import type { ArgSpec, ParsedArgs } from "./lib/args.ts";
-import { assertExtension, readJsonFile, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
+import { assertExtension, readJsonWithBytes, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
 import { isCalendarDate, nowIso } from "./lib/dates.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { reportValidation, validateDocument } from "./lib/validation.ts";
@@ -53,8 +54,9 @@ const defaultDeps: Deps = {
   write: (text) => { process.stdout.write(text); },
 };
 
-/** One command's run: the validated document, its actions, and the provider behind the wait policy. */
-interface Ctx { path: string; doc: FmeaDocument; refs: ActionRef[]; deps: Deps; provider: Provider; waited: boolean }
+/** One command's run: the validated document, its actions, and the provider behind the wait policy.
+ *  `bytes` is what the file held when the run last read or wrote it, which the next write compares. */
+interface Ctx { path: string; doc: FmeaDocument; bytes: Buffer; refs: ActionRef[]; deps: Deps; provider: Provider; waited: boolean }
 
 interface Done { key: string; pointer: string; outcome: PlannedAction["outcome"]; link: Link }
 /** `link` is there only when the item was created and its link could not be recorded. */
@@ -75,13 +77,14 @@ function print(deps: Deps, result: object): void {
  *  `meta.tracker`. Only then is the provider built. */
 function open(path: string, flags: Flags, deps: Deps): Ctx | number {
   assertExtension(path, ".json", "the analysis file");
-  const raw = readJsonFile(path);
+  const read = readJsonWithBytes(path);
+  const raw = read.value;
   const result = validateDocument(raw, loadTable(stringFlag(flags, "table-file")));
   if (!result.ok) return reportValidation(result);
   const doc = raw as FmeaDocument;
   const config = doc.meta.tracker;
   if (config === undefined) throw new ScriptError("TRACKER_CONFIG", "the document has no meta.tracker", "/meta/tracker");
-  return { path, doc, refs: actionRefs(doc), deps, provider: deps.makeProvider(config), waited: false };
+  return { path, doc, bytes: read.bytes, refs: actionRefs(doc), deps, provider: deps.makeProvider(config), waited: false };
 }
 
 /** A provider request under the wait policy of §6.2: one wait in the run, of 120 seconds or less,
@@ -172,7 +175,15 @@ function record(ctx: Ctx, key: string, link: Link): void {
   const ref = ctx.refs.find((r) => r.key === key);
   if (ref === undefined) throw new Error(`no action has the key ${key}`);
   ref.action.tracker = { ...plainLink(link), linked: ctx.deps.today() };
-  writeFileAtomic(ctx.path, stringifyDocument(ctx.doc));
+  save(ctx);
+}
+
+/** Writes the document to disk unless the file no longer holds what this run last read or wrote:
+ *  then IO_CHANGED, and the file stays as the other writer saved it. */
+function save(ctx: Ctx): void {
+  const content = stringifyDocument(ctx.doc);
+  writeFileAtomic(ctx.path, content, ctx.bytes);
+  ctx.bytes = Buffer.from(content, "utf8");
 }
 
 /** An item was created and its link could not be written into the document: the failure names it. */
@@ -307,7 +318,7 @@ async function refreshCommand(path: string, flags: Flags, deps: Deps): Promise<n
   const written = flags.write === true && seen.length > 0;
   if (written) {
     seen.forEach(({ ref, link, now }, i) => { ref.action.tracker = storedLink(link, now.link, items[i].observed); });
-    writeFileAtomic(ctx.path, stringifyDocument(ctx.doc));
+    save(ctx);
   }
   print(deps, { command: "refresh", target: publicTarget(target), written, items });
   return 0;

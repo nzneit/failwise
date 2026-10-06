@@ -113,9 +113,21 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
 
 - The TypeScript scripts and tools run directly under Node 24.2 or later and take no
   runtime dependencies, except that `track.ts` starts `gh`, the GitHub CLI; keep it that way.
+- No script needs a file outside `skills/fmea-software/` other than the files named on its command
+  line, so the skill folder also runs copied on its own, outside a `node_modules` folder and below
+  no `package.json` that sets another module type; `tools/skill-copy.test.ts` runs the four scripts
+  from such a copy and fails when one of them reaches a file outside it by a path built from its own
+  location or from the working folder. For that reason the plugin's version is written twice, in
+  `.claude-plugin/plugin.json` and in `skills/fmea-software/scripts/lib/version.ts`: a release
+  changes both, and `validate.test.ts` fails when they differ.
 - Keep the one-line coded error contract: each failure is one line on stderr,
-  `error <CODE>: <message>`, and exits 1 for usage, 2 for validation, 3 for I/O (design spec §9).
-  The skill's codes come from the one list in `skills/fmea-software/scripts/lib/codes.ts`.
+  `error <CODE>: <message>`, and exits 1 for usage, 2 for validation, 3 for I/O and for `INTERNAL`
+  (design spec §9). The skill's codes come from the one list in
+  `skills/fmea-software/scripts/lib/codes.ts`.
+  A run that exits 0 may also print, after its output, one line `warning <rule>: <message>` on
+  stderr per finding that does not fail it, under the rule id of the lint `validate.ts` records for
+  the same finding: `priority.ts` does so for each priority property a loaded table breaks.
+  Findings a script reports in its JSON output stay there.
 - Every command must behave the same in bash and fish. Where a shell snippet would differ between
   them, write the step as a TypeScript script that does the shell's work itself, as
   `tools/run-tests.ts` builds its own lists of test files.

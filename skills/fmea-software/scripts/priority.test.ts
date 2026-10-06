@@ -3,13 +3,16 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ScriptError } from "./lib/codes.ts";
 import { loadTable } from "./lib/table.ts";
 import { applyPriorities, assertPriorityInput } from "./priority.ts";
-import { clone, fixturePath, loadFixture, minimalDoc, rating, runCli, withTempDir } from "./test-helpers.ts";
+import { changedMessage, clone, fixturePath, loadFixture, minimalDoc, rating, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
 import type { FmeaDocument } from "./lib/types.ts";
+import { bandTable, writeTable } from "./test-helpers.ts";
+import { chmodSync, rmSync } from "node:fs";
+import process from "node:process";
 
 // Writes the minimal document as it is first written, with its priority block and its
 // meta.scales.priority_table removed, to <dir>/analysis.json and returns the path; the CLI must
@@ -112,6 +115,21 @@ test("CLI with a malformed --table-file exits 3 with a TABLE_MALFORMED line and 
     assert.match(result.stderr, /gap/);
     assert.equal(result.stdout, "");
     assert.equal(readFileSync(path, "utf8"), before);
+  });
+});
+
+test("CLI with --write refuses with IO_CHANGED and keeps the save another writer made during the run", () => {
+  withTempDir((dir) => {
+    const path = writeMinimalWithoutPriority(dir);
+    const other = minimalDoc();
+    other.meta.name = "Saved by another writer";
+    const saved = JSON.stringify(other, null, 2) + "\n";
+    const result = runCliWithOtherWriter("priority.ts", [path, "--write"], path, saved);
+    assert.equal(result.stderr, `error IO_CHANGED: ${changedMessage(path)}\n`);
+    assert.equal(result.status, 3);
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), saved);
+    assert.deepEqual(readdirSync(dir), ["analysis.json"]);
   });
 });
 
@@ -366,6 +384,18 @@ test("CLI with --change-table on a document that records no table: exit 1, USAGE
   });
 });
 
+test("CLI with --table-file given twice exits 1 with a USAGE line naming the flag and leaves the file untouched", () => {
+  withTempDir((dir) => {
+    const { path, text } = writeDoc(dir, recordedDoc(undefined));
+    const shipped = join(import.meta.dirname, "..", "data", "priority-fmea-software-v1.json");
+    const result = runCli("priority.ts", [path, "--write", "--table-file", shipped, "--table-file", ALT_TABLE]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "error USAGE: flag --table-file is given more than once\n");
+    assert.equal(result.stdout, "");
+    assert.equal(readFileSync(path, "utf8"), text);
+  });
+});
+
 test("CLI on a first run records the loaded table, with and without --table-file, and prints the line as before", () => {
   const cases: { args: string[]; loaded: string }[] = [
     { args: [], loaded: SHIPPED_ID },
@@ -411,6 +441,70 @@ test("CLI on a document whose recorded table is not a string refuses with TABLE_
       assert.equal(readFileSync(path, "utf8"), text);
     });
   }
+});
+
+// ---- A loaded table that breaks the priority properties is used, with a warning line per property.
+
+test("CLI with a --table-file that breaks priority properties writes the priorities, exits 0 and prints one warning line per broken property, and none on a run it refuses", () => {
+  const broken = bandTable(["L", "M", "H"]);
+  broken.cells["3-1-1"] = "L";
+  broken.cells["1-3-3"] = "M";
+  withTempDir((dir) => {
+    const tableFile = writeTable(dir, broken);
+    const refused = writeDoc(dir, recordedDoc(SHIPPED_ID));
+    const refusal = runCli("priority.ts", [refused.path, "--write", "--table-file", tableFile]);
+    assert.equal(refusal.status, 2);
+    assert.equal(refusal.stderr, mismatchLine(SHIPPED_ID, broken.id));
+    assert.equal(readFileSync(refused.path, "utf8"), refused.text);
+    const path = writeMinimalWithoutPriority(dir);
+    const result = runCli("priority.ts", [path, "--write", "--table-file", tableFile]);
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout, '{"table": "priority-test-properties", "rows": 1}\n');
+    assert.equal(result.stderr, [
+      'warning priority-table-property: table priority-test-properties breaks "priority never decreases as S, O or D increases" at 3-1-1 (L) below 2-1-1 (M)\n',
+      'warning priority-table-property: table priority-test-properties breaks "S of 9 or 10 is never below M" at 3-1-1 (L)\n',
+      'warning priority-table-property: table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)\n',
+    ].join(""));
+    const doc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
+    assert.deepEqual(doc.chains[0].priority, { value: "M", table: "priority-test-properties", rpn: 96 });
+  });
+});
+
+test("CLI with a --table-file that breaks priority properties prints the IO_WRITE line alone when the write fails", (t) => {
+  const broken = bandTable(["L", "M", "H"]);
+  broken.cells["1-3-3"] = "M";
+  withTempDir((dir) => {
+    const tableFile = writeTable(dir, broken);
+    const path = writeMinimalWithoutPriority(dir);
+    const before = readFileSync(path, "utf8");
+    if (typeof process.getuid === "function" && process.getuid() === 0) {
+      t.skip("this process runs as root, which writes into a read-only directory regardless of its mode");
+      return;
+    }
+    chmodSync(dir, 0o500); // the atomic write cannot create its sibling temporary file
+    try {
+      const probe = join(dir, "probe.tmp");
+      let honoured = false;
+      try {
+        writeFileSync(probe, "");
+        rmSync(probe, { force: true });
+      } catch {
+        honoured = true;
+      }
+      if (!honoured) {
+        t.skip("this filesystem does not honour a read-only directory mode, so the write cannot be made to fail");
+        return;
+      }
+      const r = runCli("priority.ts", [path, "--write", "--table-file", tableFile]);
+      assert.equal(r.status, 3);
+      assert.equal(r.stdout, "");
+      assert.equal(r.stderr.trimEnd().split("\n").length, 1, r.stderr);
+      assert.ok(r.stderr.startsWith("error IO_WRITE: "), r.stderr);
+      assert.equal(readFileSync(path, "utf8"), before);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+  });
 });
 
 test("applyPriorities refuses a document that records another table unless changeTable is set", () => {

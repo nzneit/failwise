@@ -1,18 +1,34 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import fs, {
+  chmodSync,
+  chownSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import process from "node:process";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { ScriptError } from "./lib/codes.ts";
 import {
   assertExtension,
   assertWritable,
   readJsonFile,
+  readJsonWithBytes,
   readTextFile,
   stringifyDocument,
   writeFileAtomic,
 } from "./lib/io.ts";
-import { withTempDir } from "./test-helpers.ts";
+import { changedMessage, withTempDir } from "./test-helpers.ts";
+import { rmSync } from "node:fs";
 
 test("readJsonFile parses a JSON file", () => {
   withTempDir((dir) => {
@@ -47,6 +63,20 @@ test("readJsonFile on unparsable content is IO_READ", () => {
   });
 });
 
+test("readJsonFile refuses an object that repeats a key with IO_READ, at the object's pointer, naming the key", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "repeat.json");
+    writeFileSync(path, '{"meta": {"name": "First", "name": "Second"}}', "utf8");
+    assert.throws(() => readJsonFile(path), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_READ");
+      assert.equal(err.pointer, "/meta");
+      assert.equal(err.message, `cannot read ${path}: the key "name" appears more than once in the object`);
+      return true;
+    });
+  });
+});
+
 test("readTextFile returns the text and is IO_READ when the file is missing", () => {
   withTempDir((dir) => {
     const path = join(dir, "a.md");
@@ -57,6 +87,28 @@ test("readTextFile returns the text and is IO_READ when the file is missing", ()
       assert.equal(err.code, "IO_READ");
       return true;
     });
+  });
+});
+
+test("readJsonFile reads a file that begins with a byte-order mark as the same document", () => {
+  withTempDir((dir) => {
+    const text = '{\n  "meta": { "id": "fmea-bom" },\n  "chains": []\n}\n';
+    const plain = join(dir, "plain.json");
+    const marked = join(dir, "marked.json");
+    writeFileSync(plain, text, "utf8");
+    writeFileSync(marked, `\uFEFF${text}`, "utf8");
+    assert.deepEqual([...readFileSync(marked).subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    assert.deepEqual(readJsonFile(marked), readJsonFile(plain));
+  });
+});
+
+test("readTextFile strips one leading byte-order mark and keeps any further mark", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "marks.md");
+    writeFileSync(path, "\uFEFF\uFEFFhello\uFEFF\n", "utf8");
+    assert.equal(readTextFile(path), "\uFEFFhello\uFEFF\n");
+    writeFileSync(path, "\uFEFF hello\n", "utf8");
+    assert.equal(readTextFile(path), " hello\n");
   });
 });
 
@@ -122,6 +174,365 @@ test("writeFileAtomic removes the staged temporary file when the rename fails", 
   });
 });
 
+/** What writeFileAtomic asked of the file system, in order: each fsyncSync, of a file or of a
+ *  folder, and each renameSync with its two paths. */
+interface Recorded {
+  ops: string[];
+  folders: number[];
+  renames: [string, string][];
+}
+
+/** Runs `fn` with fsyncSync and renameSync recorded. `refuse` may return an error for a sync of a
+ *  file or of a folder, which is then thrown in place of the sync, as a platform that refuses it
+ *  would. io.ts imports both functions by name, so the named exports are re-synced after each
+ *  patch and after the restore. */
+function recordSyncs(refuse: (kind: "file" | "folder") => Error | undefined, fn: () => void): Recorded {
+  const recorded: Recorded = { ops: [], folders: [], renames: [] };
+  const realFsync = fs.fsyncSync;
+  const realRename = fs.renameSync;
+  const fsync = mock.method(fs, "fsyncSync", (fd: number) => {
+    const stats = fs.fstatSync(fd);
+    const kind = stats.isDirectory() ? "folder" : "file";
+    recorded.ops.push(`fsync ${kind}`);
+    if (kind === "folder") recorded.folders.push(stats.ino);
+    const refusal = refuse(kind);
+    if (refusal !== undefined) throw refusal;
+    realFsync(fd);
+  });
+  const rename = mock.method(fs, "renameSync", (from: string, to: string) => {
+    recorded.ops.push("rename");
+    recorded.renames.push([from, to]);
+    realRename(from, to);
+  });
+  syncBuiltinESMExports();
+  try {
+    fn();
+  } finally {
+    fsync.mock.restore();
+    rename.mock.restore();
+    syncBuiltinESMExports();
+  }
+  return recorded;
+}
+
+function errnoError(code: string, message: string): Error {
+  return Object.assign(new Error(`${code}: ${message}`), { code });
+}
+
+/** Runs `fn` with one function of node:fs replaced; io.ts imports it by name, so the named exports
+ *  are re-synced after the patch and after the restore. */
+function withFsPatched<K extends "closeSync" | "fchmodSync" | "fchownSync" | "openSync" | "rmSync">(name: K, implementation: (typeof fs)[K], fn: () => void): void {
+  const patched = mock.method(fs, name, implementation);
+  syncBuiltinESMExports();
+  try {
+    fn();
+  } finally {
+    patched.mock.restore();
+    syncBuiltinESMExports();
+  }
+}
+
+function modeText(mode: fs.Mode | null | undefined): string {
+  return typeof mode === "number" ? mode.toString(8) : String(mode);
+}
+
+const NO_MODES = process.platform === "win32" ? "Windows keeps no permission bits beyond read-only" : false;
+const NO_LINKS = process.platform === "win32" ? "a symbolic link needs a privilege on Windows" : false;
+
+test("writeFileAtomic keeps the mode of the file it replaces and gives a new file the mode the umask gives", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    // Two modes, so that whatever the umask, a new file cannot have both by chance.
+    for (const mode of [0o600, 0o640]) {
+      const path = join(dir, `mode-${mode.toString(8)}.json`);
+      writeFileSync(path, "old", "utf8");
+      chmodSync(path, mode);
+      writeFileAtomic(path, "new");
+      assert.equal(readFileSync(path, "utf8"), "new");
+      assert.equal((statSync(path).mode & 0o777).toString(8), mode.toString(8));
+    }
+    const fresh = join(dir, "fresh.json");
+    const reference = join(dir, "reference.json");
+    writeFileAtomic(fresh, "new");
+    writeFileSync(reference, "new", "utf8");
+    assert.equal((statSync(fresh).mode & 0o777).toString(8), (statSync(reference).mode & 0o777).toString(8));
+  });
+});
+
+test("writeFileAtomic never holds the new content under permission bits other than those of the file it replaces", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    for (const mode of [0o600, 0o640]) {
+      const path = join(dir, `mode-${mode.toString(8)}.json`);
+      writeFileSync(path, "old", "utf8");
+      chmodSync(path, mode);
+      // The bits of the staged file at the moment the content goes into it, whatever writes it.
+      const seen: string[] = [];
+      const realWrite = fs.writeFileSync;
+      const write = mock.method(fs, "writeFileSync", (file: number | string, data: string, encoding: BufferEncoding) => {
+        realWrite(file, data, encoding);
+        const stats = typeof file === "number" ? fs.fstatSync(file) : fs.statSync(file);
+        seen.push((stats.mode & 0o777).toString(8));
+      });
+      syncBuiltinESMExports();
+      try {
+        writeFileAtomic(path, "new");
+      } finally {
+        write.mock.restore();
+        syncBuiltinESMExports();
+      }
+      assert.deepEqual(seen, [mode.toString(8)]);
+      assert.equal(readFileSync(path, "utf8"), "new");
+    }
+  });
+});
+
+test("writeFileAtomic creates the staged file of a replaced file with the owner's bits only", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "mode-640.json");
+    writeFileSync(path, "old", "utf8");
+    chmodSync(path, 0o640);
+    // The creation mode the temporary file is opened with, before its bits are changed.
+    const modes: string[] = [];
+    const realOpen = fs.openSync;
+    const open = (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode | null): number => {
+      if (String(file).includes(".tmp-")) modes.push(modeText(mode));
+      return realOpen(file, flags, mode);
+    };
+    withFsPatched("openSync", open, () => writeFileAtomic(path, "new"));
+    assert.deepEqual(modes, ["600"]);
+    assert.equal(readFileSync(path, "utf8"), "new");
+  });
+});
+
+/** A group the running user belongs to besides the one new files get, if there is one. */
+const OTHER_GROUP = process.platform === "win32" ? undefined : process.getgroups?.().find((gid) => gid !== process.getegid?.());
+
+test("writeFileAtomic keeps the group of the file it replaces", { skip: OTHER_GROUP === undefined ? "the user belongs to no second group" : false }, () => {
+  withTempDir((dir) => {
+    chmodSync(dir, 0o700); // a setgid folder would give new files its group
+    const path = join(dir, "grouped.json");
+    writeFileSync(path, "old", "utf8");
+    chownSync(path, statSync(path).uid, OTHER_GROUP ?? statSync(path).gid);
+    chmodSync(path, 0o640);
+    writeFileAtomic(path, "new");
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.equal(statSync(path).gid, OTHER_GROUP);
+    assert.equal((statSync(path).mode & 0o777).toString(8), "640");
+  });
+});
+
+test("writeFileAtomic drops the group bits when it may not keep the group of the file it replaces", { skip: OTHER_GROUP === undefined ? "the user belongs to no second group" : false }, () => {
+  withTempDir((dir) => {
+    chmodSync(dir, 0o700); // a setgid folder would give new files its group
+    const path = join(dir, "grouped.json");
+    writeFileSync(path, "old", "utf8");
+    chownSync(path, statSync(path).uid, OTHER_GROUP ?? statSync(path).gid);
+    chmodSync(path, 0o640);
+    const chown = mock.method(fs, "fchownSync", () => {
+      throw errnoError("EPERM", "operation not permitted, fchown");
+    });
+    syncBuiltinESMExports();
+    try {
+      writeFileAtomic(path, "new");
+    } finally {
+      chown.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.equal(statSync(path).gid, process.getegid?.());
+    assert.equal((statSync(path).mode & 0o777).toString(8), "600");
+  });
+});
+
+test("writeFileAtomic asks for no change of the bits when the staged file already has them", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "mode-600.json");
+    writeFileSync(path, "old", "utf8");
+    chmodSync(path, 0o600);
+    const refuse = (): void => {
+      throw errnoError("EPERM", "operation not permitted, fchmod");
+    };
+    withFsPatched("fchmodSync", refuse, () => writeFileAtomic(path, "new"));
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.equal((statSync(path).mode & 0o777).toString(8), "600");
+  });
+});
+
+test("writeFileAtomic asks for no change of the group when the staged file already has it", { skip: NO_MODES }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "mode-640.json");
+    writeFileSync(path, "old", "utf8");
+    chmodSync(path, 0o640);
+    const refuse = (): void => {
+      throw errnoError("EPERM", "operation not permitted, fchown");
+    };
+    withFsPatched("fchownSync", refuse, () => writeFileAtomic(path, "new"));
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.equal((statSync(path).mode & 0o777).toString(8), "640");
+  });
+});
+
+test("writeFileAtomic writes through a symbolic link into the file it points to and keeps the link", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "real"));
+    mkdirSync(join(dir, "view"));
+    const target = join(dir, "real", "doc.json");
+    const link = join(dir, "view", "doc.json");
+    writeFileSync(target, "old", "utf8");
+    chmodSync(target, 0o600);
+    symlinkSync(join("..", "real", "doc.json"), link);
+    writeFileAtomic(link, "new");
+    assert.equal(lstatSync(link).isSymbolicLink(), true);
+    assert.equal(readlinkSync(link), join("..", "real", "doc.json"));
+    assert.equal(readFileSync(target, "utf8"), "new");
+    assert.equal((statSync(target).mode & 0o777).toString(8), "600");
+    assert.deepEqual(readdirSync(join(dir, "real")), ["doc.json"]);
+    assert.deepEqual(readdirSync(join(dir, "view")), ["doc.json"]);
+  });
+});
+
+test("writeFileAtomic syncs the staged file before the rename and the folder after it", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    writeFileSync(path, "old", "utf8");
+    const recorded = recordSyncs(() => undefined, () => writeFileAtomic(path, "new"));
+    assert.deepEqual(recorded.ops, ["fsync file", "rename", "fsync folder"]);
+    assert.deepEqual(recorded.folders, [statSync(dir).ino]);
+    assert.equal(readFileSync(path, "utf8"), "new");
+  });
+});
+
+test("writeFileAtomic stages, renames and syncs in the folder of the file a symbolic link points to", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "real"));
+    mkdirSync(join(dir, "view"));
+    writeFileSync(join(dir, "real", "doc.json"), "old", "utf8");
+    const link = join(dir, "view", "doc.json");
+    symlinkSync(join("..", "real", "doc.json"), link);
+    const target = realpathSync(join(dir, "real", "doc.json"));
+    const recorded = recordSyncs(() => undefined, () => writeFileAtomic(link, "new"));
+    assert.deepEqual(recorded.renames, [[`${target}.tmp-${process.pid}`, target]]);
+    assert.deepEqual(recorded.folders, [statSync(join(dir, "real")).ino]);
+  });
+});
+
+test("writeFileAtomic goes on when the platform refuses to sync the folder after the rename", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    writeFileSync(path, "old", "utf8");
+    const refuse = (kind: "file" | "folder"): Error | undefined => (kind === "folder" ? errnoError("EINVAL", "invalid argument, fsync") : undefined);
+    const recorded = recordSyncs(refuse, () => writeFileAtomic(path, "new"));
+    assert.deepEqual(recorded.ops, ["fsync file", "rename", "fsync folder"]);
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.deepEqual(readdirSync(dir), ["out.json"]);
+  });
+});
+
+test("writeFileAtomic closes the staged file and the folder it syncs", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    writeFileSync(path, "old", "utf8");
+    const opened: string[] = [];
+    const closed: number[] = [];
+    const descriptors: number[] = [];
+    const realOpen = fs.openSync;
+    const realClose = fs.closeSync;
+    const open = (file: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode | null): number => {
+      const fd = realOpen(file, flags, mode);
+      opened.push(fs.fstatSync(fd).isDirectory() ? "folder" : "file");
+      descriptors.push(fd);
+      return fd;
+    };
+    const close = (fd: number): void => {
+      closed.push(fd);
+      realClose(fd);
+    };
+    withFsPatched("openSync", open, () => withFsPatched("closeSync", close, () => writeFileAtomic(path, "new")));
+    assert.deepEqual(opened, ["file", "folder"]);
+    assert.deepEqual(closed, descriptors);
+    assert.equal(readFileSync(path, "utf8"), "new");
+  });
+});
+
+test("writeFileAtomic leaves the old file whole and removes the staged file when the staged file cannot be synced", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    writeFileSync(path, "old", "utf8");
+    const refuse = (kind: "file" | "folder"): Error | undefined => (kind === "file" ? errnoError("EIO", "i/o error, fsync") : undefined);
+    assert.throws(() => recordSyncs(refuse, () => writeFileAtomic(path, "new")), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_WRITE");
+      assert.equal(err.message, `cannot write ${path}: EIO: i/o error, fsync`);
+      return true;
+    });
+    assert.equal(readFileSync(path, "utf8"), "old");
+    assert.deepEqual(readdirSync(dir), ["out.json"]);
+  });
+});
+
+test("writeFileAtomic names the path it was given when a write through a symbolic link fails", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "real"));
+    mkdirSync(join(dir, "view"));
+    const target = join(dir, "real", "doc.json");
+    const link = join(dir, "view", "doc.json");
+    writeFileSync(target, "old", "utf8");
+    symlinkSync(join("..", "real", "doc.json"), link);
+    const refuse = (kind: "file" | "folder"): Error | undefined => (kind === "file" ? errnoError("EIO", "i/o error, fsync") : undefined);
+    assert.throws(() => recordSyncs(refuse, () => writeFileAtomic(link, "new")), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_WRITE");
+      assert.equal(err.message, `cannot write ${link}: EIO: i/o error, fsync`);
+      return true;
+    });
+    assert.equal(lstatSync(link).isSymbolicLink(), true);
+    assert.equal(readFileSync(target, "utf8"), "old");
+    assert.deepEqual(readdirSync(join(dir, "real")), ["doc.json"]);
+  });
+});
+
+test("writeFileAtomic does not write through a symbolic link left at its temporary path", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    const elsewhere = join(dir, "elsewhere.txt");
+    writeFileSync(path, "old", "utf8");
+    writeFileSync(elsewhere, "untouched", "utf8");
+    symlinkSync(elsewhere, `${path}.tmp-${process.pid}`);
+    writeFileAtomic(path, "new");
+    assert.equal(readFileSync(elsewhere, "utf8"), "untouched");
+    assert.equal(lstatSync(path).isSymbolicLink(), false);
+    assert.equal(readFileSync(path, "utf8"), "new");
+    assert.deepEqual(readdirSync(dir).sort(), ["elsewhere.txt", "out.json"]);
+  });
+});
+
+test("writeFileAtomic does not follow a symbolic link put at its temporary path after the removal", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const path = join(dir, "out.json");
+    const elsewhere = join(dir, "elsewhere.txt");
+    writeFileSync(path, "old", "utf8");
+    writeFileSync(elsewhere, "untouched", "utf8");
+    symlinkSync(elsewhere, `${path}.tmp-${process.pid}`);
+    // The first removal, before the open, does nothing, as if the link were put there just after it.
+    let removals = 0;
+    const realRemove = fs.rmSync;
+    const remove = (file: fs.PathLike, options?: fs.RmOptions): void => {
+      removals += 1;
+      if (removals > 1) realRemove(file, options);
+    };
+    withFsPatched("rmSync", remove, () => {
+      assert.throws(() => writeFileAtomic(path, "new"), (err: unknown) => {
+        assert.ok(err instanceof ScriptError);
+        assert.equal(err.code, "IO_WRITE");
+        assert.ok(err.message.startsWith(`cannot write ${path}: EEXIST`));
+        return true;
+      });
+    });
+    assert.equal(readFileSync(elsewhere, "utf8"), "untouched");
+    assert.equal(readFileSync(path, "utf8"), "old");
+    assert.deepEqual(readdirSync(dir).sort(), ["elsewhere.txt", "out.json"]);
+  });
+});
+
 test("assertExtension accepts the right extension and is USAGE otherwise", () => {
   assertExtension("a.json", ".json", "input");
   assert.throws(() => assertExtension("a.txt", ".json", "input"), (err: unknown) => {
@@ -151,4 +562,151 @@ test("assertWritable refuses an existing path without force", () => {
 
 test("stringifyDocument uses two-space indentation and a trailing newline", () => {
   assert.equal(stringifyDocument({ a: 1, b: [2] }), '{\n  "a": 1,\n  "b": [\n    2\n  ]\n}\n');
+});
+
+test("readJsonWithBytes returns the parsed value and the file's exact bytes", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    const bytes = Buffer.from('{\r\n  "ok": true }  \n', "utf8");
+    writeFileSync(path, bytes);
+    const read = readJsonWithBytes(path);
+    assert.deepEqual(read.value, { ok: true });
+    assert.ok(read.bytes.equals(bytes));
+  });
+});
+
+test("writeFileAtomic given the bytes read replaces the file only while it still holds them", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    writeFileSync(path, "read"); // a save of the same bytes changes nothing
+    writeFileAtomic(path, "first", read);
+    assert.equal(readFileSync(path, "utf8"), "first");
+    writeFileSync(path, "other"); // another writer's save after the script's last write
+    assert.throws(() => writeFileAtomic(path, "second", Buffer.from("first")), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_CHANGED");
+      assert.equal(err.message, changedMessage(path));
+      return true;
+    });
+    assert.equal(readFileSync(path, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir), ["a.json"]);
+  });
+});
+
+test("writeFileAtomic given the bytes read does not write back a file removed since: IO_WRITE and no file", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    rmSync(path);
+    assert.throws(() => writeFileAtomic(path, "new", read), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_WRITE");
+      assert.ok(err.message.startsWith(`cannot write ${path}: ENOENT`), err.message);
+      return true;
+    });
+    assert.deepEqual(readdirSync(dir), []);
+  });
+});
+
+test("writeFileAtomic through a symbolic link compares the linked file and names the link in IO_CHANGED", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const real = join(dir, "real.json");
+    const link = join(dir, "a.json");
+    writeFileSync(real, "read");
+    symlinkSync(real, link);
+    const read = readFileSync(link);
+    writeFileSync(real, "other");
+    assert.throws(() => writeFileAtomic(link, "new", read), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_CHANGED");
+      assert.equal(err.message, changedMessage(link));
+      return true;
+    });
+    assert.ok(lstatSync(link).isSymbolicLink());
+    assert.equal(readFileSync(real, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir).sort(), ["a.json", "real.json"]);
+  });
+});
+
+test("writeFileAtomic compares the file it resolved and will replace, not the path resolved again", { skip: NO_LINKS }, () => {
+  withTempDir((dir) => {
+    const first = join(dir, "first.json");
+    const second = join(dir, "second.json");
+    const link = join(dir, "a.json");
+    writeFileSync(first, "read");
+    writeFileSync(second, "read");
+    symlinkSync(first, link);
+    const read = readFileSync(link);
+    writeFileSync(first, "other");
+    const realRealpath = fs.realpathSync;
+    const realpath = mock.method(fs, "realpathSync", (p: string) => {
+      const resolved = realRealpath(p);
+      if (p === link) {
+        fs.rmSync(link);
+        symlinkSync(second, link); // the link is moved once the write has resolved it
+      }
+      return resolved;
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => writeFileAtomic(link, "new", read), { code: "IO_CHANGED" });
+    } finally {
+      realpath.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(readFileSync(first, "utf8"), "other");
+  });
+});
+
+test("writeFileAtomic compares after the temporary file is staged, just before the rename", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    writeFileSync(path, "read");
+    const read = readFileSync(path);
+    const realFsync = fs.fsyncSync;
+    let saved = false;
+    const fsync = mock.method(fs, "fsyncSync", (fd: number) => {
+      realFsync(fd);
+      if (!saved) {
+        saved = true;
+        writeFileSync(path, "other"); // another writer saves while the temporary file is synced
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => writeFileAtomic(path, "new", read), { code: "IO_CHANGED" });
+    } finally {
+      fsync.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(readFileSync(path, "utf8"), "other");
+    assert.deepEqual(readdirSync(dir), ["a.json"]);
+  });
+});
+
+test("readJsonWithBytes keeps the raw bytes: an invalid UTF-8 byte is compared as it is on disk", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "a.json");
+    const bytes = Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d, 0x0a]); // {"a":"<FF>"}
+    writeFileSync(path, bytes);
+    const read = readJsonWithBytes(path);
+    assert.ok(read.bytes.equals(bytes));
+    writeFileAtomic(path, "{}\n", read.bytes);
+    assert.equal(readFileSync(path, "utf8"), "{}\n");
+  });
+});
+
+test("readJsonWithBytes on a missing file is IO_READ with the system message", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "missing.json");
+    assert.throws(() => readJsonWithBytes(path), (err: unknown) => {
+      assert.ok(err instanceof ScriptError);
+      assert.equal(err.code, "IO_READ");
+      assert.ok(err.message.startsWith(`cannot read ${path}: ENOENT`), err.message);
+      return true;
+    });
+  });
 });

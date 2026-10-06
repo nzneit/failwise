@@ -1,7 +1,9 @@
-// The priority table: loading, the shape check every table passes before use, and the
-// lookup from three ratings to a priority value. The shipped table lives in data/; a
-// user-supplied table arrives through --table-file and is checked for shape only, so a
-// licensed table with different bands or vocabulary drops in without code changes (§7, §9).
+// The priority table: loading, the shape check every table passes before use, the lookup from
+// three ratings to a priority value, and the check of the §7 properties. The shipped table lives
+// in data/; a user-supplied table arrives through --table-file and is refused for its shape only,
+// so a licensed table with different bands or vocabulary drops in without code changes (§7, §9).
+// A table that breaks a §7 property is used all the same: checkTableProperties names what it
+// breaks, and the scripts report it as a warning.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -175,4 +177,77 @@ export function computePriority(table: PriorityTable, ratings: Ratings): Priorit
 export function vocabularyRank(table: PriorityTable, value: string): number {
   const i = table.vocabulary.indexOf(value);
   return i === -1 ? table.vocabulary.length : i;
+}
+
+// ---- The properties of the shipped table (§7), checked on any loaded table. A table that breaks
+// one is reported, never refused: a licensed table may depart from them on purpose (§12).
+
+// Every cell's band indices [s, o, d], in key order: S, then O, then D.
+function cellIndices(table: PriorityTable): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (let s = 1; s <= table.bands.S.length; s++) for (let o = 1; o <= table.bands.O.length; o++) for (let d = 1; d <= table.bands.D.length; d++) out.push([s, o, d]);
+  return out;
+}
+
+// A cell named for a message: its key and its value, as `2-1-3 (M)`.
+function named(table: PriorityTable, key: string): string {
+  return `${key} (${table.cells[key]})`;
+}
+
+// The vocabulary rank of a cell (0 is the highest priority).
+function rankOf(table: PriorityTable, key: string): number {
+  return vocabularyRank(table, table.cells[key]);
+}
+
+// For each cell in key order, the pairs [first, second] that `pairs` gives it, where first must be
+// at least second in the vocabulary order: each pair that breaks this, both cells existing, named
+// as `<first> below <second>`.
+function belowPairs(table: PriorityTable, pairs: (s: number, o: number, d: number) => [string, string][]): string[] {
+  const out: string[] = [];
+  for (const [s, o, d] of cellIndices(table)) {
+    for (const [first, second] of pairs(s, o, d)) {
+      if (Object.hasOwn(table.cells, first) && Object.hasOwn(table.cells, second) && rankOf(table, first) > rankOf(table, second)) {
+        out.push(`${named(table, first)} below ${named(table, second)}`);
+      }
+    }
+  }
+  return out;
+}
+
+// Priority never decreases as any of S, O or D increases: the cell one band up in each factor.
+function oneBandUp(s: number, o: number, d: number): [string, string][] {
+  const here = cellKey(s, o, d);
+  return [[cellKey(s + 1, o, d), here], [cellKey(s, o + 1, d), here], [cellKey(s, o, d + 1), here]];
+}
+
+// Severity outranks, over the band indices both factors have: for a > b and any c, the cell
+// (S a, O b, D c) is at least (S b, O a, D c), and (S a, O c, D b) is at least (S b, O c, D a).
+function severityExchanged(s: number, o: number, d: number): [string, string][] {
+  const here = cellKey(s, o, d);
+  return [...(s > o ? [[here, cellKey(o, s, d)] as [string, string]] : []), ...(s > d ? [[here, cellKey(d, o, s)] as [string, string]] : [])];
+}
+
+// The cells of the S bands that hold any of the given ratings, in key order, whose vocabulary
+// rank fails `holds`, each named.
+function sBandCells(table: PriorityTable, ratings: number[], holds: (rank: number) => boolean): string[] {
+  const bands = new Set(ratings.map((r) => bandIndex(table, "S", r)));
+  return cellIndices(table)
+    .map(([s, o, d]) => ({ s, key: cellKey(s, o, d) }))
+    .filter(({ s, key }) => bands.has(s) && !holds(rankOf(table, key)))
+    .map(({ key }) => named(table, key));
+}
+
+// One message per property of §7 the table breaks, naming every cell that breaks it, in the order
+// the properties are stated; none when the table keeps all four. "M" is the vocabulary's
+// second-lowest value and "L" its lowest, which for the shipped H, M, L are M and L; a one-value
+// vocabulary has no second-lowest value, and nothing to break.
+export function checkTableProperties(table: PriorityTable): string[] {
+  const n = table.vocabulary.length;
+  const found: [string, string[]][] = [
+    ["priority never decreases as S, O or D increases", belowPairs(table, oneBandUp)],
+    [`S of 9 or 10 is never below ${table.vocabulary[n - 2]}`, n < 2 ? [] : sBandCells(table, [9, 10], (rank) => rank <= n - 2)],
+    [`S of 1 is always ${table.vocabulary[n - 1]}`, sBandCells(table, [1], (rank) => rank === n - 1)],
+    ["severity outranks: exchanging the S band with a higher O or D band never lowers the priority", belowPairs(table, severityExchanged)],
+  ];
+  return found.filter(([, cells]) => cells.length > 0).map(([property, cells]) => `table ${table.id} breaks "${property}" at ${cells.join(", ")}`);
 }

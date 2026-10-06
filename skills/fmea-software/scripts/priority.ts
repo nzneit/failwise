@@ -4,15 +4,18 @@
 // records another table is refused with TABLE_ID_MISMATCH and left untouched, unless
 // --change-table is given: then the loaded table is recorded and every priority recomputed with
 // it. --change-table on a document that records no table, or already records the loaded one, is a
-// USAGE failure. A pure function from ratings and a table; it knows nothing about rationale or
-// evidence and writes no history (§9). --write is required because the only effect of this
-// script is the rewrite of the input file.
+// USAGE failure. A loaded table that breaks one of the priority properties of §7 is used all the
+// same: after the write, one `warning priority-table-property:` line per broken property goes to
+// stderr, naming the cells, and the exit status stays 0. A pure function from ratings and a
+// table; it knows nothing about rationale or evidence and writes no history (§9). --write is
+// required because the only effect of this script is the rewrite of the input file.
 
 import { parseArgs } from "./lib/args.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { ScriptError } from "./lib/codes.ts";
-import { assertExtension, readJsonFile, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
+import { assertExtension, readJsonWithBytes, stringifyDocument, writeFileAtomic } from "./lib/io.ts";
 import { ptr } from "./lib/pointer.ts";
+import { formatLintLine, tablePropertyLints } from "./lib/lints.ts";
 import { computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import type { Factor, FmeaDocument } from "./lib/types.ts";
@@ -108,12 +111,15 @@ function main(argv: string[]): number {
   const tableFile = typeof args.flags["table-file"] === "string" ? args.flags["table-file"] : undefined;
   const table = loadTable(tableFile);
   const changeTable = args.flags["change-table"] === true;
-  const doc = assertPriorityInput(readJsonFile(input));
+  const read = readJsonWithBytes(input);
+  const doc = assertPriorityInput(read.value);
   const recorded: unknown = (doc.meta.scales as { priority_table?: unknown }).priority_table;
   applyPriorities(doc, table, { changeTable });
-  writeFileAtomic(input, stringifyDocument(doc));
+  // Refused with IO_CHANGED, the file left as it is, when another writer saved it after the read.
+  writeFileAtomic(input, stringifyDocument(doc), read.bytes);
   const changedFrom = changeTable ? `, "changed_from": ${JSON.stringify(recorded)}` : "";
   process.stdout.write(`{"table": ${JSON.stringify(table.id)}, "rows": ${doc.chains.length}${changedFrom}}\n`);
+  for (const finding of tablePropertyLints(table)) process.stderr.write(formatLintLine(finding) + "\n");
   return 0;
 }
 

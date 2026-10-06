@@ -14,7 +14,7 @@ import { fakeProvider } from "./tracker-fakes.ts";
 import type { FakeOptions, FakeProvider } from "./tracker-fakes.ts";
 import type { Link, Observation, RemoteItem } from "./lib/tracker/provider.ts";
 import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerLink } from "./lib/types.ts";
-import { clone, minimalDoc, runCli } from "./test-helpers.ts";
+import { changedMessage, clone, minimalDoc, runCli } from "./test-helpers.ts";
 
 const TODAY = "2026-10-02";
 const key = (n: number): string => `fmea-min/ch-1/act-${n}`;
@@ -121,6 +121,16 @@ function runTrack(t: TestContext, argv: string[]): { status: number; stdout: str
 }
 
 const linksIn = (doc: FmeaDocument): (TrackerLink | undefined)[] => doc.chains[0].actions.map((a) => a.tracker);
+
+/** Saves the file as another writer would in the middle of a run, the document on disk with its
+ *  meta.name changed, and returns the text it saved. */
+function saveAsAnotherWriter(s: Session): string {
+  const other = s.doc();
+  other.meta.name = "Saved by another writer";
+  const saved = JSON.stringify(other, null, 2) + "\n";
+  writeFileSync(s.path, saved);
+  return saved;
+}
 const createdKeys = (s: Session): string[] => s.fake.created.map((i) => i.key);
 
 // the command line
@@ -188,6 +198,15 @@ test("a subprocess run of track.ts cannot find gh: a valid document stops at TRA
 });
 
 // plan
+
+test("plan accepts a document whose validated_at is written with a lower-case t and z", async (t) => {
+  const doc = docWith(act(1));
+  doc.computed = { quality_score: 0, lints: [], validated_at: "2026-10-02t00:00:00z", validator_version: "0.0.1" };
+  const s = session(t, doc);
+  const { status, stderr } = await s.track("plan");
+  assert.equal(status, 0, stderr);
+  assert.equal(s.built(), 1);
+});
 
 test("plan prints the result of §6.6 and leaves the file byte for byte as it was", async (t) => {
   const a2 = linked(act(2), 2);
@@ -402,6 +421,56 @@ test("a created item whose link cannot be written is named, with its link, in th
   assert.equal(stderr, `error IO_WRITE: ${result.failure?.message}\n`);
 });
 
+test("apply stops with IO_CHANGED when another writer saves the file during the run: the file keeps that save and the first link, and the failure names the item created", async (t) => {
+  const s = session(t, docWith(act(1), act(2)));
+  let saved = "";
+  const create = s.fake.create.bind(s.fake);
+  s.fake.create = async (item) => {
+    if (s.fake.created.length === 1) saved = saveAsAnotherWriter(s);
+    return create(item);
+  };
+  const { status, result, stderr } = await applyPlanned(s);
+  assert.equal(status, 3);
+  assert.equal(s.text(), saved);
+  assert.deepEqual(linksIn(s.doc()), [{ ...linkOf(1), linked: TODAY }, undefined]);
+  assert.deepEqual(createdKeys(s), [key(1), key(2)]);
+  assert.deepEqual(result.done.map((d) => d.key), [key(1)]);
+  assert.deepEqual(result.remaining, [key(2)]);
+  assert.equal(result.failure?.code, "IO_CHANGED");
+  assert.deepEqual(result.failure?.link, linkOf(2));
+  assert.equal(result.failure?.message, `the item acme/checkout#2 was created, at ${fakeUrl(2)}, and its link could not be written to the document: ${changedMessage(s.path)}`);
+  assert.equal(stderr, `error IO_CHANGED: ${result.failure?.message}\n`);
+});
+
+test("apply stops with IO_CHANGED when another writer saves the file before an adopt is recorded, and the file keeps that save", async (t) => {
+  const a1 = act(1);
+  const s = session(t, docWith(a1), { marked: [remote(7, a1)] });
+  const digest = await planDigest(s);
+  let saved = "";
+  const list = s.fake.listMarked.bind(s.fake);
+  s.fake.listMarked = async () => {
+    saved = saveAsAnotherWriter(s);
+    return list();
+  };
+  const { status, result, stderr } = await s.track("apply", "--plan", digest);
+  assert.equal(status, 3);
+  assert.equal(s.text(), saved);
+  assert.deepEqual(result.done, []);
+  assert.equal(result.failure?.code, "IO_CHANGED");
+  assert.equal(result.failure?.message, changedMessage(s.path));
+  assert.equal(result.failure?.link, undefined);
+  assert.equal(stderr, `error IO_CHANGED: ${changedMessage(s.path)}\n`);
+});
+
+test("apply on a document with text outside ASCII records every link: each later write compares with the bytes the run wrote", async (t) => {
+  const doc = docWith(act(1), act(2));
+  doc.meta.name = "Kassendienst – Zahlung über Karte";
+  const s = session(t, doc);
+  const { status } = await applyPlanned(s);
+  assert.equal(status, 0);
+  assert.deepEqual(linksIn(s.doc()), [{ ...linkOf(1), linked: TODAY }, { ...linkOf(2), linked: TODAY }]);
+});
+
 test("a failure with no item behind it carries no link", async (t) => {
   const s = session(t, docWith(act(1)), { failCreateAt: 1 });
   const { result } = await applyPlanned(s);
@@ -498,6 +567,18 @@ test("an observation missing for a link fails the run with TRACKER_REJECTED and 
   const before = s.text();
   await assert.rejects(s.track("refresh", "--write"), { code: "TRACKER_REJECTED" });
   assert.equal(s.text(), before);
+});
+
+test("refresh --write refuses with IO_CHANGED when another writer saves the file while the tracker is read, and the file keeps that save", async (t) => {
+  const s = session(t, docWith(linked(act(1), 1)), { observations: [observation(1, "open")] });
+  let saved = "";
+  const read = s.fake.read.bind(s.fake);
+  s.fake.read = async (links) => {
+    saved = saveAsAnotherWriter(s);
+    return read(links);
+  };
+  await assert.rejects(s.track("refresh", "--write"), { code: "IO_CHANGED", message: changedMessage(s.path) });
+  assert.equal(s.text(), saved);
 });
 
 test("refresh on a document with no link exits 0, prints no items and makes no read", async (t) => {

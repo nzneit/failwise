@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import type { FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus } from "./lib/types.ts";
+import { computePriority } from "./lib/table.ts";
+import type { PriorityTable } from "./lib/table.ts";
 
 /** `skills/fmea-software/`: this file lives in its `scripts/` directory. */
 export const SKILL_ROOT: string = join(import.meta.dirname, "..");
@@ -30,6 +33,32 @@ export function withoutTracker(doc: FmeaDocument): FmeaDocument {
   return bare;
 }
 
+/** A shape-valid priority table, id `priority-test-properties`, vocabulary H, M, L, with three bands
+ *  per factor, [1, 1], [2, 8] and [9, 10], whose every cell in S band s holds `bySBand[s - 1]`.
+ *  With ["L", "M", "H"] it keeps the four priority properties of scales-software.md; a test
+ *  changes cells of it to break them. */
+export function bandTable(bySBand: [string, string, string]): PriorityTable {
+  const bands: [number, number][] = [[1, 1], [2, 8], [9, 10]];
+  const cells: Record<string, string> = {};
+  for (const s of [1, 2, 3]) for (const o of [1, 2, 3]) for (const d of [1, 2, 3]) cells[`${s}-${o}-${d}`] = bySBand[s - 1];
+  return { id: "priority-test-properties", vocabulary: ["H", "M", "L"], bands: { S: bands, O: clone(bands), D: clone(bands) }, cells };
+}
+
+/** Writes `table` to table.json in `dir`, as a --table-file, and returns the path. */
+export function writeTable(dir: string, table: PriorityTable): string {
+  const path = join(dir, "table.json");
+  writeFileSync(path, JSON.stringify(table, null, 2) + "\n");
+  return path;
+}
+
+/** minimalDoc as priority.ts --write leaves it under `table`: the table recorded, the row priced by it. */
+export function minimalDocOn(table: PriorityTable): FmeaDocument {
+  const doc = minimalDoc();
+  doc.meta.scales.priority_table = table.id;
+  doc.chains[0].priority = computePriority(table, doc.chains[0].ratings);
+  return doc;
+}
+
 /** Run `fn` against a fresh temporary directory and remove it afterwards, so a test that writes
  *  files never touches the repository. */
 export function withTempDir<T>(fn: (dir: string) => T): T {
@@ -41,10 +70,44 @@ export function withTempDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-/** Runs a script under the current Node; `env`, when given, replaces the inherited environment. */
-export function runCli(script: string, args: string[], options: { env?: NodeJS.ProcessEnv } = {}): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8", env: options.env });
+/** Runs a script under the current Node; `env`, when given, replaces the inherited environment, and
+ *  `execArgv` goes to Node before the script. */
+export function runCli(script: string, args: string[], options: { env?: NodeJS.ProcessEnv; execArgv?: string[] } = {}): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [...(options.execArgv ?? []), join(SKILL_ROOT, "scripts", script), ...args], { encoding: "utf8", env: options.env });
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** A module, loaded before the script, that saves `content` to `path` as soon as the script has
+ *  first read that file: what a person's editor saving the analysis file in the middle of a run
+ *  does. It wraps fs.readFileSync, which every read of the skill goes through. */
+function otherWriterModule(path: string, content: string): string {
+  return [
+    'import fs from "node:fs";',
+    'import { syncBuiltinESMExports } from "node:module";',
+    "const readFileSync = fs.readFileSync;",
+    "let saved = false;",
+    "fs.readFileSync = function (file, ...rest) {",
+    "  const result = readFileSync.call(this, file, ...rest);",
+    `  if (!saved && file === ${JSON.stringify(path)}) { saved = true; fs.writeFileSync(file, ${JSON.stringify(content)}); }`,
+    "  return result;",
+    "};",
+    "syncBuiltinESMExports();",
+  ].join("\n");
+}
+
+/** Runs a script as runCli does while another writer saves `content` to `path` just after the
+ *  script has read it. */
+export function runCliWithOtherWriter(script: string, args: string[], path: string, content: string): { status: number; stdout: string; stderr: string } {
+  return withTempDir((dir) => {
+    const hook = join(dir, "other-writer.mjs");
+    writeFileSync(hook, otherWriterModule(path, content));
+    return runCli(script, args, { execArgv: ["--import", pathToFileURL(hook).href] });
+  });
+}
+
+/** The IO_CHANGED message for `path`, as io.ts words it. */
+export function changedMessage(path: string): string {
+  return `${path} changed after this command last read or wrote it, so it was not replaced and holds the other writer's change: run the command again on the file as it now is`;
 }
 
 /** A rating for test documents. A provisional review carries no `by` or `date`; any other status

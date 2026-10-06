@@ -1,12 +1,12 @@
-// Tests for lib/table.ts: the priority table's shape check and loader, the band lookup,
-// and the §10 property tests over the shipped table.
+// Tests for lib/table.ts: the priority table's shape check and loader, the property check of a
+// loaded table, the band lookup, and the §10 property tests over the shipped table.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ScriptError } from "./lib/codes.ts";
-import { bandIndex, cellKey, checkTableShape, computePriority, loadTable, lookupPriority, vocabularyRank } from "./lib/table.ts";
+import { bandIndex, cellKey, checkTableProperties, checkTableShape, computePriority, loadTable, lookupPriority, vocabularyRank } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
-import { fixturePath, loadFixture, clone, rating } from "./test-helpers.ts";
+import { bandTable, fixturePath, loadFixture, clone, rating } from "./test-helpers.ts";
 
 // A small well-formed table built in memory: two bands per factor, two values, eight cells.
 // Tests mutate a clone of it to produce exactly one defect each.
@@ -115,9 +115,9 @@ test("checkTableShape returns a table with exactly the four fields", () => {
   assert.deepEqual(Object.keys(out).sort(), ["bands", "cells", "id", "vocabulary"]);
 });
 
-// The shape check is shape only: §7 and §9 say a supplied table is checked for structure, not
-// for the §7 priority properties, so a licensed table that breaks monotonicity or the S-band-1
-// rule still drops in (§12). The property tests below are scoped to the shipped table alone.
+// The shape check is shape only: a supplied table that breaks the §7 priority properties still
+// loads, so a licensed table that departs from them on purpose drops in (§12); the property check
+// below names what it breaks. The §10 property tests further down are scoped to the shipped table.
 test("checkTableShape accepts a shape-valid table that violates the §7 priority properties", () => {
   const t = smallTable();
   t.cells["1-1-1"] = "H";  // S band 1 is not the lowest value
@@ -125,6 +125,106 @@ test("checkTableShape accepts a shape-valid table that violates the §7 priority
   const out = checkTableShape(t, "t");
   assert.equal(out.cells["1-1-1"], "H");
   assert.equal(out.cells["2-2-2"], "L");
+});
+
+// ---- the property check of a loaded table (§7): one message per broken property, naming the cells
+
+const PROPERTY_TABLE = "table priority-test-properties breaks";
+
+test("checkTableProperties finds no broken property in the shipped table, the alternative fixture table or the test table", () => {
+  assert.deepEqual(checkTableProperties(loadTable()), []);
+  assert.deepEqual(checkTableProperties(loadTable(fixturePath("tables", "well-formed-alt.json"))), []);
+  assert.deepEqual(checkTableProperties(bandTable(["L", "M", "H"])), []);
+});
+
+test("checkTableProperties names each cell below the cell one band down in S, O or D, in the key order of the cell one band down", () => {
+  const t = bandTable(["L", "M", "H"]);
+  t.cells["2-1-1"] = "H";
+  assert.deepEqual(checkTableProperties(t), [
+    `${PROPERTY_TABLE} "priority never decreases as S, O or D increases" at 2-2-1 (M) below 2-1-1 (H), 2-1-2 (M) below 2-1-1 (H)`,
+  ]);
+  const u = bandTable(["L", "M", "H"]);
+  u.cells["1-1-3"] = "M";
+  u.cells["2-1-3"] = "L";
+  u.cells["1-2-1"] = "M";
+  assert.equal(
+    checkTableProperties(u)[0],
+    `${PROPERTY_TABLE} "priority never decreases as S, O or D increases" at 2-1-3 (L) below 1-1-3 (M), 1-2-3 (L) below 1-1-3 (M), 1-3-1 (L) below 1-2-1 (M), 1-2-2 (L) below 1-2-1 (M), 2-1-3 (L) below 2-1-2 (M)`,
+  );
+});
+
+test("checkTableProperties names each cell of the S bands holding 9 or 10 that is below M", () => {
+  const t = bandTable(["L", "L", "M"]);
+  t.cells["3-1-1"] = "L";
+  assert.deepEqual(checkTableProperties(t), [`${PROPERTY_TABLE} "S of 9 or 10 is never below M" at 3-1-1 (L)`]);
+});
+
+test("checkTableProperties names each cell of the S band holding 1 that is not L", () => {
+  const t = bandTable(["L", "M", "H"]);
+  t.cells["1-3-3"] = "M";
+  assert.deepEqual(checkTableProperties(t), [`${PROPERTY_TABLE} "S of 1 is always L" at 1-3-3 (M)`]);
+});
+
+test("checkTableProperties names each cell below the cell with its S band and a lower O or D band exchanged", () => {
+  const property = "severity outranks: exchanging the S band with a higher O or D band never lowers the priority";
+  const viaO = bandTable(["L", "M", "M"]);
+  const viaD = bandTable(["L", "M", "M"]);
+  for (const c of [1, 2, 3]) {
+    viaO.cells[`2-3-${c}`] = viaO.cells[`3-3-${c}`] = "H";
+    viaD.cells[`2-${c}-3`] = viaD.cells[`3-${c}-3`] = "H";
+  }
+  assert.deepEqual(checkTableProperties(viaO), [`${PROPERTY_TABLE} "${property}" at 3-2-1 (M) below 2-3-1 (H), 3-2-2 (M) below 2-3-2 (H), 3-2-3 (M) below 2-3-3 (H)`]);
+  assert.deepEqual(checkTableProperties(viaD), [`${PROPERTY_TABLE} "${property}" at 3-1-2 (M) below 2-1-3 (H), 3-2-2 (M) below 2-2-3 (H), 3-3-2 (M) below 2-3-3 (H)`]);
+});
+
+test("checkTableProperties reads the table's own bands and compares severity only over the band indices both factors have", () => {
+  const t: PriorityTable = {
+    id: "uneven", vocabulary: ["H", "M", "L"],
+    bands: { S: [[1, 5], [6, 10]], O: [[1, 1], [2, 8], [9, 10]], D: [[1, 10]] },
+    cells: { "1-1-1": "L", "1-2-1": "L", "1-3-1": "L", "2-1-1": "M", "2-2-1": "M", "2-3-1": "M" },
+  };
+  assert.deepEqual(checkTableProperties(t), []);
+  t.cells["1-3-1"] = "M";
+  assert.deepEqual(checkTableProperties(t), ['table uneven breaks "S of 1 is always L" at 1-3-1 (M)']);
+});
+
+test("checkTableProperties gives one message per broken property, in the order they are stated, and none for a one-value vocabulary", () => {
+  const messages = checkTableProperties(bandTable(["H", "M", "L"]));
+  assert.deepEqual(messages.map((m) => m.slice(0, m.indexOf('" at ') + 1)), [
+    `${PROPERTY_TABLE} "priority never decreases as S, O or D increases"`,
+    `${PROPERTY_TABLE} "S of 9 or 10 is never below M"`,
+    `${PROPERTY_TABLE} "S of 1 is always L"`,
+    `${PROPERTY_TABLE} "severity outranks: exchanging the S band with a higher O or D band never lowers the priority"`,
+  ]);
+  const one = bandTable(["P", "P", "P"]);
+  one.vocabulary = ["P"];
+  assert.deepEqual(checkTableProperties(one), []);
+});
+
+test("checkTableProperties checks S of 9 and S of 10 each when they fall in different S bands", () => {
+  const split = (c: [string, string, string, string]): PriorityTable => ({
+    id: "split", vocabulary: ["H", "M", "L"],
+    bands: { S: [[1, 1], [2, 8], [9, 9], [10, 10]], O: [[1, 10]], D: [[1, 10]] },
+    cells: { "1-1-1": c[0], "2-1-1": c[1], "3-1-1": c[2], "4-1-1": c[3] },
+  });
+  assert.deepEqual(checkTableProperties(split(["L", "L", "L", "M"])), ['table split breaks "S of 9 or 10 is never below M" at 3-1-1 (L)']);
+  assert.deepEqual(checkTableProperties(split(["L", "L", "M", "L"])), [
+    'table split breaks "priority never decreases as S, O or D increases" at 4-1-1 (L) below 3-1-1 (M)',
+    'table split breaks "S of 9 or 10 is never below M" at 4-1-1 (L)',
+  ]);
+});
+
+test("checkTableProperties reads M and L by position from the bottom of a vocabulary other than H, M, L", () => {
+  const t: PriorityTable = {
+    id: "five", vocabulary: ["Critical", "High", "Medium", "Low", "None"],
+    bands: { S: [[1, 1], [2, 8], [9, 10]], O: [[1, 10]], D: [[1, 10]] },
+    cells: { "1-1-1": "Low", "2-1-1": "Low", "3-1-1": "None" },
+  };
+  assert.deepEqual(checkTableProperties(t), [
+    'table five breaks "priority never decreases as S, O or D increases" at 3-1-1 (None) below 2-1-1 (Low)',
+    'table five breaks "S of 9 or 10 is never below Low" at 3-1-1 (None)',
+    'table five breaks "S of 1 is always None" at 1-1-1 (Low)',
+  ]);
 });
 
 // ---- lookup
