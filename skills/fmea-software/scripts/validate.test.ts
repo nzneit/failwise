@@ -86,6 +86,19 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
   });
 });
 
+test("validate.ts --write reads an analysis that begins with a byte-order mark and writes it back without the mark", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, `\uFEFF${readFileSync(fixturePath("checkout-service.fmea.json"), "utf8")}`, "utf8");
+    const r = runCli("validate.ts", [path, "--write"]);
+    assert.equal(r.stderr, "");
+    assert.equal(r.status, 0);
+    const after = readFileSync(path, "utf8");
+    assert.equal(after.startsWith("\uFEFF"), false);
+    assert.equal((JSON.parse(after) as FmeaDocument).computed?.quality_score, 88);
+  });
+});
+
 test("the CLI exits 2, prints one coded stderr line per error, and --write leaves the file byte-identical", () => {
   withTempDir((dir) => {
     const path = join(dir, "analysis.json");
