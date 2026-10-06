@@ -113,7 +113,8 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
 - No script needs a file outside `skills/fmea-software/` other than the files named on its command
   line, so the skill folder also runs copied on its own, outside a `node_modules` folder and below
   no `package.json` that sets another module type; `tools/skill-copy.test.ts` runs the four scripts
-  from such a copy and fails otherwise. For that reason the plugin's version is written twice, in
+  from such a copy and fails when one of them reaches a file outside it by a path built from its own
+  location or from the working folder. For that reason the plugin's version is written twice, in
   `.claude-plugin/plugin.json` and in `skills/fmea-software/scripts/lib/version.ts`: a release
   changes both, and `validate.test.ts` fails when they differ.
 - Keep the one-line coded error contract: each failure is one line on stderr,

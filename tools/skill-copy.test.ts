@@ -2,15 +2,17 @@
 // folder of their own, and its four scripts run there on the checkout fixture in the order the
 // skill runs them: priority.ts --write, validate.ts --write, render.ts, then track.ts plan. The
 // copy sits in a fresh temporary folder outside this repository, with no .claude-plugin/ in it or
-// in any folder above it, so a script that needs a file outside skills/fmea-software/ fails here
-// although every other test passes. The copy's path holds a space, as a home folder's may, so a
-// script that finds its files through the URL of its own location, which writes a space as %20,
-// fails here too. The fixture's computed block is removed first, so render.ts renders only what
-// validate.ts --write wrote in the copy. track.ts plan reaches a stand-in for gh: a shell script,
-// the only entry of PATH, that answers the two reads plan makes and refuses any other call, so no
-// run can reach a real gh or the network. Each script is started with this Node by its absolute
-// path and no shell, so the test behaves the same under bash and fish. Any non-zero exit, or any
-// coded error line on stderr, fails the test.
+// in any folder above it, so a script that reaches a file outside skills/fmea-software/ by a path
+// built from its own location or from the working folder fails here although every other test
+// passes (a file at a fixed absolute path, or under HOME, which the runs inherit, is not seen).
+// The copy's path holds a space, as a home folder's may, so a script that finds its files through
+// the URL of its own location, which writes a space as %20, fails here too. The fixture's
+// computed block is removed first, so render.ts renders only what validate.ts --write wrote in
+// the copy. track.ts plan reaches a stand-in for gh: a shell script, the only entry of PATH, that
+// answers the two reads plan makes and refuses any other call, so no run can reach a real gh or
+// the network. Each script is started with this Node by its absolute path and no shell, so the
+// test behaves the same under bash and fish. Any non-zero exit, or any coded error line on
+// stderr, fails the test.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
