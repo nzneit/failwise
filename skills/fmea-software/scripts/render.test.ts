@@ -287,6 +287,29 @@ test("the header shows the five tiles, each linking to its section", () => {
   }
 });
 
+test("the strip holds two captioned groups, the findings first", () => {
+  const header = headerOf(golden());
+  const found = '<section class="tile-group" aria-labelledby="strip-found"><h2 class="strip-cap" id="strip-found">What the analysis found</h2><div class="tiles">';
+  const relied = '<section class="tile-group" aria-labelledby="strip-relied"><h2 class="strip-cap" id="strip-relied">How far the analysis can be relied on</h2><div class="tiles">';
+  assert.ok(header.includes(`<div class="strip">${found}`), "the strip opens with the findings group");
+  assert.ok(header.includes(`</div></section>${relied}`), "the second group follows the first directly");
+  const tilesOf = (opening: string): string => {
+    const start = header.indexOf(opening) + opening.length;
+    return header.slice(start, header.indexOf("</div></section>", start));
+  };
+  const labels = (tiles: string): string[] => [...tiles.matchAll(/<span class="lbl">([^<]*)<\/span>/g)].map((m) => m[1] ?? "");
+  const first = tilesOf(found);
+  const second = tilesOf(relied);
+  assert.deepEqual(labels(first), ["Rows by priority", "Actions"]);
+  assert.deepEqual(labels(second), ["Ratings not yet reviewed", "Automated checks", "Quality score"]);
+  assert.equal(occurrences(first, '<a class="tile'), 2, "the first group holds nothing else");
+  assert.equal(occurrences(second, '<a class="tile'), 3, "the second group holds nothing else");
+  assert.equal(first.replace(/<a class="tile[^"]*" href="#[a-z]+">.*?<\/a>/g, ""), "", "the first group holds only its tiles");
+  assert.equal(second.replace(/<a class="tile[^"]*" href="#[a-z]+">.*?<\/a>/g, ""), "", "the second group holds only its tiles");
+  assert.equal(occurrences(header, '<div class="tiles">'), 2);
+  assert.equal(occurrences(header, '<div class="strip">'), 1);
+});
+
 test("the Needs attention block lists the fixture's blocker, provisional ratings, handoff and next actions, in that order", () => {
   const header = headerOf(golden());
   assert.ok(header.includes('<div class="attn"><h2 class="attn-title">Needs attention</h2><div class="attn-item">'));
@@ -357,7 +380,7 @@ test("a document without a computed block shows an em dash in the quality score 
 test("the header ends with the contents line, after the metadata, the tiles and the block", () => {
   const header = headerOf(golden());
   const toc = '<p class="toc"><b>Contents</b> <a href="#ground-rules">Ground rules</a> <a href="#assumptions">Assumptions</a> <a href="#reviews">Review record</a> <a href="#structure">Structure</a> <a href="#chains">Failure chains</a> <a href="#actions">Actions</a> <a href="#lints">Automated checks</a> <a href="#provenance">Provenance</a></p>';
-  const at = ['<dl class="header">', '<div class="tiles">', '<div class="attn">', toc].map((s) => header.indexOf(s));
+  const at = ['<dl class="header">', '<div class="strip">', '<div class="attn">', toc].map((s) => header.indexOf(s));
   assert.ok(at.every((i) => i !== -1), `a header part is missing: ${at.join(", ")}`);
   assert.deepEqual(at, [...at].sort((a, b) => a - b));
 });
@@ -664,7 +687,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
     "body { padding:0; font-size:11px; }",
     ".back { display:none; }",
     "h2, h3, article.row > header { break-after: avoid; }",
-    "article.row, tr, .attn-item, .tiles, .key, .el { break-inside: avoid; }",
+    "article.row, tr, .attn-item, .tile-group, .key, .el { break-inside: avoid; }",
     "thead { display: table-header-group; }",
     "a { color:inherit; text-decoration:none; }",
     ".frame { overflow-x:visible; }",
