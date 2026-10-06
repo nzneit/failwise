@@ -1,6 +1,6 @@
 // The one closed list of failure codes shared by every script (spec section 9).
-// Each code maps to exactly one process exit status: 1 usage, 2 validation, 3 I/O. A command
-// started under a Node too old to run it is a usage failure.
+// Each code maps to exactly one process exit status: 1 usage, 2 validation, 3 I/O and INTERNAL.
+// A command started under a Node too old to run it is a usage failure.
 
 const EXIT_USAGE = 1;
 const EXIT_VALIDATION = 2;
