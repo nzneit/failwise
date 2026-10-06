@@ -28,6 +28,27 @@ test("isRfc3339DateTime accepts Z and numeric offsets, with or without a fractio
   assert.equal(isRfc3339DateTime("2026-09-07T00:00:00-05:30"), true);
 });
 
+test("isRfc3339DateTime accepts a lower-case t and a lower-case z, as RFC 3339 permits", () => {
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00Z"), true);
+  assert.equal(isRfc3339DateTime("2026-09-07T10:00:00z"), true);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00z"), true);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00.123+02:00"), true);
+  assert.equal(isRfc3339DateTime("2026-09-07t23:59:60z"), true);
+});
+
+test("isRfc3339DateTime refuses in lower case what it refuses in upper case, and refuses any other letter in place of T or Z", () => {
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00z"), true);
+  assert.equal(isRfc3339DateTime("2026-09-07t24:00:00z"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:60:00z"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:61z"), false);
+  assert.equal(isRfc3339DateTime("2026-02-30t10:00:00z"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00z"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07t10:00:00+24:00"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07T10:00:00x"), false);
+  assert.equal(isRfc3339DateTime("2026-09-07x10:00:00Z"), false);
+});
+
 test("isRfc3339DateTime rejects a bad hour, a bad offset, a space separator, and a missing seconds field", () => {
   assert.equal(isRfc3339DateTime("2026-09-07T24:00:00Z"), false);
   assert.equal(isRfc3339DateTime("2026-09-07T10:60:00Z"), false);

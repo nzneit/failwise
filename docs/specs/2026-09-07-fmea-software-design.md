@@ -171,7 +171,7 @@ Departures from the research plan's tentative layout: no compliance overlay file
 
 **`computed?`**: `quality_score` (0 to 100), `lints[]` (`rule`, `severity` blocker or warning, `pointer`, `message`), `validated_at`, `validator_version` (the plugin manifest's `version`). Optional in the schema and absent until the first `validate.ts --write` that exits 0; never authored by hand.
 
-**Dates.** `meta.created`, `meta.updated`, `reviews[].date`, `actions[].target_date`, `actions[].completed_date`, `ratings.*.review.date`, and every `history[].date` are calendar dates, `YYYY-MM-DD`, declared `format: "date"`; `computed.validated_at` is an RFC 3339 timestamp, declared `format: "date-time"`. Draft 2020-12 treats `format` as an annotation, so the hand-coded checks in `validate.ts` enforce these formats.
+**Dates.** `meta.created`, `meta.updated`, `reviews[].date`, `actions[].target_date`, `actions[].completed_date`, `ratings.*.review.date`, and every `history[].date` are calendar dates, `YYYY-MM-DD`, declared `format: "date"`; `computed.validated_at` is an RFC 3339 timestamp, declared `format: "date-time"`, whose `T` separator and `Z` zone may be written in either case, as RFC 3339 §5.6 allows (amended 2026-10-06: the clause on case; the check had accepted upper case only, so a timestamp written with `t` or `z` was refused). Draft 2020-12 treats `format` as an annotation, so the hand-coded checks in `validate.ts` enforce these formats.
 
 **Invariants the validator enforces.** Violations are errors, not lints (§9).
 - Element, function, and chain ids are unique within the document; action ids are unique within their chain.

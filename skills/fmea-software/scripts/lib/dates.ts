@@ -17,16 +17,17 @@ export function isCalendarDate(s: string): boolean {
   return day >= 1 && day <= limit;
 }
 
-/** An RFC 3339 timestamp: a calendar date, `T`, `hh:mm:ss` with optional fraction, then `Z`
- *  or a numeric offset. Seconds may be 60 (leap second). Used for `computed.validated_at`. */
+/** An RFC 3339 timestamp: a calendar date, `T` or `t`, `hh:mm:ss` with optional fraction, then
+ *  `Z`, `z` or a numeric offset. RFC 3339 allows the lower-case letters, so they are accepted;
+ *  `nowIso` writes upper case. Seconds may be 60 (leap second). Used for `computed.validated_at`. */
 export function isRfc3339DateTime(s: string): boolean {
-  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/.exec(s);
+  const m = /^(\d{4}-\d{2}-\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([Zz]|[+-](\d{2}):(\d{2}))$/.exec(s);
   if (m === null) return false;
   if (!isCalendarDate(m[1])) return false;
   if (Number(m[2]) > 23) return false;
   if (Number(m[3]) > 59) return false;
   if (Number(m[4]) > 60) return false;
-  if (m[5] !== "Z" && (Number(m[6]) > 23 || Number(m[7]) > 59)) return false;
+  if (m[6] !== undefined && (Number(m[6]) > 23 || Number(m[7]) > 59)) return false; // group 6 is set only by a numeric offset
   return true;
 }
 
