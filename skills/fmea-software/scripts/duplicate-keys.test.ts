@@ -90,3 +90,16 @@ test("every script refuses a document that repeats a key with one IO_READ line, 
     assert.equal(existsSync(report), false);
   });
 });
+
+test("readJsonFile keeps the parse message for a text that is not JSON, even when it repeats a key", () => {
+  const { path, err } = refusal('{"a": 1, "a": 2');
+  assert.equal(err.code, "IO_READ");
+  assert.equal(err.pointer, undefined);
+  assert.match(err.message, new RegExp(`^cannot parse ${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} as JSON: `));
+});
+
+test("readJsonFile refuses a key repeated with an identical value", () => {
+  const { err } = refusal('{"meta": {"name": "same", "name": "same"}}');
+  assert.equal(err.pointer, "/meta");
+  assert.match(err.message, /the key "name" appears more than once in the object$/);
+});
