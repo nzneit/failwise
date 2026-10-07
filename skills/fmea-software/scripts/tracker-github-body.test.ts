@@ -71,6 +71,7 @@ const CONTROL_VECTORS: [string, string][] = [
   ["a\tb", "a b"],
   ["bell\u0007here", "bell here"],
   ["  padded  ", "padded"],
+  [`next${String.fromCharCode(0x85)}line`, "next line"],
 ];
 
 test("literal turns a lone carriage return, a tab and every other control character into a space, and trims the ends", () => {

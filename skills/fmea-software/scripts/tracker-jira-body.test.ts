@@ -119,6 +119,11 @@ test("renderSummary makes NUL, U+0001, ESC and DEL a space each, collapses the w
   assert.ok(!Array.from(summary).some((ch) => (ch.codePointAt(0) ?? 0) <= 0x1f || ch.codePointAt(0) === 0x7f), JSON.stringify(summary));
 });
 
+test("renderSummary makes U+0080, U+0085, U+009F and U+2028 a space each and collapses the whitespace", () => {
+  const [pad, nel, apc, lsep] = [0x80, 0x85, 0x9f, 0x2028].map((code) => String.fromCharCode(code));
+  assert.equal(renderSummary({ ...itemOf().content, title: `${pad}a${nel}b${apc}${apc}c ${lsep} d${nel}` }), "a b c d");
+});
+
 test("readMarker reads the key and text from the last paragraph, with and without the code mark", () => {
   const item = itemOf();
   assert.deepEqual(readMarker(renderDescription(item)), { key: item.key, text: item.text });

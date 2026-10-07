@@ -166,6 +166,12 @@ test("another site is refused before any other request, in the recorded case and
   }
 });
 
+test("the switch and the sign-in command name the configured host, not the default one", async () => {
+  const other = { ...jiraConfig, host: "other.example.com" };
+  holds(await rejectsWith(setup([authStatus()], other).provider.describe(), "TRACKER_UNAVAILABLE"), SWITCH.replace(HOST, "other.example.com"));
+  holds(await rejectsWith(setup([MISSING], other).provider.describe(), "TRACKER_UNAVAILABLE"), SIGN_IN.replace(HOST, "other.example.com"));
+});
+
 test("acli absent is TRACKER_UNAVAILABLE naming the install and the sign-in", async () => {
   holds(await rejectsWith(setup([MISSING]).provider.describe(), "TRACKER_UNAVAILABLE"), `acli was not found: install the Atlassian CLI and sign in with ${SIGN_IN}`);
   holds(await rejectsWith(setup([count(0), MISSING]).provider.listMarked(), "TRACKER_UNAVAILABLE"), "acli was not found");
@@ -613,6 +619,8 @@ test("closed_date is the UTC date of the resolution date, in the recorded form, 
     ["2026-10-07T22:30:00.000-0400", "2026-10-08"],
     ["2026-10-07T04:50:25.000+0000", "2026-10-07"],
     ["2026-10-07T04:50:25Z", "2026-10-07"],
+    ["2026-10-07T01:30:00.000+0300", "2026-10-06"],
+    ["2024-02-29T12:00:00.000+0000", "2024-02-29"],
   ];
   for (const [resolutiondate, date] of dates) assert.equal((await readOne(viewed("FAILW-5", { resolutiondate }))).closed_date, date, resolutiondate);
   const open = await readOne(viewed("FAILW-5", { status: status("In Progress", "indeterminate") }));
@@ -623,8 +631,14 @@ test("closed_date is the UTC date of the resolution date, in the recorded form, 
   assert.ok(!Object.hasOwn(undated, "closed_date"));
 });
 
-test("a resolution date outside the recorded timestamp form is TRACKER_REJECTED, even one Node would parse to a date (R3)", async () => {
-  for (const resolutiondate of ["1", "2026-10-07", "2026-10-07T00:50:25", "October 7, 2026", "2026-10-07 00:50:25Z", " 2026-10-07T04:50:25Z", "2026-10-07T04:50:25.Z"]) {
+// Outside the recorded form, or in it but no real date and time, which `new Date` would roll over.
+const UNREAD_DATES = [
+  "1", "2026-10-07", "2026-10-07T00:50:25", "October 7, 2026", "2026-10-07 00:50:25Z", " 2026-10-07T04:50:25Z", "2026-10-07T04:50:25.Z",
+  "1970-04-31T00:00:00.000+0000", "2026-02-30T12:00:00.000+0000", "2026-10-07T24:00:00.000+0000", "2026-10-07T12:60:00.000+0000",
+];
+
+test("a resolution date outside the recorded timestamp form, or no real date and time, is TRACKER_REJECTED, even one Node would parse to a date (R3)", async () => {
+  for (const resolutiondate of UNREAD_DATES) {
     holds(await rejectsWith(readOne(viewed("FAILW-5", { resolutiondate })), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
   assert.equal((await readOne(viewed("FAILW-5", { resolutiondate: "2026-10-07T04:50:25+00:00" }))).closed_date, "2026-10-07");

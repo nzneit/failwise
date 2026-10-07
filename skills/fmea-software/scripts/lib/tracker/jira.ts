@@ -9,6 +9,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ScriptError } from "../codes.ts";
+import { isRfc3339DateTime } from "../dates.ts";
 import type { ObservedState, TrackerConfig } from "../types.ts";
 import { isAdfDocument, readMarker, renderDescription, renderSummary } from "./jira-body.ts";
 import type { AdfDoc } from "./jira-body.ts";
@@ -344,12 +345,19 @@ function resolutionOf(fields: Json): string | null | undefined {
   return isRecord(resolution) && typeof resolution.name === "string" ? resolution.name : undefined;
 }
 
+/** A timestamp of the recorded form that is a real calendar date and time: the offset `+hhmm` Jira
+ *  writes gets its colon, so that the RFC 3339 check holds it to a real date, hour and minute, and
+ *  `1970-04-31` or `T24:00` is never rolled over by `new Date` (R3). */
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && TIMESTAMP.test(value) && isRfc3339DateTime(value.replace(/([+-][0-9]{2})([0-9]{2})$/, "$1:$2"));
+}
+
 /** The UTC date of the resolution date (s5), null when there is none, or undefined when it is not a
- *  timestamp of the recorded form or Node cannot parse it (R3). */
+ *  real timestamp of the recorded form or Node cannot parse it (R3). */
 function resolvedOn(fields: Json): string | null | undefined {
   const { resolutiondate } = fields;
   if (resolutiondate === null || resolutiondate === undefined) return null;
-  const time = typeof resolutiondate === "string" && TIMESTAMP.test(resolutiondate) ? new Date(resolutiondate) : undefined;
+  const time = isTimestamp(resolutiondate) ? new Date(resolutiondate) : undefined;
   const date = time === undefined || Number.isNaN(time.getTime()) ? "" : time.toISOString().slice(0, 10);
   return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date) ? date : undefined;
 }
