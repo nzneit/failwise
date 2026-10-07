@@ -129,7 +129,7 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
 
 - The TypeScript scripts and tools run directly under Node 24.2 or later and take no
   runtime dependencies, except that `track.ts` starts `gh` for GitHub and `acli` for Jira; the
-  version of `acli` checked is 1.3.39-stable. Keep it that way.
+  version of `acli` tested is 1.3.39-stable. Keep it that way.
 - No script needs a file outside `skills/fmea-software/` other than the files named on its command
   line, so the skill folder also runs copied on its own, outside a `node_modules` folder and below
   no `package.json` that sets another module type; `tools/skill-copy.test.ts` runs the four scripts
