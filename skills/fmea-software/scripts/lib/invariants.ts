@@ -15,6 +15,7 @@ export const INVARIANT_RULES: readonly string[] = [
   "element-parent-matches-id",
   "element-source-non-catalog",
   "element-dependency-required",
+  "element-security-rationale-required",
   "rating-review-by-date",
   "post-ratings-without-completed",
   "post-priority-presence",
@@ -118,8 +119,18 @@ function sourceIssues(elements: Element[]): Issue[] {
 function dependencyIssues(elements: Element[]): Issue[] {
   const out: Issue[] = [];
   for (let i = 0; i < elements.length; i++) {
-    if (elements[i].kind === "external_dependency" && elements[i].dependency === undefined) {
-      out.push(invariant("element-dependency-required", `element ${elements[i].id} is an external_dependency and needs a dependency block`, ptr("elements", i, "dependency")));
+    if (elements[i].boundary !== "in_scope" && elements[i].dependency === undefined) {
+      out.push(invariant("element-dependency-required", `element ${elements[i].id} has boundary ${elements[i].boundary} and needs a dependency block`, ptr("elements", i, "dependency")));
+    }
+  }
+  return out;
+}
+
+function securityRationaleIssues(elements: Element[]): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i].security_relevant === true && (elements[i].security_rationale ?? "").trim() === "") {
+      out.push(invariant("element-security-rationale-required", `element ${elements[i].id} is security-relevant and needs a security_rationale`, ptr("elements", i, "security_rationale")));
     }
   }
   return out;
@@ -218,6 +229,7 @@ export function checkInvariants(doc: FmeaDocument): Issue[] {
     ...parentMatchesIdIssues(elements),
     ...sourceIssues(elements),
     ...dependencyIssues(elements),
+    ...securityRationaleIssues(elements),
     ...ratingReviewIssues(chains),
     ...postRatingsIssues(chains),
     ...handoffIssues(chains),

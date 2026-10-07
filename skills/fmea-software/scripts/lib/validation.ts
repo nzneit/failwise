@@ -7,6 +7,7 @@ import type { Issue } from "./codes.ts";
 import { formatError } from "./codes.ts";
 import type { Computed, FmeaDocument, Lint } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
+import { legacyIssues } from "./legacy.ts";
 import { checkSchema } from "./schema.ts";
 import { checkInvariants, checkPriorities } from "./invariants.ts";
 import type { MachineRule } from "./lints.ts";
@@ -15,9 +16,11 @@ import { qualityScore } from "./quality.ts";
 
 export interface ValidateResult { ok: boolean; errors: Issue[]; lints: Lint[]; quality_score: number }
 
-/** Schema, then the invariants and the priority recomputation, then the lints: the document's
- *  machine rules followed by one warning per property of §7 the loaded table breaks. */
+/** The v1 gate, then the schema, then the invariants and the priority recomputation, then the lints:
+ *  the document's machine rules followed by one warning per property of §7 the loaded table breaks. */
 export function validateDocument(raw: unknown, table: PriorityTable, rules: MachineRule[] = MACHINE_RULES): ValidateResult {
+  const legacy = legacyIssues(raw);
+  if (legacy.length > 0) return { ok: false, errors: legacy, lints: [], quality_score: 0 };
   const schemaIssues = checkSchema(raw);
   if (schemaIssues.length > 0) return { ok: false, errors: schemaIssues, lints: [], quality_score: 0 };
   const doc = raw as FmeaDocument;

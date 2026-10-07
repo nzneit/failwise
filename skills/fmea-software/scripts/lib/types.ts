@@ -1,7 +1,8 @@
 // Document types for an fmea-software analysis. Types only: this file emits no runtime code,
 // so every import of it elsewhere is an `import type`.
 
-export type ElementKind = "service" | "external_dependency" | "interface" | "event_stream" | "datastore" | "security_component" | "component";
+export type ElementKind = "service" | "datastore" | "event_stream" | "interface" | "component";
+export type ElementBoundary = "in_scope" | "owned_outside" | "third_party";
 export type SourceKind = "document" | "repo" | "interview" | "incident" | "contract" | "catalog";
 export type ControlKind = "prevention" | "detection" | "compensating";
 export type ControlStatus = "existing" | "planned";
@@ -34,7 +35,7 @@ export interface Meta {
 }
 export interface Dependency { strength: Strength; sla?: string; limits?: string }
 export interface Source { kind: SourceKind; ref: string }
-export interface Element { id: string; kind: ElementKind; name: string; description: string; parent: string | null; dependency?: Dependency; sources: Source[] }
+export interface Element { id: string; kind: ElementKind; name: string; description: string; parent: string | null; boundary: ElementBoundary; security_relevant: boolean; security_rationale?: string; dependency?: Dependency; sources: Source[] }
 export interface Fn { id: string; element: string; statement: string; conditions: string[]; for_whom: string }
 export interface Cause { text: string; origin?: CauseOrigin; adversarial?: boolean }
 export interface ControlEvidence { kind: ControlEvidenceKind; ref?: string }

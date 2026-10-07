@@ -6,7 +6,9 @@ Scoring guide for the skill evals of design §10. Each of prompts 1, 5, 6, and 7
 
 The judge reads the prompt and its preamble, the run's `inputs/`, `analysis.json`, `report.html`, `validate.json` (the validator's output for `analysis.json`), the final message in `transcript.json` (`result`), and the run's message stream `transcript.jsonl` (one JSON object per line; its assistant `tool_use` blocks are the only record of the commands the run ran — `transcript.json` holds the final message and cost metadata, never a tool call); for prompt 6 also `fixtures/legacy-rpn-sheet.expected.fmea.json`, for prompt 7 also `fixtures/update/expected-stale.json`. Every criterion is scored 0, 1, or 2 with one or two sentences of evidence naming the pointer, file, or transcript text relied on. A criterion marked **must** has to score 2 for the run to pass.
 
-Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts).
+Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts). Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts).
+
+**Rubric version.** This is rubric 2, dated 2026-10-07: it adds c13. A results file written under it carries `rubric: 2` at its top level; a file with no such field was judged under rubric 1 and is read without c13, so the v1 document regenerates as it was.
 
 **Unattended runs.** The run cannot ask a question, so the things the skill normally does interactively are judged by their unattended substitutes:
 
@@ -20,7 +22,7 @@ Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 
 
 Missing inputs are asked for rather than invented. The prompt 1 and prompt 5 fixtures deliberately leave a gap — `checkout-inputs.md` gives the pricing service's availability SLA and omits its scaling limit — so a run on those prompts has at least one input to ask for, and a run that records no assumption there scores 0.
 
-The gap is one the skill's own checklist asks about (amended 2026-09-15 by the user's ruling at the acceptance re-gate, which reconciled this clause with `references/design-inputs.md` after the first re-judging scored the same fact pattern 0, 1 and 2 across four runs). Item 4 of that file requires the availability SLA and the scaling limits *for internal dependencies*, and pricing is an internal dependency under the same file's rule that an element of kind `external_dependency` must carry `dependency` while an internal dependency is any other element that carries one: the fixture types pricing as `service` with no parent, and the only `external_dependency` in it is `checkout.payment-gateway`. The fixture also states the order store's ceiling in as many words ("no published request ceiling"), so pricing's silence is the planted omission rather than the fixture declining to supply the datum.
+The gap is one the skill's own checklist asks about (amended 2026-09-15 by the user's ruling at the acceptance re-gate, which reconciled this clause with `references/design-inputs.md` after the first re-judging scored the same fact pattern 0, 1 and 2 across four runs). Item 4 of that file requires the availability SLA and the scaling limits *for every element carrying a dependency block*, and pricing carries one: the fixture types pricing as a `service` owned outside the analysis with a weak dependency, and the only third-party element in it is `checkout.payment-gateway` (amended 2026-10-07 with rubric 2, after that file's item 4 came to name every element carrying a dependency block in place of internal dependencies, and the retired kind `external_dependency` gave way to a role and a boundary). The fixture also states the order store's ceiling in as many words ("no published request ceiling"), so pricing's silence is the planted omission rather than the fixture declining to supply the datum.
 
 Read that clause literally: it is met only by an entry in `meta.assumptions[]` with `owner: "user"` and `status: "open"` naming the missing input, together with the question in the final message, so a run that instead writes a value for that input into a document field — however reasonable the value, and however plainly the field records it as unstated — scores 0, because a field value is not a question. A run that records the gap in neither an assumption nor the final message scores 0 as well, whatever else it recorded: the score is on this input, not on the run's general diligence, so recording other gaps conscientiously does not substitute for this one. (Second sentence added 2026-09-15 by the same ruling.) Prompts 6 and 7 carry no planted gap: score 2 when the run needed nothing it was not given, and score 1 or 0 only when you can name an input the run stated as fact without having been given it.
 
@@ -122,6 +124,34 @@ The update flags what changed and nothing else. Compare against `fixtures/update
 - **1** — The stale set is correct and no unchanged row was re-rated, but a reason is wrong, `meta.version` was not bumped, or `meta.history` was not appended.
 - **0** — The stale set differs from the expected set, or an unchanged row was re-rated.
 
+### c13-element-typing (prompts 1 and 6; rubric 2)
+
+Every element carries the role, boundary and security flag the inputs support, by the tests in `references/structure-elements.md`. Compare against the table for the prompt.
+
+Prompt 1 (`checkout-inputs.md`):
+
+| Element | Role | Boundary | `security_relevant` |
+|---|---|---|---|
+| `checkout` | `service` | `in_scope` | false |
+| `checkout.api` | `interface` | `in_scope` | false |
+| `checkout.payment-gateway` | `service` | `third_party` | false |
+| `checkout.order-store` | `datastore` | `in_scope` | false |
+| `checkout.session-auth` | `component` | `in_scope` | true |
+| `pricing` | `service` | `owned_outside` | false |
+
+Prompt 6 (`legacy-rpn-sheet.csv`, typed by the converter from the item text):
+
+| Element | Role | Boundary | `security_relevant` |
+|---|---|---|---|
+| `checkout-api` | `interface` | `in_scope` | false |
+| `payment-gateway` | `service` | `third_party` | false |
+| `order-store` | `datastore` | `in_scope` | false |
+| `pricing-service` | `service` | `in_scope` | false |
+
+- **2** — Every element's role, boundary and flag match the table.
+- **1** — Every role matches, and the boundary or the flag differs on at most one element.
+- **0** — Otherwise.
+
 ## Stability between the two runs at the same model capability
 
 `tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when both hold:
@@ -135,7 +165,7 @@ Run-to-run instability is one of the three documented failure modes of AI-genera
 
 A run passes when every **must** criterion scores 2 and the total is at least **80%** of the maximum (16 of 20; 18 of 22, since 17.6 rounds up to the next whole score). A (prompt, model capability) pair passes when both of its runs pass and the stability check between them passes. v1 is accepted on the evals when all eight pairs pass (design §15, criterion 2).
 
-With the criteria as written, only c3 and c8 are not musts, so a run whose musts all score 2 already totals at least 16 of 20 or 18 of 22; the total rule binds only if a must is demoted or a criterion is added.
+With the criteria as written, only c3, c8 and c13 are not musts. On prompts 5 and 7 a run whose musts all score 2 already totals at least 16 of 20 or 18 of 22; on prompts 1 and 6 under rubric 2 such a run totals 16 of 22 with the three at 0 and needs two more points among them, so the total rule binds there.
 
 ## Changing a threshold
 

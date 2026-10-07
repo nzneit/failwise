@@ -39,6 +39,9 @@ test("MACHINE_RULES lists every rule with its severity, in order", () => {
     ["metadata-without-ground-rules", "blocker"],
     ["tracker-link-without-config", "warning"],
     ["tracker-link-shared", "warning"],
+    ["dependency-row-without-dependency", "warning"],
+    ["security-row-without-flag", "warning"],
+    ["repo-ref-form", "warning"],
   ]);
 });
 
@@ -223,6 +226,84 @@ test("runLints returns rules in MACHINE_RULES order and then in document order",
     "rating-provisional /chains/1/ratings/O",
     "rating-provisional /chains/1/ratings/D",
   ]);
+});
+
+function golden(): FmeaDocument {
+  return loadFixture<FmeaDocument>("checkout-service.fmea.json");
+}
+
+function elementById(doc: FmeaDocument, id: string): FmeaDocument["elements"][number] {
+  const el = doc.elements.find((e) => e.id === id);
+  assert.ok(el, `the document has no element ${id}`);
+  return el;
+}
+
+test("dependency-row-without-dependency fires on a cat-dependency- ref whose element carries no dependency block and stays silent on an in_scope element that carries one", () => {
+  const doc = golden();
+  assert.equal(doc.chains[0].catalog_refs[0].id, "cat-dependency-01");
+  assert.deepEqual(fired(doc, "dependency-row-without-dependency"), []);
+
+  const pricing = elementById(doc, "pricing");
+  pricing.boundary = "in_scope";
+  assert.ok(pricing.dependency);
+  doc.chains[2].catalog_refs = [{ id: "cat-dependency-02", provenance: "skill-authored" }];
+  assert.deepEqual(fired(doc, "dependency-row-without-dependency"), []);
+
+  const gateway = elementById(doc, "checkout.payment-gateway");
+  delete gateway.dependency;
+  gateway.boundary = "in_scope";
+  assert.deepEqual(fired(doc, "dependency-row-without-dependency"), [{
+    rule: "dependency-row-without-dependency", severity: "warning", pointer: "/chains/0/catalog_refs/0/id",
+    message: "chain ch-1 applies dependency row cat-dependency-01 to element checkout.payment-gateway, which carries no dependency block",
+  }]);
+});
+
+test("security-row-without-flag fires on a cat-security- ref whose element is not security-relevant", () => {
+  const doc = golden();
+  assert.equal(doc.chains[4].catalog_refs[0].id, "cat-security-01");
+  assert.deepEqual(fired(doc, "security-row-without-flag"), []);
+
+  const auth = elementById(doc, "checkout.session-auth");
+  auth.security_relevant = false;
+  delete auth.security_rationale;
+  assert.deepEqual(fired(doc, "security-row-without-flag"), [{
+    rule: "security-row-without-flag", severity: "warning", pointer: "/chains/4/catalog_refs/0/id",
+    message: "chain ch-5 applies security row cat-security-01 to element checkout.session-auth, which is not marked security-relevant",
+  }]);
+});
+
+test("the row lints skip a chain whose function does not resolve", () => {
+  const doc = golden();
+  elementById(doc, "checkout.session-auth").security_relevant = false;
+  doc.chains[4].function = "fn-missing";
+  assert.deepEqual(fired(doc, "security-row-without-flag"), []);
+});
+
+test("repo-ref-form stays silent while no repo ref is qualified, then flags the unqualified and the short-SHA refs, and ignores document refs", () => {
+  const doc = minimalDoc();
+  const element = (id: string, kind: "repo" | "document", ref: string): FmeaDocument["elements"][number] => ({
+    id, kind: "service", name: id, description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: [{ kind, ref }],
+  });
+  doc.elements.push(element("bare", "repo", "src/a.ts"));
+  assert.deepEqual(fired(doc, "repo-ref-form"), []);
+
+  doc.elements.push(element("qualified", "repo", "acme/checkout@" + "a".repeat(40) + ":src/b.ts"));
+  const one = fired(doc, "repo-ref-form");
+  assert.equal(one.length, 1);
+  assert.equal(one[0].severity, "warning");
+  assert.equal(one[0].pointer, "/elements/1/sources/0/ref");
+  assert.match(one[0].message, /^repo ref src\/a\.ts on element bare\b/);
+  assert.match(one[0].message, /is not in the owner\/repo@commit:path form/);
+
+  doc.elements[2].sources[0].ref = "acme/checkout@abc1234:src/b.ts";
+  const two = fired(doc, "repo-ref-form");
+  assert.equal(two.length, 2);
+  assert.equal(two[1].pointer, "/elements/2/sources/0/ref");
+  assert.match(two[1].message, /^repo ref acme\/checkout@abc1234:src\/b\.ts on element qualified\b/);
+  assert.match(two[1].message, /full 40-hex-digit SHA/);
+
+  doc.elements.push(element("doc", "document", "acme/checkout@abc1234:docs/x.md"));
+  assert.deepEqual(fired(doc, "repo-ref-form"), two);
 });
 
 test("runLints takes a rule subset", () => {

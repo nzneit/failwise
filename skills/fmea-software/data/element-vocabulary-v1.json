@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "id": "service",
+      "label": "Service",
+      "test": "Deployed, started and stopped as a unit, with a runtime of its own; it answers requests or does work on its own schedule",
+      "basis": "The application container of the C4 model (C153) and the process of the data flow diagram in Microsoft's SDL threat-modeling article (C147); the service-dynamics rows are written about these.",
+      "tags": ["paraphrased:C153", "cites:C147", "skill-authored"]
+    },
+    {
+      "id": "datastore",
+      "label": "Datastore",
+      "test": "Holds state at rest that other elements read or write; does nothing on its own",
+      "basis": "The data-store container of the C4 model (C153) and the data store in Microsoft's SDL threat-modeling article (C147); the data items of the NASA Software Safety Guidebook (C137) are a basis for per-kind data fault types.",
+      "tags": ["paraphrased:C153", "cites:C147", "cites:C137", "skill-authored"]
+    },
+    {
+      "id": "event_stream",
+      "label": "Event stream",
+      "test": "Decouples producers from consumers in time: one queue, topic or log, never the broker",
+      "basis": "Queues and topics as containers in the C4 model (C154); the software events of the NASA Software Safety Guidebook (C138) are a basis for per-kind event fault types.",
+      "tags": ["paraphrased:C154", "cites:C138", "skill-authored"]
+    },
+    {
+      "id": "interface",
+      "label": "Interface",
+      "test": "A contract between two elements that is analysed in its own right: its schema, versions, limits and error contract",
+      "basis": "The interface failure class of the NASA Software Safety Guidebook (C136) and the TSF interfaces of Common Criteria (C158).",
+      "tags": ["cites:C136", "cites:C158", "skill-authored"]
+    },
+    {
+      "id": "component",
+      "label": "Component",
+      "test": "Everything else: code that ships inside another element's deployable and has no runtime of its own, including a library, a module, a handler, a job function, an ML model",
+      "basis": "The component of the C4 model (C153); the CSCIs, units, objects and instances a software FMEA inventories by design phase in the NASA Software Engineering Handbook (C135) are a basis for this role.",
+      "tags": ["paraphrased:C153", "cites:C135", "skill-authored"]
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "in_scope",
+      "label": "In scope",
+      "test": "This analysis covers it: its sources are the repository, documents, incidents or people of the analysed system",
+      "basis": "The line between in scope and outside it rests on the scope of the analysed workload in the Azure Well-Architected Framework (C143) and in the AWS Well-Architected reliability pillar (C146), on the external systems the analysed system needs in MIL-STD-1629A (C134), and on the interactors outside the scope in Microsoft's SDL threat-modeling article (C149).",
+      "tags": ["cites:C143", "cites:C146", "cites:C134", "cites:C149", "skill-authored"]
+    },
+    {
+      "id": "owned_outside",
+      "label": "Owned outside",
+      "test": "The organisation can change it, but this analysis does not cover it: another team's service, the deploy pipeline when not analysed, a shared library owned elsewhere",
+      "basis": "The split of the outside into owned outside and third party is the skill's own: no source draws it.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "id": "third_party",
+      "label": "Third party",
+      "test": "Outside the organisation's control",
+      "basis": "The split of the outside into owned outside and third party is the skill's own: no source draws it.",
+      "tags": ["skill-authored"]
+    }
+  ],
+  "security": {
+    "label": "Security-relevant",
+    "test": "If this element misbehaves, can someone see or do what the system must prevent?",
+    "basis": "The security-relevant components of NIST SP 800-53 Rev. 5 (C157), the TOE security functionality of Common Criteria (C158), and the isolation of security functions in NIST SP 800-53 Rev. 5 (C156), the reason the class is worth marking; the list of properties, authentication, authorisation, confidentiality or integrity, is the skill's own.",
+    "tags": ["paraphrased:C157", "cites:C158", "cites:C156", "skill-authored"]
+  },
+  "tie_breaks": [
+    {
+      "text": "A cache is a `datastore`. A broker is a `service`; its topics are `event_stream`s.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "A third-party API: the provider is a `service` with `boundary: third_party`; its contract becomes an `interface` element only when the contract itself is analysed.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "A platform you cannot decompose (a serverless platform, a cloud region) takes `service`; what it exposes and you depend on, such as a cache API, can be its own element with the fitting role.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "Code that runs on the user's device but ships inside another element's deployable, such as a browser app served by its worker, is a `component` of that element.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "A managed database or queue is `datastore` or `event_stream` with `boundary: third_party`.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "An ML or LLM model is a `component` when it runs inside a service and a `service` when it is served separately.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "Code that reads or writes a cache is a component of its element; the cache itself is the datastore.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "A parent is judged on its own behaviour: a security flag propagates neither up to a parent nor down to a child.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "An element outside the scope takes the security test like any other; a third-party identity provider, or a platform that holds the system's secrets, is security-relevant.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "An item named as an API, endpoint or contract, with no deployable of its own named, is an interface.",
+      "tags": ["skill-authored"]
+    }
+  ]
+}

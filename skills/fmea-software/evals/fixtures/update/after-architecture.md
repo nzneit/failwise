@@ -17,14 +17,14 @@ Synthetic input for the fmea-software update-mode eval. It describes the same sy
 
 ## Component inventory
 
-| Element | Kind | Parent | What it is |
-|---|---|---|---|
-| checkout | service | none | Orchestrates pricing, payment authorization, and order persistence for a submitted cart. |
-| checkout.payment-gateway | external_dependency | checkout | The third-party card authorization gateway, now settled against asynchronously. |
-| checkout.session-auth | security_component | checkout | The session token issuer and verifier that authenticates a shopper. |
-| checkout.order-store | datastore | checkout | The relational store holding orders and their state transitions. |
-| checkout.pricing-cache | component | checkout | In-process cache of priced carts, new in this release. |
-| pricing | service | none | Returns a priced cart for a shopper and a locale. |
+| Element | Role | Boundary | Security-relevant | Parent | What it is |
+|---|---|---|---|---|---|
+| checkout | service | in_scope | no | none | Orchestrates pricing, payment authorization, and order persistence for a submitted cart. |
+| checkout.payment-gateway | service | third_party | no | checkout | The third-party card authorization gateway, now settled against asynchronously. |
+| checkout.session-auth | component | in_scope | yes | checkout | The session token issuer and verifier that authenticates a shopper. |
+| checkout.order-store | datastore | in_scope | no | checkout | The relational store holding orders and their state transitions. |
+| checkout.pricing-cache | datastore | in_scope | no | checkout | In-process cache of priced carts, new in this release. |
+| pricing | service | in_scope | no | none | Returns a priced cart for a shopper and a locale. |
 
 ## Function statements
 

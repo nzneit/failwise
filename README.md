@@ -2,7 +2,7 @@
 
 failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report.
 
-It is version 0.3.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions has no evaluation, neither as GitHub issues, new in 0.2.0, nor as Jira work items, new in 0.3.0. Read [Status and limitations](#status-and-limitations) before relying on it.
+It is version 0.4.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions has no evaluation, neither as GitHub issues, new in 0.2.0, nor as Jira work items, new in 0.4.0. Version 0.3.0 changed the analysis schema to v2: every element now carries a boundary and a security flag, and the former `external_dependency` and `security_component` kinds became those two attributes; an analysis written against 0.2.x is refused with one `KIND_LEGACY` line and is migrated through the skill's update mode, as `SKILL.md` describes under "Migrate a v1 document". Read [Status and limitations](#status-and-limitations) before relying on it.
 
 ## What an FMEA is
 
@@ -91,11 +91,11 @@ For a Jira target, `meta.tracker` holds the site as `host`, such as `example.atl
 - `refresh` reads an item closed under the status or resolution `Done` as done and proposes Completed, and one closed as `Won't Do` as dropped and proposes Not Implemented. If your project's workflow closes work under other names, Claude writes the whole list in `meta.tracker.states`: a `done` or `dropped` list written there replaces its default, so it keeps `Done` or `Won't Do` while your site still closes work under that name. An item closed under a name in neither list is reported as `closed-unclear` with its status and resolution, so that you can choose, and add the name to the list.
 - A linked item whose description no longer carries its action's key, or carries another action's, is reported as `link-mismatch` and left as it is; check the link and, if it is wrong, remove the action's `tracker` block by hand. `refresh` refuses a link to an item on a site other than `host`; remove that link by hand too.
 
-An analysis that carries a tracker target or a link is refused by the validator of 0.1.0, and one with a Jira target by the validator of 0.2.0 as well, so people who share an analysis need to share the plugin version too.
+An analysis that carries a tracker target or a link is refused by the validator of 0.1.0, and one with a Jira target by the validators of 0.2.0 and 0.3.0 as well, so people who share an analysis need to share the plugin version too.
 
 ## Status and limitations
 
-0.3.0 is a pre-release. Its skill was evaluated as 0.1.0, which did not pass its own acceptance gate, and the tracking of actions has no evaluation: neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.3.0 adds. The skill was tested on four prompts, each at two model capabilities, high (filled by glm-5.3) and medium (glm-5.3-flash), and three of the eight combinations passed: converting a legacy RPN sheet at both, and updating an analysis after an architecture change at high. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md); both call that release v1.
+0.4.0 is a pre-release. Its skill was evaluated as 0.1.0, which did not pass its own acceptance gate, and the tracking of actions has no evaluation: neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds. The skill was tested on four prompts, each at two model capabilities, high (filled by glm-5.3) and medium (glm-5.3-flash), and three of the eight combinations passed: converting a legacy RPN sheet at both, and updating an analysis after an architecture change at high. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md); both call that release v1.
 
 The other six acceptance criteria pass, with one caveat: the check that each cited record supports its statement predates the edits of 2026-09-29. Four reference files have open findings from it, none about licensing, and two were not re-checked (see the acceptance note's addendum).
 
@@ -110,7 +110,7 @@ Known limitations:
 
 Not in this version:
 
-- Ready-made failure modes for every kind of element. The skill's catalog has them for services, external dependencies and components, with a short set for security components. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
+- Ready-made failure modes for every kind of element. The skill's catalog has them for services and components, with dependency rows for any element outside the analysis or carrying a dependency block and a short security set for security-relevant elements. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
 - Threat modeling. A failure whose cause is an adversary is recorded as a handoff to threat modeling.
 - Process-side FMEA (PFMEA) of delivery, pipelines or operations. Such a request gets a short answer naming what is sourced and what is missing, and no analysis.
 

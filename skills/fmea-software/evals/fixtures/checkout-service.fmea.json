@@ -66,6 +66,8 @@
       "name": "Checkout service",
       "description": "Orchestrates pricing, payment authorization, and order persistence for a submitted cart.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -83,6 +85,8 @@
       "name": "Checkout HTTP interface",
       "description": "The public HTTP interface the storefront calls to submit and confirm a cart.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -92,10 +96,12 @@
     },
     {
       "id": "checkout.payment-gateway",
-      "kind": "external_dependency",
+      "kind": "service",
       "name": "Payment gateway",
       "description": "A third-party card authorization gateway reached over HTTPS.",
       "parent": "checkout",
+      "boundary": "third_party",
+      "security_relevant": false,
       "dependency": {
         "strength": "strong",
         "sla": "99.95% monthly",
@@ -108,7 +114,7 @@
         },
         {
           "kind": "catalog",
-          "ref": "cat-external_dependency-01"
+          "ref": "cat-dependency-01"
         }
       ]
     },
@@ -118,6 +124,8 @@
       "name": "Order store",
       "description": "The relational store holding orders and their state transitions.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -127,10 +135,13 @@
     },
     {
       "id": "checkout.session-auth",
-      "kind": "security_component",
+      "kind": "component",
       "name": "Session authentication",
       "description": "The session token issuer and verifier that authenticates a shopper.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": true,
+      "security_rationale": "Issues and verifies the session token that authenticates a shopper; a wrong accept lets a stranger act as the shopper.",
       "sources": [
         {
           "kind": "document",
@@ -138,7 +149,7 @@
         },
         {
           "kind": "catalog",
-          "ref": "cat-security_component-01"
+          "ref": "cat-security-01"
         }
       ]
     },
@@ -148,6 +159,8 @@
       "name": "Pricing service",
       "description": "Returns a priced cart for a shopper and a locale.",
       "parent": null,
+      "boundary": "owned_outside",
+      "security_relevant": false,
       "dependency": {
         "strength": "weak",
         "sla": "99.9% monthly"
@@ -316,7 +329,7 @@
       ],
       "catalog_refs": [
         {
-          "id": "cat-external_dependency-01",
+          "id": "cat-dependency-01",
           "provenance": "adapted-from:C014"
         }
       ],
@@ -726,7 +739,7 @@
       },
       "catalog_refs": [
         {
-          "id": "cat-security_component-01",
+          "id": "cat-security-01",
           "provenance": "skill-authored"
         }
       ],

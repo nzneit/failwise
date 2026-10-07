@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:fmea-software:schema:fmea:v1",
+  "$id": "urn:fmea-software:schema:fmea:v2",
   "title": "fmea-software analysis document",
   "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
   "type": "object",
@@ -150,7 +150,7 @@
         },
         "security": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The security boundary statement: security components are analysed as ordinary elements, and any failure whose cause is an adversary becomes a handoff row to threat modeling."
+          "description": "The security boundary statement: security-relevant elements are analysed as ordinary elements, and any failure whose cause is an adversary becomes a handoff row to threat modeling."
         }
       }
     },
@@ -250,7 +250,7 @@
     },
     "dependency": {
       "title": "Dependency",
-      "description": "How the analysed system depends on this element, classified strong or weak with its SLA and limits as free text (F-WS3-01). Required on an element of kind external_dependency and optional on every other kind; an internal dependency is any other element that carries it. The keyword subset cannot make it conditional, so the invariant element-dependency-required enforces the requirement.",
+      "description": "How the analysed system depends on this element, classified strong or weak with its SLA and limits as free text (F-WS3-01). Required when the element's boundary is owned_outside or third_party, which makes it an external dependency, and optional on an in_scope element, which it makes an internal dependency. The keyword subset cannot make it conditional, so the invariant element-dependency-required enforces the requirement.",
       "type": "object",
       "additionalProperties": false,
       "required": ["strength"],
@@ -282,24 +282,28 @@
         },
         "ref": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The reference as the source spells it: a document name or path with an optional heading, a repository, a person or role, an incident id, a contract clause. When kind is catalog, the cat-<kind>-<NN> row id; the keyword subset cannot make that conditional, so the reviewer checks it. No URI format is asserted."
+          "description": "The reference as the source spells it: a document name or path with an optional heading, a repository, a person or role, an incident id, a contract clause. When kind is catalog, the cat-<kind>-<NN> row id; the keyword subset cannot make that conditional, so the reviewer checks it. No URI format is asserted. A repo ref may take the qualified form owner/repo@commit:path with commit a full 40-hex-digit SHA; a run over several codebases uses that form on every repo ref, and the lint repo-ref-form checks that once one repo ref is qualified every repo ref is."
         }
       }
+    },
+    "elementBoundary": {
+      "enum": ["in_scope", "owned_outside", "third_party"],
+      "description": "Who can change the element and whether this analysis covers it: in_scope, this analysis covers it; owned_outside, the organisation can change it but this analysis does not cover it; third_party, outside the organisation's control. A dependency block is required when the boundary is not in_scope (invariant element-dependency-required)."
     },
     "element": {
       "title": "Element",
       "description": "One element of the structure, keyed by id (step 2). The report renders elements as a structure tree.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "name", "description", "parent", "sources"],
+      "required": ["id", "kind", "name", "description", "parent", "boundary", "security_relevant", "sources"],
       "properties": {
         "id": {
           "$ref": "#/$defs/elementId",
           "description": "Unique within the document (invariant element-id-unique). Its dotted segments carry the hierarchy; its depth is its level. The eval stability check compares element id sets after trimming and case-folding."
         },
         "kind": {
-          "enum": ["service", "external_dependency", "interface", "event_stream", "datastore", "security_component", "component"],
-          "description": "The skill's own seven-value vocabulary. A security component is analysed like any other kind (D6); an ML or LLM element takes whichever kind fits, usually component."
+          "enum": ["service", "datastore", "event_stream", "interface", "component"],
+          "description": "The element's role, one of five. The tests that assign a role, the boundary and the security flag are in data/element-vocabulary-v1.json and references/structure-elements.md; an ML or LLM element is a component when it runs inside a service and a service when it is served separately."
         },
         "name": {
           "$ref": "#/$defs/nonEmptyString",
@@ -312,6 +316,17 @@
         "parent": {
           "type": ["string", "null"],
           "description": "Equal to id with its last dotted segment removed, or null at depth 1; the invariant element-parent-matches-id rejects any other value, and element-parent-resolves requires the named element to exist. Stored for the reader; derivable from id."
+        },
+        "boundary": {
+          "$ref": "#/$defs/elementBoundary"
+        },
+        "security_relevant": {
+          "type": "boolean",
+          "description": "True when a required security property (authentication, authorisation, confidentiality or integrity) depends on the element working correctly. A run's default answer is false. The security rows of the catalog apply when true."
+        },
+        "security_rationale": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Why the flag is set; required when security_relevant is true (invariant element-security-rationale-required) and permitted when it is false."
         },
         "dependency": {
           "$ref": "#/$defs/dependency"
@@ -704,8 +719,8 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^cat-(?:service|external_dependency|interface|event_stream|datastore|security_component|component)-[0-9]{2}$",
-          "description": "The catalog's row-id form: cat-<element kind>-<two digits>."
+          "pattern": "^cat-(?:service|datastore|event_stream|interface|component|dependency|security)-[0-9]{2}$",
+          "description": "The catalog's row-id form: cat-<role, dependency or security>-<two digits>."
         },
         "provenance": {
           "type": "string",

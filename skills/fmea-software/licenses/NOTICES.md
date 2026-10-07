@@ -73,6 +73,16 @@ The sources below keep their own licenses, and where a license text must travel 
 - **Attribution:** this entry and the source's row in the register in `references/provenance.md`; each citing statement names its record id.
 - **Use:** nothing is reproduced word for word; paraphrased in `references/quality-and-lint.md`.
 
+## The C4 model
+
+- **Author:** Simon Brown
+- **Title:** "The C4 model for visualising software architecture", the Abstractions and Queues and topics pages
+- **Address:** https://c4model.com/abstractions and https://c4model.com/abstractions/queues-and-topics
+- **License:** Creative Commons Attribution 4.0 International (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/
+- **Records:** C153–C154, in the source register in `references/provenance.md`.
+- **Attribution:** this entry and the source's row in the register in `references/provenance.md`; each citing statement names its record id.
+- **Use:** nothing is reproduced word for word; paraphrased in `references/structure-elements.md` and `data/element-vocabulary-v1.json`.
+
 ## Reading the entries
 
 Paths are relative to the skill folder, `skills/fmea-software/`. A record id such as `C077` resolves to its source through the register in [`references/provenance.md`](../references/provenance.md), which also defines the tags: `sourced:` marks words reproduced from a source, `adapted-from:` its content changed for this domain, and `paraphrased:` its content restated in other words.

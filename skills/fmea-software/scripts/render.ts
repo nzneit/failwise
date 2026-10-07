@@ -3,6 +3,8 @@ import { ScriptError } from "./lib/codes.ts";
 import type { Action, Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
+import type { Vocabulary } from "./lib/vocabulary.ts";
+import { loadVocabulary, vocabularyHtml } from "./lib/vocabulary.ts";
 import { staleComputed, validateDocument, writeIssues } from "./lib/validation.ts";
 import { escapeHtml, escapeJsonForScript } from "./lib/escape.ts";
 import { parseArgs } from "./lib/args.ts";
@@ -178,17 +180,24 @@ function elementFactsHtml(el: Element): string {
   return `<dl class="el-facts"><dt>Dependency</dt><dd>${e(dep.strength)}</dd>${dep.sla ? `<dt>SLA</dt><dd>${e(dep.sla)}</dd>` : ""}${dep.limits ? `<dt>Limits</dt><dd>${e(dep.limits)}</dd>` : ""}</dl>`;
 }
 
-function structureHtml(elements: Element[]): string {
+// The element's three marks: its role, its boundary and, when set, the security flag.
+function elementTagHtml(el: Element): string {
+  const security = el.security_relevant ? `<span class="el-security">security-relevant</span>` : "";
+  return `<span class="el-tag"><code class="el-id">${elementIdHtml(el)}</code><span class="el-kind">${e(el.kind.replaceAll("_", " "))}</span><span class="el-boundary">${e(el.boundary.replaceAll("_", " "))}</span>${security}</span>`;
+}
+
+function structureHtml(elements: Element[], vocabulary: Vocabulary): string {
   const children = (parent: string | null): Element[] => elements.filter((el) => el.parent === parent);
   const node = (el: Element, depth: number): string => {
-    const who = `<div class="el-who"><span class="el-name">${e(el.name)}</span><span class="el-tag"><code class="el-id">${elementIdHtml(el)}</code><span class="el-kind">${e(el.kind.replaceAll("_", " "))}</span></span></div>`;
-    const what = `<div class="el-what">${el.description ? `<p class="el-desc">${e(el.description)}</p>` : ""}${elementFactsHtml(el)}</div>`;
+    const who = `<div class="el-who"><span class="el-name">${e(el.name)}</span>${elementTagHtml(el)}</div>`;
+    const rationale = el.security_rationale ? `<p class="el-rationale">${e(el.security_rationale)}</p>` : "";
+    const what = `<div class="el-what">${el.description ? `<p class="el-desc">${e(el.description)}</p>` : ""}${rationale}${elementFactsHtml(el)}</div>`;
     const kids = children(el.id);
     return `<li><div class="el" style="--el-depth:${depth}">${who}${what}</div>${kids.length > 0 ? `<ul class="tree">${kids.map((k) => node(k, depth + 1)).join("")}</ul>` : ""}</li>`;
   };
   const roots = children(null);
-  if (roots.length === 0) return `<p class="empty">No elements.</p>`;
-  return `<ul class="tree">${roots.map((r) => node(r, 0)).join("")}</ul>`;
+  const tree = roots.length === 0 ? `<p class="empty">No elements.</p>` : `<ul class="tree">${roots.map((r) => node(r, 0)).join("")}</ul>`;
+  return vocabularyHtml(vocabulary) + tree;
 }
 
 function marksHtml(marks: readonly RowMark[]): string {
@@ -397,7 +406,7 @@ function provenanceHtml(doc: FmeaDocument): string {
   return frameHtml("Provenance", `<table><thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>${rows.join("")}</tbody></table>`);
 }
 
-export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string): string {
+export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string, vocabulary: Vocabulary): string {
   const model = buildReportModel(doc, table);
   const values: Record<(typeof SLOTS)[number], string> = {
     title: e(doc.meta.name),
@@ -405,7 +414,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     "ground-rules": list(doc.meta.ground_rules.map(e), "No ground rules recorded."),
     assumptions: list(doc.meta.assumptions.map((a) => `${e(a.text)} <span class="empty">(${e(a.owner)}, ${e(a.status)})</span>`), "No assumptions recorded."),
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),
-    structure: structureHtml(doc.elements),
+    structure: structureHtml(doc.elements, vocabulary),
     chains: chainsHtml(model),
     actions: actionsHtml(model.actions, model.tracked),
     lints: checksHtml(model.groups, model.tiles.qualityScore),
@@ -443,7 +452,9 @@ function main(argv: string[]): number {
     writeIssues(stale);
     return 2;
   }
-  writeFileAtomic(out, renderHtml(doc, table, readTextFile(TEMPLATE_PATH)));
+  const template = readTextFile(TEMPLATE_PATH);
+  const vocabulary = loadVocabulary();
+  writeFileAtomic(out, renderHtml(doc, table, template, vocabulary));
   return 0;
 }
 

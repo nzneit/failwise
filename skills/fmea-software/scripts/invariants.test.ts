@@ -29,7 +29,7 @@ test("INVARIANT_RULES lists every rule id this module can report", () => {
   assert.deepEqual([...INVARIANT_RULES], [
     "element-id-unique", "function-id-unique", "chain-id-unique", "action-id-unique",
     "function-element-resolves", "chain-function-resolves", "element-parent-resolves", "element-parent-matches-id",
-    "element-source-non-catalog", "element-dependency-required",
+    "element-source-non-catalog", "element-dependency-required", "element-security-rationale-required",
     "rating-review-by-date", "post-ratings-without-completed", "post-priority-presence",
     "handoff-without-adversarial", "adversarial-without-handoff", "handoff-cause-mismatch",
     "stale-without-reason", "stale-version-ahead",
@@ -83,13 +83,13 @@ test("chain-function-resolves flags a chain pointing at no function", () => {
 
 test("element-parent-resolves flags a parent that does not exist", () => {
   const doc = minimalDoc();
-  doc.elements.push({ id: "ghost.child", kind: "component", name: "Child", description: "", parent: "ghost", sources: [{ kind: "document", ref: "arch.md" }] });
+  doc.elements.push({ id: "ghost.child", kind: "component", name: "Child", description: "", parent: "ghost", boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
   expectOne(checkInvariants(doc), "element-parent-resolves", "INVARIANT", "/elements/1/parent");
 });
 
 test("element-parent-matches-id flags a parent that is not the dotted prefix", () => {
   const doc = minimalDoc();
-  doc.elements.push({ id: "svc.api", kind: "interface", name: "API", description: "", parent: null, sources: [{ kind: "document", ref: "arch.md" }] });
+  doc.elements.push({ id: "svc.api", kind: "interface", name: "API", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
   expectOne(checkInvariants(doc), "element-parent-matches-id", "INVARIANT", "/elements/1/parent");
 });
 
@@ -99,12 +99,32 @@ test("element-source-non-catalog flags an element sourced only from the catalog"
   expectOne(checkInvariants(doc), "element-source-non-catalog", "INVARIANT", "/elements/0/sources");
 });
 
-test("element-dependency-required flags an external_dependency with no dependency block", () => {
+test("element-dependency-required fires on owned_outside and third_party without a dependency block and never on in_scope", () => {
+  for (const boundary of ["owned_outside", "third_party"] as const) {
+    const doc = minimalDoc();
+    doc.elements.push({ id: "svc.gateway", kind: "service", name: "Gateway", description: "", parent: "svc", boundary, security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
+    const issues = checkInvariants(doc);
+    expectOne(issues, "element-dependency-required", "INVARIANT", "/elements/1/dependency");
+    assert.match(only(issues, "element-dependency-required")[0].message, new RegExp(`has boundary ${boundary} and needs a dependency block`));
+    doc.elements[1].dependency = { strength: "strong" };
+    assert.deepEqual(only(checkInvariants(doc), "element-dependency-required"), []);
+  }
   const doc = minimalDoc();
-  doc.elements.push({ id: "svc.gateway", kind: "external_dependency", name: "Gateway", description: "", parent: "svc", sources: [{ kind: "document", ref: "arch.md" }] });
-  expectOne(checkInvariants(doc), "element-dependency-required", "INVARIANT", "/elements/1/dependency");
-  doc.elements[1].dependency = { strength: "strong" };
+  doc.elements.push({ id: "svc.gateway", kind: "service", name: "Gateway", description: "", parent: "svc", boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
   assert.deepEqual(only(checkInvariants(doc), "element-dependency-required"), []);
+});
+
+test("element-security-rationale-required fires on a true flag with no or an empty rationale and accepts a rationale on a false flag", () => {
+  const doc = minimalDoc();
+  doc.elements.push({ id: "svc.auth", kind: "service", name: "Auth", description: "", parent: "svc", boundary: "in_scope", security_relevant: true, sources: [{ kind: "document", ref: "arch.md" }] });
+  expectOne(checkInvariants(doc), "element-security-rationale-required", "INVARIANT", "/elements/1/security_rationale");
+  doc.elements[1].security_rationale = "   ";
+  expectOne(checkInvariants(doc), "element-security-rationale-required", "INVARIANT", "/elements/1/security_rationale");
+  doc.elements[1].security_rationale = "signs the token";
+  assert.deepEqual(only(checkInvariants(doc), "element-security-rationale-required"), []);
+  doc.elements[1].security_relevant = false;
+  doc.elements[1].security_rationale = "not trusted";
+  assert.deepEqual(only(checkInvariants(doc), "element-security-rationale-required"), []);
 });
 
 test("rating-review-by-date flags a rescored rating with no reviewer", () => {
