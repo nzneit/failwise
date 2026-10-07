@@ -9,6 +9,7 @@ import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
 import { bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
+import { LEGACY_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
@@ -742,6 +743,16 @@ test("a document with no computed block is refused at /computed with exit 2", ()
     assert.match(r.stderr, /^error COMPUTED_MISSING: .* at \/computed$/m);
   });
 });
+
+for (const trigger of LEGACY_TRIGGERS) {
+  test(`render.ts: ${trigger.name}, and writes no report`, () => {
+    withTempDir((dir) => {
+      const out = join(dir, "report.html");
+      assertLegacyRefused(runCli("render.ts", [writeLegacy(dir, trigger), "--out", out]), trigger.pointer);
+      assert.equal(existsSync(out), false);
+    });
+  });
+}
 
 test("an existing output needs --force", () => {
   withTempDir((dir) => {

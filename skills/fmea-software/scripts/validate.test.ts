@@ -8,6 +8,7 @@ import { loadTable } from "./lib/table.ts";
 import { bandTable, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { changedMessage, clone, fixturePath, loadFixture, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
+import { LEGACY_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint } from "./lib/types.ts";
 import { spawnSync } from "node:child_process";
 import { cpSync } from "node:fs";
@@ -87,6 +88,27 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
     assert.equal(parsed.ok, true);
     assert.equal(parsed.quality_score, 88);
     assert.equal(parsed.lints.length, 11);
+  });
+});
+
+for (const trigger of LEGACY_TRIGGERS) {
+  test(trigger.name, () => {
+    withTempDir((dir) => assertLegacyRefused(runCli("validate.ts", [writeLegacy(dir, trigger)]), trigger.pointer));
+  });
+}
+
+test("a v2 document gets no KIND_LEGACY issue and a top level that is not an analysis falls through to SCHEMA", () => {
+  withTempDir((dir) => {
+    const path = join(dir, "analysis.json");
+    writeFileSync(path, readFileSync(fixturePath("checkout-service.fmea.json")));
+    const v2 = runCli("validate.ts", [path]);
+    assert.equal(v2.status, 0);
+    assert.ok(!v2.stderr.includes("KIND_LEGACY"), v2.stderr);
+    writeFileSync(path, '{"meta": 1}\n');
+    const other = runCli("validate.ts", [path]);
+    assert.equal(other.status, 2);
+    assert.match(other.stderr, /^error SCHEMA:/m);
+    assert.ok(!other.stderr.includes("KIND_LEGACY"), other.stderr);
   });
 });
 
