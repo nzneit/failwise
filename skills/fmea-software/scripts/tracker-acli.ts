@@ -4,6 +4,8 @@
 
 import { readFileSync } from "node:fs";
 import type { Acli } from "./lib/tracker/jira.ts";
+import { renderDescription } from "./lib/tracker/jira-body.ts";
+import type { TrackedItem } from "./lib/tracker/provider.ts";
 import type { ProcessResult } from "./lib/tracker/spawn.ts";
 import type { TrackerConfig } from "./lib/types.ts";
 
@@ -59,6 +61,39 @@ export function workItem(key: string, id: string, fields: object): object {
 export function epic(key = "FAILW-4", id = "10004"): ProcessResult {
   return ok(workItem(key, id, { project: { id: "10001", key: "FAILW", name: "Failwise" }, issuetype: { id: "10005", name: "Epic", hierarchyLevel: 1, subtask: false } }));
 }
+
+/** The action fmea-min/ch-1/act-1 as an item to create, and its §9 description. */
+export const TRACKED: TrackedItem = {
+  key: "fmea-min/ch-1/act-1", text: "0123456789ab", label: "failwise", due: "2026-11-01",
+  content: { title: "Bound the retries", action: "Bound the retries of the capture call", facts: [{ label: "Owner", value: "Payments" }], origin: { analysis: "Checkout", chain: "ch-1", action: "act-1" } },
+};
+export const body: object = renderDescription(TRACKED);
+
+/** A status in the recorded form: its name and its category's key. */
+export function status(name: string, category: string): object {
+  const named: Record<string, string> = { new: "To Do", indeterminate: "In Progress", done: "Done" };
+  return { name, id: "10007", self: `${INTERNAL}/status/10007`, statusCategory: { id: 3, key: category, name: named[category] ?? category, colorName: "green", self: `${INTERNAL}/statuscategory/3` } };
+}
+
+/** The whole item `create --json` answers, with the keys the adapter reads and a few recorded others:
+ *  the label failwise, the parent when given, and the status To Do in category new. */
+export function created(key = "FAILW-5", id = "10015", fields: { labels?: unknown; parent?: string } = {}): ProcessResult {
+  const { labels = ["failwise"], parent } = fields;
+  const parentField = parent === undefined ? {} : { parent: { id: "10013", key: parent, self: `${INTERNAL}/issue/10013` } };
+  return ok(workItem(key, id, {
+    summary: "Bound the retries", labels, ...parentField, status: status("To Do", "new"), resolution: null, resolutiondate: null, description: body, duedate: null,
+  }));
+}
+
+/** The answer of `view <id> --fields=status,resolution,resolutiondate,description --json`, by
+ *  default FAILW-5 as recorded after the move to Done, with the §9 description of fmea-min/ch-1/act-1. */
+export function viewed(key = "FAILW-5", fields: object = {}, id = "10015"): ProcessResult {
+  const resolution = { name: "Done", id: "10000", description: "Work has been completed on this work item.", self: `${INTERNAL}/resolution/10000` };
+  return ok(workItem(key, id, { status: status("Done", "done"), resolution, resolutiondate: "2026-10-07T00:50:25.583-0400", description: body, ...fields }));
+}
+
+/** FLSCR-3 as recorded after it was closed into the status Won't Do: no resolution, no date. */
+export const FLSCR3: ProcessResult = viewed("FLSCR-3", { status: status("Won't Do", "done"), resolution: null, resolutiondate: null, description: null }, "10022");
 
 /** The recorded answer of `search --count`. */
 export function count(n: number): ProcessResult {
