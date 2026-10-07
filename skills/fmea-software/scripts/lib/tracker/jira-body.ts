@@ -20,9 +20,9 @@ export function isAdfDocument(value: unknown): value is AdfDoc {
   return type === "doc" && Array.isArray(content);
 }
 
-/** The title on one line, whitespace runs collapsed, cut at 255 code points (UJ11). */
+/** The title on one line: each control character a space (§9), whitespace runs collapsed, cut at 255 code points (UJ11). */
 export function renderSummary(content: ItemContent): string {
-  return Array.from(content.title.replace(/\s+/g, " ").trim()).slice(0, SUMMARY_LIMIT).join("");
+  return Array.from(plain(content.title).replace(/\s+/g, " ")).slice(0, SUMMARY_LIMIT).join("");
 }
 
 function textNode(text: string, marks?: AdfMark[]): AdfNode {

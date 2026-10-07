@@ -57,9 +57,11 @@ export function workItem(key: string, id: string, fields: object): object {
   return { id, key, self: `${INTERNAL}/issue/${id}`, fields };
 }
 
-/** The `view` of an Epic of the project FAILW, with the fields describe asks for. */
-export function epic(key = "FAILW-4", id = "10004"): ProcessResult {
-  return ok(workItem(key, id, { project: { id: "10001", key: "FAILW", name: "Failwise" }, issuetype: { id: "10005", name: "Epic", hierarchyLevel: 1, subtask: false } }));
+/** The `view` of an Epic, by default FAILW-4 of the project FAILW under its recorded id, with the
+ *  fields describe asks for. The shape of this `--fields=project,issuetype` answer is inferred from
+ *  the project view and the `*all` view, not recorded by the spike; the manual run records it. */
+export function epic(key = "FAILW-4", id = "10013", projectKey = "FAILW"): ProcessResult {
+  return ok(workItem(key, id, { project: { id: "10001", key: projectKey, name: "Failwise" }, issuetype: { id: "10005", name: "Epic", hierarchyLevel: 1, subtask: false } }));
 }
 
 /** The action fmea-min/ch-1/act-1 as an item to create, and its §9 description. */

@@ -22,8 +22,9 @@ import type { ProcessResult } from "./spawn.ts";
 export type Acli = (args: string[]) => Promise<ProcessResult>;
 
 const PROJECT_KEY = /^[A-Z][A-Z0-9_]*$/;
-/** The grammars under which a stored link is read (§5.2): a numeric id and a work item key. */
-const ITEM_ID = /^[0-9]+$/;
+/** The grammars under which a stored link is read (§5.2): a numeric id with no leading zero, since
+ *  Jira never answers one and a stored id with one is a hand edit, and a work item key. */
+const ITEM_ID = /^[1-9][0-9]*$/;
 const ITEM_KEY = /^[A-Z][A-Z0-9_]*-[1-9][0-9]*$/;
 /** A resolution date as Jira writes one: a date, a time and an offset or Z (R3). */
 const TIMESTAMP = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:?[0-9]{2})$/;
@@ -260,7 +261,7 @@ async function listMarked(ctx: Ctx): Promise<RemoteItem[]> {
 /** The description file acli reads, written in a fresh directory under `tempRoot` that is removed
  *  once `use` has finished, whatever its outcome; a failed removal is ignored (§7). */
 async function withDescriptionFile<T>(ctx: Ctx, item: TrackedItem, use: (path: string) => Promise<T>): Promise<T> {
-  const cannotWrite = (err: unknown): ScriptError => new ScriptError("IO_WRITE", `cannot write the description file: ${(err as Error).message}`);
+  const cannotWrite = (err: unknown): ScriptError => new ScriptError("IO_WRITE", `cannot write the description file: ${err instanceof Error ? err.message : String(err)}`);
   const dir = await mkdtemp(join(ctx.tempRoot, "failwise-jira-")).catch((err: unknown) => {
     throw cannotWrite(err);
   });
@@ -411,7 +412,7 @@ function refuseConfig(message: string, field: string): never {
 export function jiraProvider(config: TrackerConfig, acli: Acli, tempRoot: string = tmpdir()): Provider {
   const { host, project, label } = config;
   if (host === undefined) refuseConfig("a jira target needs host, the site such as example.atlassian.net", "host");
-  if (!PROJECT_KEY.test(project)) refuseConfig(`the project must be a Jira project key, such as FAILW, got ${JSON.stringify(project)}`, "project");
+  if (!PROJECT_KEY.test(project)) refuseConfig(`the project must be a Jira project key, such as PROJ, got ${JSON.stringify(project)}`, "project");
   if (!PLAIN_ID.test(label)) refuseConfig(`the label must be a plain id, got ${JSON.stringify(label)}`, "label");
   const lists: Lists = { done: config.states?.done ?? ["Done"], dropped: config.states?.dropped ?? ["Won't Do"] };
   const parent = config.parent === undefined ? {} : { parent: config.parent };

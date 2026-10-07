@@ -50,6 +50,7 @@ const SWITCH = "acli jira auth switch --site jira.example.com --email <email>";
 const typesWith = (...extra: object[]): object[] => [...FAILW_TYPES, ...extra];
 const parentView = (fields: object): ProcessResult => ok(workItem("FAILW-4", "10004", fields));
 const DESCRIBED = [authStatus(), project()];
+const DESCRIPTION_FLAG = "--description-file=";
 
 const entry = (id: string, key: string, description: unknown = null): object => workItem(key, id, { description, labels: ["failwise"] });
 
@@ -93,6 +94,25 @@ test("every argument array begins jira, --json is on every JSON call and absent 
     assert.notEqual(arg, "--yes");
     assert.ok(!arg.includes("duedate"), arg);
   }
+});
+
+test("a configuration whose every value differs from the defaults reaches every argument: project, parent, JQL, type and label", async () => {
+  const acme: TrackerConfig = { provider: "jira", host: HOST, project: "ACME", label: "acme-risk", type: "Story", parent: "ACME-7" };
+  const answers = [authStatus(), project("ACME"), epic("ACME-7", "10070", "ACME"), count(0), ok("[]"), authStatus(), created("ACME-12", "10071", { labels: ["acme-risk"], parent: "ACME-7" })];
+  const { provider, calls } = setup(answers, acme);
+  assert.equal((await provider.describe()).no_create, undefined);
+  await provider.listMarked();
+  await provider.create(TRACKED);
+  const acmeJql = '--jql=project = "ACME" AND labels = "acme-risk"';
+  assert.deepEqual(calls.map((call) => call.map((a) => (a.startsWith(DESCRIPTION_FLAG) ? DESCRIPTION_FLAG : a))), [
+    ["jira", "auth", "status"],
+    ["jira", "project", "view", "--key=ACME", "--json"],
+    ["jira", "workitem", "view", "ACME-7", "--fields=project,issuetype", "--json"],
+    ["jira", "workitem", "search", acmeJql, "--count"],
+    ["jira", "workitem", "search", acmeJql, "--fields=description,labels", "--paginate", "--json"],
+    ["jira", "auth", "status"],
+    ["jira", "workitem", "create", "--project=ACME", "--type=Story", "--summary=Bound the retries", "--label=acme-risk", "--parent=ACME-7", DESCRIPTION_FLAG, "--json"],
+  ]);
 });
 
 test("the JQL is one argument with both values quoted", async () => {
@@ -189,6 +209,7 @@ test("a project key that resolves to a project under another key, as an old key 
   const { provider, calls } = setup([authStatus(), project("FAILW")], { ...jiraConfig, project: "KAN" });
   holds(await rejectsWith(provider.describe(), "TRACKER_CONFIG", "/meta/tracker/project"), "FAILW");
   assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], ["jira", "project", "view", "--key=KAN", "--json"]);
   holds(await rejectsWith(setup([authStatus(), ok({ issueTypes: FAILW_TYPES })]).provider.describe(), "TRACKER_REJECTED"), "in a form the script cannot read");
 });
 
@@ -214,7 +235,7 @@ test("a work type the project does not offer, one it offers twice, and a sub-tas
   const sub = await setup(DESCRIBED, { ...jiraConfig, type: "Subtask" }).provider.describe();
   assert.ok(sub.no_create?.includes("Epic, Subtask, Task, Story"), sub.no_create);
   const twice = await setup([authStatus(), project("FAILW", typesWith({ id: "10099", name: "Task", hierarchyLevel: 0, subtask: false }))]).provider.describe();
-  assert.ok(twice.no_create?.includes("Epic, Subtask, Task, Story, Task"), twice.no_create);
+  assert.equal(twice.no_create, "the project offers 2 work types named Task, so the name does not say which; it offers: Epic, Subtask, Task, Story, Task");
 });
 
 test("a parent that is not found, that sits in another project, or that is not above the type's level sets no_create without throwing; another failure of its view throws", async () => {
@@ -225,7 +246,7 @@ test("a parent that is not found, that sits in another project, or that is not a
   assert.ok((await reasonOf(failed(NOT_FOUND)))?.includes("the parent FAILW-4 was not found"));
   assert.ok((await reasonOf(crlf(failed(NOT_FOUND))))?.includes("the parent FAILW-4 was not found"));
   assert.ok((await reasonOf(parentView({ project: { key: "FLSCR" }, issuetype })))?.includes("FLSCR"));
-  assert.ok((await reasonOf(parentView({ project: { key: "FAILW" }, issuetype: { name: "Story", hierarchyLevel: 0, subtask: false } })))?.includes("FAILW-4"));
+  assert.equal(await reasonOf(parentView({ project: { key: "FAILW" }, issuetype: { name: "Story", hierarchyLevel: 0, subtask: false } })), "the parent FAILW-4 is not above the work type Task in the project's hierarchy");
   holds(await rejectsWith(describeWith(failed("✗ Error: something else")), "TRACKER_REJECTED"), "acli failed: ✗ Error: something else");
   for (const shape of [ok("<html>"), parentView({ project: { key: "FAILW" } }), ok({ id: "10004", fields: { project: { key: "FAILW" }, issuetype } })]) {
     holds(await rejectsWith(describeWith(shape), "TRACKER_REJECTED"), "in a form the script cannot read");
@@ -297,15 +318,14 @@ test("an entry without the id, the key or the description key, or whose descript
   }
 });
 
-test("an entry whose id is not a number or whose key is outside the key grammar fails the listing with TRACKER_REJECTED", async () => {
-  for (const [id, key] of [["I_1", "FAILW-5"], ["-10019", "FAILW-5"], ["10019 OR 1=1", "FAILW-5"], ["", "FAILW-5"], ["10019", "failw-5"], ["10019", "FAILW-0"], ["10019", "FAILW"], ["10019", "FAILW-5 "]]) {
+test("an entry whose id is not a number, or begins with a zero, or whose key is outside the key grammar fails the listing with TRACKER_REJECTED", async () => {
+  for (const [id, key] of [["I_1", "FAILW-5"], ["-10019", "FAILW-5"], ["10019 OR 1=1", "FAILW-5"], ["", "FAILW-5"], ["10019", "failw-5"], ["10019", "FAILW-0"], ["10019", "FAILW"], ["10019", "FAILW-5 "], ["010015", "FAILW-5"]]) {
     holds(await rejectsWith(setup([count(1), ok([entry(id, key)])]).provider.listMarked(), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
 });
 
 // create
 
-const DESCRIPTION_FLAG = "--description-file=";
 /** The path of the description file a call named, or the empty string. */
 const descriptionPath = (call: string[]): string => call.find((a) => a.startsWith(DESCRIPTION_FLAG))?.slice(DESCRIPTION_FLAG.length) ?? "";
 const titled = (title: string): TrackedItem => ({ ...TRACKED, content: { ...TRACKED.content, title } });
@@ -348,11 +368,14 @@ test("the description file acli would read holds the ADF of jira-body, and is go
   }
 });
 
-test("a tempRoot that is not a directory is IO_WRITE with no acli call", async () => {
+test("a tempRoot that does not exist is IO_WRITE whose message starts with the description file, and no create is sent", async () => {
   const { acli, calls } = fakeAcli([authStatus(), created()]);
-  const provider = jiraProvider(jiraConfig, acli, join(tmpdir(), `no-such-dir-${Date.now()}`));
-  holds(await rejectsWith(provider.create(TRACKED), "IO_WRITE"), "cannot write the description file: ");
-  assert.equal(calls.length, 1);
+  const root = join(tmpdir(), `no-such-dir-${process.pid}-${Date.now()}`);
+  assert.ok(!existsSync(root), root);
+  const provider = jiraProvider(jiraConfig, acli, root);
+  const message = await rejectsWith(provider.create(TRACKED), "IO_WRITE");
+  assert.ok(message.startsWith("cannot write the description file: "), message);
+  assert.deepEqual(calls, [["jira", "auth", "status"]]);
 });
 
 test("create returns the numeric id, the key and a url built from the host, never from self", async () => {
@@ -361,12 +384,20 @@ test("create returns the numeric id, the key and a url built from the host, neve
   assert.equal(cased.url, "https://JIRA.Example.com/browse/FAILW-5");
 });
 
-test("summaries beginning with -, -- and @ travel as one --summary= argument", async () => {
-  for (const title of ["-starts with a dash", "--starts with two dashes", "@starts with an at sign"]) {
+test("summaries beginning with -, -- and @ travel as one --summary= argument, and a title's control characters reach it as spaces", async () => {
+  const [nul, one, esc, del] = [0x00, 0x01, 0x1b, 0x7f].map((code) => String.fromCharCode(code));
+  const titles: [string, string][] = [
+    ["-starts with a dash", "-starts with a dash"],
+    ["--starts with two dashes", "--starts with two dashes"],
+    ["@starts with an at sign", "@starts with an at sign"],
+    [`Bound${nul}the${one}retries${esc}${del}now`, "Bound the retries now"],
+  ];
+  for (const [title, summary] of titles) {
     const { provider, calls } = setup([authStatus(), created()]);
     await provider.create(titled(title));
     assert.equal(calls[1].length, createArgs().length);
-    assert.equal(calls[1][5], `--summary=${title}`);
+    assert.equal(calls[1][5], `--summary=${summary}`);
+    assert.ok(!Array.from(calls[1][5]).some((ch) => (ch.codePointAt(0) ?? 0) <= 0x1f || ch.codePointAt(0) === 0x7f), calls[1][5]);
   }
 });
 
@@ -408,6 +439,7 @@ test("an answer without the label, and one without the configured parent, are Cr
   };
   await faultOf(created("FAILW-5", "10015", { labels: [] }), jiraConfig, ["the label failwise"]);
   await faultOf(created("FAILW-5", "10015", { labels: "failwise" }), jiraConfig, ["the label failwise"]);
+  await faultOf(ok({ id: "10015", key: "FAILW-5" }), jiraConfig, ["was created without the label failwise", "add the label to it by hand"]);
   await faultOf(created(), { ...jiraConfig, parent: "FAILW-4" }, ["the parent FAILW-4"]);
   await faultOf(created("FAILW-5", "10015", { parent: "FAILW-3" }), { ...jiraConfig, parent: "FAILW-4" }, ["the parent FAILW-4"]);
   assert.deepEqual(await setup([authStatus(), created("FAILW-5", "10015", { labels: ["FailWise"] })]).provider.create(TRACKED), link);
@@ -461,12 +493,13 @@ test("read sends one view per link by numeric id with --fields=status,resolution
   assert.deepEqual(calls, [["jira", "workitem", "view", "10015", ...VIEW_FLAGS], ["jira", "workitem", "view", "10022", ...VIEW_FLAGS]]);
 });
 
-test("a link of another provider, an id that is not a number, an id that holds JQL, an id beginning with -, a key outside its grammar, or a url on another host is TRACKER_REJECTED naming the key and the url, before any request", async () => {
+test("a link of another provider, an id that is not a number, an id that holds JQL, an id beginning with - or with a zero, a key outside its grammar, or a url on another host is TRACKER_REJECTED naming the key and the url, before any request", async () => {
   const bad: Link[] = [
     { ...linkTo(), provider: "github" },
     { ...linkTo(), id: "I_1" },
     { ...linkTo(), id: "10015 OR 1=1" },
     { ...linkTo(), id: "-10015" },
+    { ...linkTo(), id: "010015" },
     { ...linkTo(), key: "failw-5" },
     { ...linkTo(), url: "https://other.example.com/browse/FAILW-5" },
     { ...linkTo(), url: "not a url" },

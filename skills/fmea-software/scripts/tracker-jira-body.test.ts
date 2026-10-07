@@ -112,6 +112,13 @@ test("renderSummary collapses whitespace and cuts at 255 code points, and a line
   assert.equal(renderSummary({ ...content, title: "😀".repeat(256) }), "😀".repeat(255));
 });
 
+test("renderSummary makes NUL, U+0001, ESC and DEL a space each, collapses the whitespace, and leaves no control character", () => {
+  const [nul, one, esc, del] = [0x00, 0x01, 0x1b, 0x7f].map((code) => String.fromCharCode(code));
+  const summary = renderSummary({ ...itemOf().content, title: `${del}a${nul}b${one}c${esc}${esc}d ${del} e${nul}` });
+  assert.equal(summary, "a b c d e");
+  assert.ok(!Array.from(summary).some((ch) => (ch.codePointAt(0) ?? 0) <= 0x1f || ch.codePointAt(0) === 0x7f), JSON.stringify(summary));
+});
+
 test("readMarker reads the key and text from the last paragraph, with and without the code mark", () => {
   const item = itemOf();
   assert.deepEqual(readMarker(renderDescription(item)), { key: item.key, text: item.text });

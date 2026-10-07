@@ -745,14 +745,19 @@ test("refresh on a Jira item closed under names in neither list prints closed-un
   assert.equal(result.items[0].observed.detail, "Closed, resolution Duplicate");
 });
 
-test("refresh through the Jira adapter gives link-mismatch, with no observed and no proposal, for an item whose marker names another action", async (t) => {
+test("refresh through the Jira adapter gives link-mismatch, with no observed and no proposal, for an item whose marker names another action, and with --write on that item alone prints written false and leaves the file's bytes as they were", async (t) => {
   const other = viewed("FAILW-5", { description: renderDescription({ ...TRACKED, key: "fmea-min/ch-1/act-9" }) });
-  const s = jiraSession(t, docOn(jiraConfig, jiraLinked(act(1))), [authStatus(), project(), other]);
-  const { status, result } = await s.track("refresh");
-  assert.equal(status, 0);
-  assert.equal(result.items[0].finding, "link-mismatch");
-  assert.equal("observed" in result.items[0], false);
-  assert.equal("proposal" in result.items[0], false);
+  for (const flags of [[], ["--write"]]) {
+    const s = jiraSession(t, docOn(jiraConfig, jiraLinked(act(1))), [authStatus(), project(), other]);
+    const before = readFileSync(s.path);
+    const { status, result } = await s.track("refresh", ...flags);
+    assert.equal(status, 0);
+    assert.equal(result.items[0].finding, "link-mismatch");
+    assert.equal("observed" in result.items[0], false);
+    assert.equal("proposal" in result.items[0], false);
+    assert.equal(result.written, false);
+    assert.ok(readFileSync(s.path).equals(before), flags.join(" "));
+  }
 });
 
 // the authored fields

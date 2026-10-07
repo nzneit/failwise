@@ -347,9 +347,10 @@ async function refreshCommand(path: string, flags: Flags, deps: Deps): Promise<n
   const today = deps.today();
   const seen = linked.map(({ ref, link }) => ({ ref, link, now: observationOf(observations, ref.key, link.id) }));
   const items = seen.map(({ ref, now }) => refreshItem(ref, now, today));
-  const written = flags.write === true && seen.length > 0;
+  // A link-mismatch has no observed, and its action's tracker block stays as it was; the file is
+  // written only when at least one item carries an observation to store.
+  const written = flags.write === true && items.some((item) => item.observed !== undefined);
   if (written) {
-    // A link-mismatch has no observed, and its action's tracker block stays as it was.
     seen.forEach(({ ref, link, now }, i) => {
       const { observed } = items[i];
       if (observed !== undefined) ref.action.tracker = storedLink(link, now.link, observed);

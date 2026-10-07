@@ -261,7 +261,15 @@ async function readBatch(ctx: Ctx, batch: Link[]): Promise<Observation[]> {
   return batch.map((link, i) => observe(link, nodes[i], found.has(i)));
 }
 
+/** Every link is a GitHub link, before any request: a link of another provider is never read here. */
+function checkLinks(links: Link[]): void {
+  for (const link of links) {
+    if (link.provider !== "github") throw rejected(`the link ${link.key} at ${link.url} is not a GitHub issue that this script can read`);
+  }
+}
+
 async function read(ctx: Ctx, links: Link[]): Promise<Observation[]> {
+  checkLinks(links);
   const observations: Observation[] = [];
   for (let start = 0; start < links.length; start += READ_BATCH) {
     observations.push(...(await readBatch(ctx, links.slice(start, start + READ_BATCH))));
