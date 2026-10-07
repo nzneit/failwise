@@ -36,6 +36,22 @@ into it and do not resolve here: finding ids of the form `F-WSn-NN`, in the desi
 the schema, and "plan reference §X" in code comments. A record id `Cnnn` does resolve, through
 the register.
 
+## Opening a pull request
+
+Open the body of a pull request with a line that links its diff in Revision City, a third-party
+viewer of GitHub diffs, above everything else:
+
+```
+Read the diff: https://revision.city/diffs/nzneit/failwise/compare/<base>...<branch>
+```
+
+`<base>` is the branch the pull request targets and `<branch>` the branch it merges from. The link
+works as soon as the branch is pushed and needs no sign-in, since this repository is public. It
+stops working when the branch is deleted after the merge, and the pull request's own page on
+GitHub remains the record. The viewer's Symbols tab lists the functions, classes and headings a
+change added, changed, renamed, moved or deleted, for the TypeScript, Markdown, JSON, YAML and CSS
+files of this repository; it does not parse the HTML report template.
+
 ## Before every commit
 
 ```
