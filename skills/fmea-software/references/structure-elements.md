@@ -53,6 +53,7 @@ The region between the two markers below is generated from `data/element-vocabul
 - Code that reads or writes a cache is a component of its element; the cache itself is the datastore. [skill-authored]
 - A parent is judged on its own behaviour: a security flag propagates neither up to a parent nor down to a child. [skill-authored]
 - An element outside the scope takes the security test like any other; a third-party identity provider, or a platform that holds the system's secrets, is security-relevant. [skill-authored]
+- An item named as an API, endpoint or contract, with no deployable of its own named, is an interface. [skill-authored]
 
 <!-- vocabulary:end -->
 
@@ -67,7 +68,8 @@ The region between the two markers below is generated from `data/element-vocabul
 Every element gets functions and chains whatever its boundary: the dependency rows are written against an element's functions, so an element outside the scope needs them as much as one inside it. [skill-authored]
 The split of the outside into `owned_outside` and `third_party` is the skill's own, since no source draws it. [skill-authored]
 A pricing service is `in_scope` in the run that analyses it and `owned_outside` in a run that only calls it, and only in the second is it an external dependency. [skill-authored]
-Strength stays in the `dependency` block, strong or weak, as a property of the edge between the system and the element rather than of the element itself, as the Azure Well-Architected Framework's failure mode analysis and Google's paper "The Calculus of Service Availability" treat a dependency. [cites:C014] [cites:C144] [cites:C145]
+Strength stays in the `dependency` block, strong or weak, as a property of the edge between the system and the element rather than of the element itself. [skill-authored]
+The Azure Well-Architected Framework's failure mode analysis classifies dependencies as strong or weak, and Google's paper "The Calculus of Service Availability" calls a dependency critical when its failure takes the service down with it. [cites:C014] [cites:C144] [cites:C145]
 
 ## Role
 
@@ -110,6 +112,8 @@ The default for every other element is applied per element by the person, not bl
 Catalog refs are renamed mechanically, `cat-external_dependency-NN` to `cat-dependency-NN` and `cat-security_component-NN` to `cat-security-NN`, in both places they occur: `chains[].catalog_refs[].id`, and `elements[].sources[].ref` where the source kind is `catalog`. [skill-authored]
 Unattended, every question to the person takes the stated default and is listed in `meta.assumptions[]` as an open assumption with owner `user`. [skill-authored]
 Where an element's sources can be read, the migration applies the security test and records the rationale; the default of false, with an open assumption, applies only to an element whose sources cannot be read. [skill-authored]
+A migrated `security_component` whose sources can be read takes the rationale the security test gives, and the fixed text 'migrated from kind security_component; confirm' is used only where no source can be read. [skill-authored]
+A chain that applies a dependency row to an in-scope element with no dependency block is left as it is by the migration, and its `dependency-row-without-dependency` warning is for the next update to settle, either by giving the element a dependency block or by moving the row to the element depended on. [skill-authored]
 Migration marks no row stale: the mapping preserves meaning, and the ratings do not depend on the kind. [skill-authored]
 A role or a boundary the person changes afterwards goes through the update mode's ordinary stale rule, under which an element changed when its `kind`, `boundary`, `security_relevant` or `dependency` changed. [skill-authored]
 Every other element field does not count: the name and the description are labels, and `sources` and `security_rationale` record why, not what. [skill-authored]

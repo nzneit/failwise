@@ -102,6 +102,10 @@
     {
       "text": "An element outside the scope takes the security test like any other; a third-party identity provider, or a platform that holds the system's secrets, is security-relevant.",
       "tags": ["skill-authored"]
+    },
+    {
+      "text": "An item named as an API, endpoint or contract, with no deployable of its own named, is an interface.",
+      "tags": ["skill-authored"]
     }
   ]
 }
