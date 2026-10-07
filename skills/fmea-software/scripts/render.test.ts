@@ -687,7 +687,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
     "body { padding:0; font-size:11px; }",
     ".back { display:none; }",
     "h2, h3, article.row > header { break-after: avoid; }",
-    "article.row, tr, .attn-item, .tile-group, .key { break-inside: avoid; }",
+    "article.row, tr, .attn-item, .tile-group, .key, .el { break-inside: avoid; }",
     "thead { display: table-header-group; }",
     "a { color:inherit; text-decoration:none; }",
     ".frame { overflow-x:visible; }",
@@ -696,7 +696,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
   }
 });
 
-test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells", () => {
+test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the structure's name column", () => {
   const start = template.indexOf("@media (max-width: 767px) {");
   assert.notEqual(start, -1);
   const end = template.indexOf("\n}\n", start);
@@ -706,8 +706,9 @@ test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frame
   // anywhere in a cell lets the table squeeze its columns until words split.
   assert.ok(inside.includes("main { overflow-wrap:anywhere; }"));
   assert.ok(inside.includes(".frame { overflow-wrap:normal; }"));
-  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 1);
+  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 2);
   assert.ok(outside.includes("table.index code { overflow-wrap:anywhere; }"));
+  assert.ok(outside.includes(".el-who { min-width:0; overflow-wrap:anywhere; }"));
 });
 
 test("the template styles the stale notice and shrinks the post-action badge in a row header", () => {
@@ -912,19 +913,127 @@ test("every slot in the template is filled", () => {
   assert.equal(html.match(/<!--@[a-z-]+-->/g), null, "an unfilled slot remains in the report");
 });
 
-test("the structure tree and the actions table carry the document's rows", () => {
-  const html = renderHtml(golden(), table, template);
-  const structure = html.slice(html.indexOf('id="structure"'), html.indexOf('id="chains"'));
-  assert.ok(structure.includes("<code>checkout</code>"), "the structure tree is missing the root element");
-  assert.ok(structure.includes("<code>checkout.payment-gateway</code>"), "the structure tree is missing a child element");
-  // A tree, not a bag: every element once, and a child inside its parent's nested list.
-  for (const id of ["checkout", "checkout.api", "checkout.payment-gateway", "checkout.order-store", "checkout.session-auth", "pricing"]) {
-    assert.equal(structure.split(`<code>${id}</code>`).length - 1, 1, `${id} is printed more than once`);
-  }
-  const root = structure.slice(structure.indexOf("<code>checkout</code>"), structure.indexOf("<code>pricing</code>"));
+// One element's block in the structure section: from its `.el` opening to the next one's, or to the section's end.
+function elBlock(structure: string, id: string): string {
+  const blocks = structure.split('<div class="el" ').slice(1);
+  const hit = blocks.filter((b) => idOf(b) === id);
+  assert.equal(hit.length, 1, `${id} is not printed exactly once as an .el block`);
+  return hit[0];
+}
+
+// The id a block prints: the text of its `<code class="el-id">`, with the prefix span unwrapped.
+function idOf(block: string): string {
+  const m = block.match(/<code class="el-id">(.*?)<\/code>/);
+  return m === null ? "" : m[1].replace(/<span class="el-prefix">(.*?)<\/span>/, "$1");
+}
+
+// A document whose elements cover what the checkout fixture lacks: a grandchild, a dependency with
+// neither SLA nor limits, and an element whose id does not extend its parent's.
+function structureDoc(): FmeaDocument {
+  const doc = minimalDoc();
+  const src = doc.elements[0].sources;
+  doc.elements = [
+    { id: "svc", kind: "service", name: "Service", description: "", parent: null, sources: src },
+    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", dependency: { strength: "weak" }, sources: src },
+    { id: "svc.db.shard", kind: "external_dependency", name: "Shard", description: "One shard.", parent: "svc.db", dependency: { strength: "strong", limits: "10 rps" }, sources: src },
+    { id: "elsewhere", kind: "security_component", name: "Stray", description: "Named apart.", parent: "svc", sources: src },
+  ];
+  return doc;
+}
+
+test("the structure section prints every element once, each child inside its parent's nested list", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const ids = ["checkout", "checkout.api", "checkout.payment-gateway", "checkout.order-store", "checkout.session-auth", "pricing"];
+  assert.equal(occurrences(structure, '<div class="el" '), ids.length, "the section prints a different number of .el blocks than elements");
+  for (const id of ids) elBlock(structure, id);
+  // A tree, not a bag: the root's <li> opens a nested list, and its children sit inside it.
+  const root = structure.slice(structure.indexOf('<code class="el-id">checkout</code>'), structure.indexOf('<code class="el-id">pricing</code>'));
   const nested = root.indexOf('<ul class="tree">');
   assert.notEqual(nested, -1, "the root element opens no nested list");
-  assert.ok(nested < root.indexOf("<code>checkout.payment-gateway</code>"), "a child element is emitted beside its parent, not under it");
+  assert.ok(nested < root.indexOf('<span class="el-prefix">checkout.</span>payment-gateway</code>'), "a child element is emitted beside its parent, not under it");
+});
+
+test("the structure section's grandchild sits inside its parent's nested list, which sits inside the root's", () => {
+  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const shard = structure.indexOf('<span class="el-prefix">svc.db.</span>shard');
+  const store = structure.indexOf('<span class="el-prefix">svc.</span>db</code>');
+  const lists = [...structure.matchAll(/<ul class="tree">/g)].map((m) => m.index);
+  assert.equal(lists.length, 3, "the root list, the root's children and the store's children make three lists");
+  assert.ok(lists[1] < store && store < lists[2] && lists[2] < shard, "the grandchild is not nested under its parent");
+});
+
+test("an element's block holds its name, its kind in words and its description", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const auth = elBlock(structure, "checkout.session-auth");
+  const el = golden().elements.find((x) => x.id === "checkout.session-auth");
+  assert.ok(el !== undefined);
+  assert.ok(auth.includes(`<span class="el-name">${escapeHtml(el.name)}</span>`), "the name is not in el-name");
+  assert.ok(auth.includes('<span class="el-kind">security component</span>'), "the kind is not printed in words");
+  assert.ok(auth.includes(`<p class="el-desc">${escapeHtml(el.description)}</p>`), "the description is not in el-desc");
+  assert.ok(elBlock(structure, "checkout.payment-gateway").includes('<span class="el-kind">external dependency</span>'));
+});
+
+test("an element with an empty description prints no el-desc paragraph", () => {
+  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  assert.ok(!elBlock(structure, "svc").includes("el-desc"), "an empty description printed a paragraph");
+});
+
+test("a root prints its whole id, a child its parent's part in el-prefix, and a stray id prints whole", () => {
+  const golden_ = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  assert.ok(golden_.includes('<code class="el-id">checkout</code>'), "a root's id is not printed whole");
+  assert.ok(golden_.includes('<code class="el-id">pricing</code>'));
+  assert.ok(golden_.includes('<code class="el-id"><span class="el-prefix">checkout.</span>payment-gateway</code>'), "a child's id is not split at its parent's part");
+  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  assert.ok(structure.includes('<code class="el-id"><span class="el-prefix">svc.db.</span>shard</code>'), "a grandchild's prefix is not its parent's whole id");
+  assert.ok(structure.includes('<code class="el-id">elsewhere</code>'), "an id that does not extend its parent's is not printed whole");
+  assert.ok(!elBlock(structure, "elsewhere").includes("el-prefix"));
+});
+
+test("each element's block carries its depth in the tree", () => {
+  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const depth = (id: string): string | undefined => elBlock(structure, id).match(/^style="--el-depth:(\d+)">/)?.[1];
+  assert.deepEqual(["svc", "svc.db", "svc.db.shard", "elsewhere"].map(depth), ["0", "1", "2", "1"]);
+  const golden_ = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  assert.ok(golden_.includes('<li><div class="el" style="--el-depth:0"><div class="el-who"><span class="el-name">'), "a root's block is not shaped as specified");
+});
+
+test("the facts list appears only for a dependency, and holds SLA and limits only when they are set", () => {
+  const golden_ = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  assert.ok(elBlock(golden_, "checkout.payment-gateway").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>SLA</dt><dd>99.95% monthly</dd><dt>Limits</dt><dd>50 rps per merchant</dd></dl>'));
+  assert.ok(elBlock(golden_, "pricing").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd><dt>SLA</dt><dd>99.9% monthly</dd></dl>'));
+  for (const id of ["checkout", "checkout.api", "checkout.order-store", "checkout.session-auth"]) {
+    assert.ok(!elBlock(golden_, id).includes("el-facts"), `${id} has no dependency but prints a facts list`);
+  }
+  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  assert.ok(elBlock(structure, "svc.db").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd></dl>'));
+  assert.ok(elBlock(structure, "svc.db.shard").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>Limits</dt><dd>10 rps</dd></dl>'));
+});
+
+test("every string in the structure section is entity-escaped", () => {
+  const doc = structureDoc();
+  const bad = '<b>&"x';
+  const shard = doc.elements[2];
+  shard.name = `name ${bad}`;
+  shard.description = `desc ${bad}`;
+  shard.dependency = { strength: "strong", sla: `sla ${bad}`, limits: `limits ${bad}` };
+  shard.id = `svc.db.${bad}`;
+  doc.elements[3].id = `else${bad}`;
+  const structure = sectionOf(renderHtml(doc, table, template), "structure", "chains");
+  const safe = escapeHtml(bad);
+  for (const text of [`name ${safe}`, `desc ${safe}`, `sla ${safe}`, `limits ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
+    assert.ok(structure.includes(text), `missing the escaped form: ${text}`);
+  }
+  assert.ok(!structure.includes(bad), "a raw string reached the structure section");
+});
+
+test("a document with no elements prints the empty state", () => {
+  const doc = minimalDoc();
+  doc.elements = [];
+  assert.ok(sectionOf(renderHtml(doc, table, template), "structure", "chains").includes('<p class="empty">No elements.</p>'));
+});
+
+test("the actions table carries the document's rows", () => {
+  const html = renderHtml(golden(), table, template);
   const actions = html.slice(html.indexOf('id="actions"'), html.indexOf('id="lints"'));
   assert.ok(actions.includes("<th>Status</th>"), "the actions table has no status column");
   assert.ok(actions.includes("<code>ch-3</code>"), "the actions table is missing ch-3's actions");
