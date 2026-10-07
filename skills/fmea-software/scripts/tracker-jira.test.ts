@@ -48,7 +48,7 @@ const JQL = 'project = "FAILW" AND labels = "failwise"';
 const SIGN_IN = "acli jira auth login --site jira.example.com --email <email> --token < token.txt";
 const SWITCH = "acli jira auth switch --site jira.example.com --email <email>";
 const typesWith = (...extra: object[]): object[] => [...FAILW_TYPES, ...extra];
-const parentView = (fields: object): ProcessResult => ok(workItem("FAILW-4", "10004", fields));
+const parentView = (fields: object): ProcessResult => ok(workItem("FAILW-4", "10013", fields));
 const DESCRIBED = [authStatus(), project()];
 const DESCRIPTION_FLAG = "--description-file=";
 
