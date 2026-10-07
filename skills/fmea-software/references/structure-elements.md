@@ -5,9 +5,9 @@ Each element answers three questions, in this order: its boundary, its role and 
 
 ## The three questions
 
-1. **Boundary:** does this analysis cover the element, does the organisation own it outside this analysis, or is it outside the organisation's control? The answer is the element's `boundary`, one of `in_scope`, `owned_outside` and `third_party`. [skill-authored]
-2. **Role:** what kind of element is it? The answer is the element's `kind`, one of `service`, `datastore`, `event_stream`, `interface` and `component`, taken from the first role test it passes. [skill-authored]
-3. **Security relevance:** does a required security property depend on the element working correctly? The answer is the element's `security_relevant`, true or false. [skill-authored]
+1. **Boundary:** does this analysis cover the element, does the organisation own it outside this analysis, or is it outside the organisation's control? [skill-authored] The answer is the element's `boundary`, one of `in_scope`, `owned_outside` and `third_party`. [skill-authored]
+2. **Role:** what kind of element is it? [skill-authored] The answer is the element's `kind`, one of `service`, `datastore`, `event_stream`, `interface` and `component`, taken from the first role test it passes. [skill-authored]
+3. **Security relevance:** does a required security property depend on the element working correctly? [skill-authored] The answer is the element's `security_relevant`, true or false. [skill-authored]
 
 The three answers are independent of one another: the role says which catalog rows apply, the boundary whether the dependency rows apply on top of them, and the flag whether the security rows apply as well. [skill-authored]
 The tests that decide each answer are in the definitions below, and the sections after them say what each answer brings. [skill-authored]
