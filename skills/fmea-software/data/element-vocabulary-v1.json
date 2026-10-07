@@ -90,6 +90,18 @@
     {
       "text": "An ML or LLM model is a `component` when it runs inside a service and a `service` when it is served separately.",
       "tags": ["skill-authored"]
+    },
+    {
+      "text": "Code that reads or writes a cache is a component of its element; the cache itself is the datastore.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "A parent is judged on its own behaviour: a security flag propagates neither up to a parent nor down to a child.",
+      "tags": ["skill-authored"]
+    },
+    {
+      "text": "An element outside the scope takes the security test like any other; a third-party identity provider, or a platform that holds the system's secrets, is security-relevant.",
+      "tags": ["skill-authored"]
     }
   ]
 }

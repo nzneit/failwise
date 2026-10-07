@@ -50,6 +50,9 @@ The region between the two markers below is generated from `data/element-vocabul
 - Code that runs on the user's device but ships inside another element's deployable, such as a browser app served by its worker, is a `component` of that element. [skill-authored]
 - A managed database or queue is `datastore` or `event_stream` with `boundary: third_party`. [skill-authored]
 - An ML or LLM model is a `component` when it runs inside a service and a `service` when it is served separately. [skill-authored]
+- Code that reads or writes a cache is a component of its element; the cache itself is the datastore. [skill-authored]
+- A parent is judged on its own behaviour: a security flag propagates neither up to a parent nor down to a child. [skill-authored]
+- An element outside the scope takes the security test like any other; a third-party identity provider, or a platform that holds the system's secrets, is security-relevant. [skill-authored]
 
 <!-- vocabulary:end -->
 
@@ -106,6 +109,7 @@ It runs alone, never in the same update as an architecture change, so the stale 
 The default for every other element is applied per element by the person, not blindly: an element whose internals `meta.boundary.excluded` lists is a candidate for `owned_outside`, and the person decides. [skill-authored]
 Catalog refs are renamed mechanically, `cat-external_dependency-NN` to `cat-dependency-NN` and `cat-security_component-NN` to `cat-security-NN`, in both places they occur: `chains[].catalog_refs[].id`, and `elements[].sources[].ref` where the source kind is `catalog`. [skill-authored]
 Unattended, every question to the person takes the stated default and is listed in `meta.assumptions[]` as an open assumption with owner `user`. [skill-authored]
+Where an element's sources can be read, the migration applies the security test and records the rationale; the default of false, with an open assumption, applies only to an element whose sources cannot be read. [skill-authored]
 Migration marks no row stale: the mapping preserves meaning, and the ratings do not depend on the kind. [skill-authored]
 A role or a boundary the person changes afterwards goes through the update mode's ordinary stale rule, under which an element changed when its `kind`, `boundary`, `security_relevant` or `dependency` changed. [skill-authored]
 Every other element field does not count: the name and the description are labels, and `sources` and `security_rationale` record why, not what. [skill-authored]

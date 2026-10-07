@@ -32,7 +32,7 @@ test("loadVocabulary reads the shipped file: five roles in the enum order and th
   assert.deepEqual(v.roles.map((r) => r.id), ["service", "datastore", "event_stream", "interface", "component"]);
   assert.deepEqual(v.boundaries.map((b) => b.id), ["in_scope", "owned_outside", "third_party"]);
   assert.equal(v.security.label, "Security-relevant");
-  assert.equal(v.tie_breaks.length, 6);
+  assert.equal(v.tie_breaks.length, 9);
 });
 
 test("a missing vocabulary file throws VOCABULARY_READ naming the path", () => {
