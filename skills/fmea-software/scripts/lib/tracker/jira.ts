@@ -292,7 +292,7 @@ function createFault(ctx: Ctx, key: string, fields: Json): string | undefined {
   const labelled = Array.isArray(fields.labels) && fields.labels.some((l) => typeof l === "string" && l.toLowerCase() === label);
   if (!labelled) return `${key} was created without the label ${ctx.label}, which finding it again depends on; add the label to it by hand`;
   const parent: unknown = isRecord(fields.parent) ? fields.parent.key : undefined;
-  if (ctx.parent !== undefined && (typeof parent !== "string" || parent.toLowerCase() !== ctx.parent.toLowerCase())) {
+  if (ctx.parent !== undefined && parent !== ctx.parent) {
     return `${key} was created without the parent ${ctx.parent}; add the parent to it by hand`;
   }
   return undefined;
@@ -366,7 +366,9 @@ function stateOf(fields: Json, lists: Lists): { state: ObservedState; detail: st
   return state === "open" || date === null ? { state, detail } : { state, detail, closed_date: date };
 }
 
-/** The answered key, the fields and the description of a view, each of the shape read. */
+/** The answered key, the fields and the description of a view, each of the shape read. The key is
+ *  held to the work item key grammar: the observation's link is stored, and the next read refuses a
+ *  stored key outside it before any request (R2). */
 function viewOf(stdout: string): { key: string; fields: Json; description: AdfDoc | null } {
   const item = jsonOf(stdout);
   const fields: unknown = isRecord(item) ? item.fields : undefined;

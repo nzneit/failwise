@@ -404,7 +404,17 @@ test("an answer without the label, and one without the configured parent, are Cr
   await faultOf(created(), { ...jiraConfig, parent: "FAILW-4" }, ["the parent FAILW-4"]);
   await faultOf(created("FAILW-5", "10015", { parent: "FAILW-3" }), { ...jiraConfig, parent: "FAILW-4" }, ["the parent FAILW-4"]);
   assert.deepEqual(await setup([authStatus(), created("FAILW-5", "10015", { labels: ["FailWise"] })]).provider.create(TRACKED), link);
-  assert.deepEqual(await setup([authStatus(), created("FAILW-5", "10015", { parent: "FAILW-4" })], { ...jiraConfig, parent: "failw-4" }).provider.create(TRACKED), link);
+});
+
+test("the answered parent must be the configured key exactly: another spelling of it is CreatedWithFault, the same key is not", async () => {
+  const withParent = { ...jiraConfig, parent: "FAILW-4" };
+  await assert.rejects(setup([authStatus(), created("FAILW-5", "10015", { parent: "failw-4" })], withParent).provider.create(TRACKED), (err: unknown) => {
+    assert.ok(err instanceof CreatedWithFault, String(err));
+    holds(err.message, "the parent FAILW-4");
+    return true;
+  });
+  const link: Link = { provider: "jira", id: "10015", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5" };
+  assert.deepEqual(await setup([authStatus(), created("FAILW-5", "10015", { parent: "FAILW-4" })], withParent).provider.create(TRACKED), link);
 });
 
 test("a non-zero exit of create is TRACKER_REJECTED with acli's line, and no file remains", async () => {
@@ -546,6 +556,15 @@ test("a missing or unknown status category, a resolution without a name, and a r
   for (const answer of answers) {
     holds(await rejectsWith(readOne(answer), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
+});
+
+test("a view answering a key outside the work item key grammar is TRACKER_REJECTED, so no observation carries a link the next read would refuse", async () => {
+  for (const key of ["failw-5", "FAILW-05", "FAILW-0", "FAILW", "FAILW-5 OR 1=1", "../FAILW-5", ""]) {
+    holds(await rejectsWith(readOne(viewed(key)), "TRACKER_REJECTED"), "in a form the script cannot read");
+  }
+  const [moved] = await setup([viewed("FLSCR-5")]).provider.read([linkTo()]);
+  const again = await setup([viewed("FLSCR-5")]).provider.read([moved.link]);
+  assert.deepEqual(again[0].link, moved.link);
 });
 
 test("closed_date is the UTC date of the resolution date, in the recorded form, near midnight, with +0000 and with Z, and is absent on an open item", async () => {
