@@ -109,6 +109,7 @@ const CRITERIA = [
   { id: 'c10-no-invented-elements', must: true, prompts: [1, 5, 6, 7] },
   { id: 'c11-prompt6-conversion', must: true, prompts: [6] },
   { id: 'c12-prompt7-update', must: true, prompts: [7] },
+  { id: 'c13-element-typing', must: false, prompts: [1, 6], rubric: 2 },
 ]
 
 const EXPECTED_FILES = {
