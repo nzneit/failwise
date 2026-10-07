@@ -229,3 +229,27 @@ test("the digest does not change when a linked action or a finding changes", () 
   assert.equal(plan.findings.length, 3);
   assert.equal(plan.digest, base);
 });
+
+test("the digest changes when type changes and when parent changes, and not when states changes", () => {
+  const { doc, listing } = digestCase();
+  const base = computePlan(doc, target, listing).digest;
+
+  const task = computePlan(doc, { ...target, type: "Task" }, listing).digest;
+  assert.notEqual(task, base);
+  assert.notEqual(computePlan(doc, { ...target, type: "Story" }, listing).digest, task);
+
+  const parented = computePlan(doc, { ...target, parent: "FAILW-4" }, listing).digest;
+  assert.notEqual(parented, base);
+  assert.notEqual(computePlan(doc, { ...target, parent: "FAILW-9" }, listing).digest, parented);
+
+  const stated = clone(doc);
+  if (stated.meta.tracker) stated.meta.tracker.states = { done: ["Closed"] };
+  assert.equal(computePlan(stated, target, listing).digest, base);
+});
+
+test("a target without type or parent gives the same digest every time, and names neither in it", () => {
+  const { doc, listing } = digestCase();
+  const first = computePlan(doc, target, listing).digest;
+  assert.equal(computePlan(clone(doc), { ...target }, clone(listing)).digest, first);
+  assert.notEqual(computePlan(doc, { ...target, type: "" }, listing).digest, first);
+});

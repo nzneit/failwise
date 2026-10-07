@@ -11,14 +11,16 @@ export interface ItemContent { title: string; action: string; facts: Fact[]; ori
 export interface TrackedItem { key: string; text: string; label: string; due: string; content: ItemContent }
 
 export type Visibility = "public" | "internal" | "private" | "unknown";
-/** `no_create`, when present, says why this target cannot take a new item from this person; reading back needs none of it. */
-export interface Target { provider: TrackerProvider; host: string; project: string; label: string; visibility: Visibility; write_gap_ms: number; no_create?: string }
+/** `no_create`, when present, says why this target cannot take a new item from this person; reading back needs none of it.
+ *  `type` and `parent`, Jira only, are the work type new items are created as and the key of their parent. */
+export interface Target { provider: TrackerProvider; host: string; project: string; label: string; visibility: Visibility; write_gap_ms: number; no_create?: string; type?: string; parent?: string }
 /** `id` is the tracker's stable id; `key` is its own short name for the item, such as `owner/repo#12`. */
 export interface Link { provider: TrackerProvider; id: string; key: string; url: string }
 export interface Marker { key: string; text: string }
 export interface RemoteItem { link: Link; marker: Marker | null }
-/** What `read` saw of one linked item; `link` carries the item's current key and URL. */
-export interface Observation { link: Link; state: ObservedState; detail: string; closed_date?: string }
+/** What `read` saw of one linked item; `link` carries the item's current key and URL. `marker`, present
+ *  only on a Jira observation, is the action key the item's marker names, or null when it has none. */
+export interface Observation { link: Link; state: ObservedState; detail: string; closed_date?: string; marker?: string | null }
 
 export interface Provider {
   describe(): Promise<Target>;

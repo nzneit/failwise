@@ -84,7 +84,19 @@ function open(path: string, flags: Flags, deps: Deps): Ctx | number {
   const doc = raw as FmeaDocument;
   const config = doc.meta.tracker;
   if (config === undefined) throw new ScriptError("TRACKER_CONFIG", "the document has no meta.tracker", "/meta/tracker");
+  checkConfig(config);
   return { path, doc, bytes: read.bytes, refs: actionRefs(doc), deps, provider: deps.makeProvider(config), waited: false };
+}
+
+/** What the schema cannot say of a flat `meta.tracker`: a jira target needs its host, and the
+ *  Jira-only fields are refused on a github target, the first of type, parent and states. */
+function checkConfig(config: TrackerConfig): void {
+  if (config.provider === "jira") {
+    if (config.host === undefined) throw new ScriptError("TRACKER_CONFIG", "a jira target needs host, the site such as example.atlassian.net", "/meta/tracker/host");
+    return;
+  }
+  const field = (["type", "parent", "states"] as const).find((f) => config[f] !== undefined);
+  if (field !== undefined) throw new ScriptError("TRACKER_CONFIG", `${field} is for a jira target; a github target cannot take it`, `/meta/tracker/${field}`);
 }
 
 /** A provider request under the wait policy of §6.2: one wait in the run, of 120 seconds or less,
@@ -104,8 +116,12 @@ async function call<T>(ctx: Ctx, request: () => Promise<T>): Promise<T> {
   }
 }
 
+/** The target as the commands print it: `type` and `parent` only when the target has them. */
 function publicTarget(t: Target): Omit<Target, "write_gap_ms" | "no_create"> {
-  return { provider: t.provider, host: t.host, project: t.project, label: t.label, visibility: t.visibility };
+  const shown: Omit<Target, "write_gap_ms" | "no_create"> = { provider: t.provider, host: t.host, project: t.project, label: t.label, visibility: t.visibility };
+  if (t.type !== undefined) shown.type = t.type;
+  if (t.parent !== undefined) shown.parent = t.parent;
+  return shown;
 }
 
 function plainLink(l: Link): Link {

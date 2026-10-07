@@ -12,8 +12,8 @@ import { exitStatus } from "./lib/codes.ts";
 import { textHash } from "./lib/tracker/items.ts";
 import { fakeProvider } from "./tracker-fakes.ts";
 import type { FakeOptions, FakeProvider } from "./tracker-fakes.ts";
-import type { Link, Observation, RemoteItem } from "./lib/tracker/provider.ts";
-import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerLink } from "./lib/types.ts";
+import type { Link, Observation, Provider, RemoteItem } from "./lib/tracker/provider.ts";
+import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerConfig, TrackerLink } from "./lib/types.ts";
 import { changedMessage, clone, minimalDoc, runCli } from "./test-helpers.ts";
 
 const TODAY = "2026-10-02";
@@ -44,12 +44,17 @@ function observation(n: number, state: ObservedState, detail: string = state, cl
   return closed_date === undefined ? { link: linkOf(n), state, detail } : { link: linkOf(n), state, detail, closed_date };
 }
 
-/** minimalDoc with a tracker configuration and these actions on its only row. */
-function docWith(...actions: Action[]): FmeaDocument {
+/** minimalDoc with this tracker configuration and these actions on its only row. */
+function docOn(config: TrackerConfig, ...actions: Action[]): FmeaDocument {
   const doc = minimalDoc();
-  doc.meta.tracker = { provider: "github", project: "acme/checkout", label: "failwise" };
+  doc.meta.tracker = config;
   doc.chains[0].actions = actions;
   return doc;
+}
+
+/** docOn with the GitHub configuration most tests use. */
+function docWith(...actions: Action[]): FmeaDocument {
+  return docOn({ provider: "github", project: "acme/checkout", label: "failwise" }, ...actions);
 }
 
 interface Entry { key: string; pointer: string; outcome: string; link?: Link; item?: { title: string } }
@@ -66,8 +71,9 @@ interface Session {
 }
 
 /** Writes the document to a fresh folder and returns a way to run track.ts on it against the fake,
- *  with a fixed today, a sleep that records and returns at once, and stdout and stderr collected. */
-function session(t: TestContext, doc: FmeaDocument, options: FakeOptions = {}): Session {
+ *  with a fixed today, a sleep that records and returns at once, and stdout and stderr collected.
+ *  `provider`, when given, is what makeProvider builds in place of the fake. */
+function session(t: TestContext, doc: FmeaDocument, options: FakeOptions = {}, provider?: Provider): Session {
   const dir = mkdtempSync(join(tmpdir(), "fmea-track-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "a.fmea.json");
@@ -80,7 +86,7 @@ function session(t: TestContext, doc: FmeaDocument, options: FakeOptions = {}): 
     const stderr = t.mock.method(process.stderr, "write", () => true);
     try {
       const status = await main(argv, {
-        makeProvider: () => { built += 1; return fake; },
+        makeProvider: () => { built += 1; return provider ?? fake; },
         today: () => TODAY,
         sleep: async (ms) => { sleeps.push(ms); },
         write: (text) => { stdout += text; },
@@ -184,6 +190,58 @@ test("a document with no meta.tracker is TRACKER_CONFIG at /meta/tracker, exit 2
   assert.equal(cli.status, 2);
   assert.equal(cli.stdout, "");
   assert.equal(cli.stderr, "error TRACKER_CONFIG: the document has no meta.tracker at /meta/tracker\n");
+});
+
+test("a Jira target without host is TRACKER_CONFIG at /meta/tracker/host, exit 2, and the provider is never built", async (t) => {
+  const s = session(t, docOn({ provider: "jira", project: "FAILW", label: "failwise" }, act(1)));
+  const before = s.text();
+  for (const argv of [["plan", s.path], ["refresh", s.path], ["apply", s.path, "--plan", "0".repeat(64)]]) {
+    await assert.rejects(s.run(argv), { code: "TRACKER_CONFIG", pointer: "/meta/tracker/host" });
+    const cli = runTrack(t, argv);
+    assert.equal(cli.status, 2);
+    assert.equal(cli.stdout, "");
+    assert.match(cli.stderr, /error TRACKER_CONFIG: .* at \/meta\/tracker\/host/);
+  }
+  assert.equal(s.built(), 0);
+  assert.equal(s.text(), before);
+});
+
+test("type, parent and states on a GitHub target are each TRACKER_CONFIG at their pointer", async (t) => {
+  const github: TrackerConfig = { provider: "github", project: "acme/checkout", label: "failwise" };
+  const cases: [TrackerConfig, string][] = [
+    [{ ...github, type: "Task", parent: "FAILW-4", states: { done: ["Closed"] } }, "/meta/tracker/type"],
+    [{ ...github, parent: "FAILW-4", states: { done: ["Closed"] } }, "/meta/tracker/parent"],
+    [{ ...github, states: { done: ["Closed"] } }, "/meta/tracker/states"],
+  ];
+  for (const [config, pointer] of cases) {
+    const s = session(t, docOn(config, act(1)));
+    const before = s.text();
+    await assert.rejects(s.track("plan"), { code: "TRACKER_CONFIG", pointer });
+    const cli = runTrack(t, ["plan", s.path]);
+    assert.equal(cli.status, 2);
+    assert.match(cli.stderr, new RegExp(`is for a jira target; a github target cannot take it at ${pointer}\n$`));
+    assert.equal(s.built(), 0);
+    assert.equal(s.text(), before);
+  }
+});
+
+test("a Jira target without parent is accepted, and plan prints type and parent only when the target has them", async (t) => {
+  const config: TrackerConfig = { provider: "jira", host: "jira.example.com", project: "FAILW", label: "failwise" };
+  const target = { provider: "jira", host: "jira.example.com", project: "FAILW", visibility: "unknown", type: "Task", parent: "FAILW-4" } as const;
+  const s = session(t, docOn(config, act(1)), { target });
+  for (const run of [() => s.track("plan"), () => s.track("refresh"), () => applyPlanned(s, "--public-ok")]) {
+    const { status, result, stderr } = await run();
+    assert.equal(status, 0, stderr);
+    const printed = result.target as Record<string, unknown>;
+    assert.equal(printed.type, "Task");
+    assert.equal(printed.parent, "FAILW-4");
+  }
+
+  const plain = session(t, docWith(act(1)));
+  const { result } = await plain.track("plan");
+  const printed = result.target as Record<string, unknown>;
+  assert.equal("type" in printed, false);
+  assert.equal("parent" in printed, false);
 });
 
 test("a subprocess run of track.ts cannot find gh: a valid document stops at TRACKER_UNAVAILABLE", (t) => {
