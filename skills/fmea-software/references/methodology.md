@@ -76,7 +76,7 @@ That is why no rating table of its is taken, only its step sequence and, under R
 
 ## Transfer status of every classical rule the skill uses
 
-Four statuses, and no others: **direct**, the rule is used as the corpus states it; **adapted**, it is changed for software or for this data model; **new**, it has no counterpart in the corpus; **not applicable**, a classical rule deliberately unused in v1, whether or not the corpus reaches its content. [skill-authored]
+Four statuses, and no others: **direct**, the rule is used as the corpus states it; **adapted**, it is changed for software or for this data model; **new**, the skill takes it from no record in the corpus, and where a cite-only document has a parallel, the row records it as a parallel only; **not applicable**, a classical rule deliberately unused in v1, whether or not the corpus reaches its content. [skill-authored]
 A status is a claim about this skill's use of a rule, not about that rule's standing in its own document. [skill-authored]
 
 | Classical rule | Status | What v1 does with it | Provenance |

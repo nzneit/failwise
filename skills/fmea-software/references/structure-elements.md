@@ -69,7 +69,7 @@ Every element gets functions and chains whatever its boundary: the dependency ro
 The split of the outside into `owned_outside` and `third_party` is the skill's own, since no source draws it. [skill-authored]
 A pricing service is `in_scope` in the run that analyses it and `owned_outside` in a run that only calls it, and only in the second is it an external dependency. [skill-authored]
 Strength stays in the `dependency` block, strong or weak, as a property of the edge between the system and the element rather than of the element itself. [skill-authored]
-The Azure Well-Architected Framework's failure mode analysis classifies dependencies as strong or weak, and Google's paper "The Calculus of Service Availability" calls a dependency critical when its failure takes the service down with it. [cites:C014] [cites:C144] [cites:C145]
+The Azure Well-Architected Framework's failure mode analysis classifies dependencies as strong or weak, and Treynor et al.'s paper "The Calculus of Service Availability" names the critical dependency as a concept. [cites:C014] [cites:C144] [cites:C145]
 
 ## Role
 
@@ -83,7 +83,7 @@ The fit is loose on purpose: these are a basis, not a match. [skill-authored]
 An element is security-relevant when a required security property depends on it working correctly, the class NIST SP 800-53 Rev. 5 calls security-relevant components and Common Criteria calls the TOE security functionality. [paraphrased:C157] [cites:C158]
 The properties the skill counts are authentication, authorisation, confidentiality and integrity, a list that is the skill's own. [skill-authored]
 The test is one question: if this element misbehaves, can someone see or do what the system must prevent? [skill-authored]
-The class is worth marking because NIST SP 800-53 Rev. 5 asks for security functions to be isolated from the functions that are not, in control SC-3. [cites:C156]
+The class is worth marking because NIST SP 800-53 Rev. 5 asks for security functions to be isolated from the functions that are not, in control SC-3. [paraphrased:C156]
 A security-relevant element gets the security rows in addition to its role's rows. [skill-authored]
 The default answer is false; a run that sets the flag true states its reason in `security_rationale`, and it may record one when it sets the flag false. [skill-authored]
 
