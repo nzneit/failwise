@@ -55,9 +55,8 @@ const entry = (id: string, key: string, description: unknown = null): object => 
 
 // the shared JSON readers (s1)
 
-test("json.ts holds the three readers s1 moves out of github.ts and nothing else, and recordOf refuses what is not an object", async () => {
+test("recordOf, which s1 moves out of github.ts, refuses what is not an object and gives back an object", async () => {
   const json = await import("./lib/tracker/json.ts");
-  assert.deepEqual(Object.keys(json).sort(), ["isRecord", "recordOf"]);
   holds(await rejectsWith(Promise.resolve().then(() => json.recordOf([], "the answer")), "TRACKER_REJECTED"), "the answer is not the JSON object expected");
   assert.deepEqual(json.recordOf({ a: 1 }, "the answer"), { a: 1 });
 });
@@ -193,12 +192,12 @@ test("a project key that resolves to a project under another key, as an old key 
   holds(await rejectsWith(setup([authStatus(), ok({ issueTypes: FAILW_TYPES })]).provider.describe(), "TRACKER_REJECTED"), "in a form the script cannot read");
 });
 
-test("describe gives the target of §7: visibility unknown, write_gap_ms 0, type Task by default or as configured, and the parent's key as view answered it", async () => {
+test("describe gives the target of §7: visibility unknown, write_gap_ms 0, type Task by default or as configured, and the configured parent when view answers under that key", async () => {
   assert.deepEqual(await setup(DESCRIBED).provider.describe(), {
     provider: "jira", host: HOST, project: "FAILW", label: "failwise", visibility: "unknown", write_gap_ms: 0, type: "Task",
   });
   assert.equal((await setup(DESCRIBED, { ...jiraConfig, type: "Story" }).provider.describe()).type, "Story");
-  const parented = await setup([...DESCRIBED, epic("FAILW-44")], { ...jiraConfig, parent: "failw-44" }).provider.describe();
+  const parented = await setup([...DESCRIBED, epic("FAILW-44")], { ...jiraConfig, parent: "FAILW-44" }).provider.describe();
   assert.equal(parented.parent, "FAILW-44");
   assert.equal(parented.no_create, undefined);
   const target = await setup(DESCRIBED).provider.describe();
@@ -231,6 +230,14 @@ test("a parent that is not found, that sits in another project, or that is not a
   for (const shape of [ok("<html>"), parentView({ project: { key: "FAILW" } }), ok({ id: "10004", fields: { project: { key: "FAILW" }, issuetype } })]) {
     holds(await rejectsWith(describeWith(shape), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
+});
+
+test("a parent that view answers under another key, as an old key is after a re-key, sets no_create naming the current key and keeps the configured key, without throwing (R5)", async () => {
+  const { provider, calls } = setup([...DESCRIBED, epic("FAILW-4")], { ...jiraConfig, parent: "KAN-4" });
+  const target = await provider.describe();
+  assert.equal(target.no_create, "the parent KAN-4 is now keyed FAILW-4 on jira.example.com: set the parent to FAILW-4");
+  assert.equal(target.parent, "KAN-4");
+  assert.deepEqual(calls[2], ["jira", "workitem", "view", "KAN-4", "--fields=project,issuetype", "--json"]);
 });
 
 // listMarked

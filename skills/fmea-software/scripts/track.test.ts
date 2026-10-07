@@ -11,8 +11,9 @@ import { loadTable } from "./lib/table.ts";
 import { exitStatus } from "./lib/codes.ts";
 import { textHash } from "./lib/tracker/items.ts";
 import { fakeProvider } from "./tracker-fakes.ts";
-import { authStatus, count, created, fakeAcli, HOST, jiraConfig, ok, project, status as jiraStatus, viewed, workItem } from "./tracker-acli.ts";
+import { authStatus, count, created, epic, fakeAcli, HOST, jiraConfig, ok, project, status as jiraStatus, TRACKED, viewed, workItem } from "./tracker-acli.ts";
 import { jiraProvider } from "./lib/tracker/jira.ts";
+import { renderDescription } from "./lib/tracker/jira-body.ts";
 import type { ProcessResult } from "./lib/tracker/spawn.ts";
 import type { FakeOptions, FakeProvider } from "./tracker-fakes.ts";
 import type { Link, Observation, Provider, RemoteItem } from "./lib/tracker/provider.ts";
@@ -697,11 +698,12 @@ test("refresh gives link-mismatch, no proposal and no observed, for an observati
 
 // the Jira adapter behind track.ts
 
-test("plan on a Jira target whose work type the project does not offer, or whose parent sits in another project, is TRACKER_REJECTED with the reason, and refresh still reads", async (t) => {
+test("plan on a Jira target whose work type the project does not offer, whose parent sits in another project, or whose parent answers under another key, is TRACKER_REJECTED with the reason, and refresh still reads", async (t) => {
   const elsewhere = ok(workItem("FLSCR-1", "10030", { project: { id: "10002", key: "FLSCR", name: "Scratch" }, issuetype: { id: "10005", name: "Epic", hierarchyLevel: 1, subtask: false } }));
   const cases: [TrackerConfig, ProcessResult[], RegExp][] = [
     [{ ...jiraConfig, type: "Nope" }, [], /it offers: Epic, Subtask, Task, Story$/],
     [{ ...jiraConfig, parent: "FLSCR-1" }, [elsewhere], /^the parent FLSCR-1 sits in the project FLSCR, not FAILW$/],
+    [{ ...jiraConfig, parent: "KAN-4" }, [epic("FAILW-4")], /^the parent KAN-4 is now keyed FAILW-4 on jira\.example\.com: set the parent to FAILW-4$/],
   ];
   for (const [config, parent, reason] of cases) {
     const described = [authStatus(), project(), ...parent];
@@ -741,6 +743,16 @@ test("refresh on a Jira item closed under names in neither list prints closed-un
   assert.equal(status, 0);
   assert.equal(result.items[0].finding, "closed-unclear");
   assert.equal(result.items[0].observed.detail, "Closed, resolution Duplicate");
+});
+
+test("refresh through the Jira adapter gives link-mismatch, with no observed and no proposal, for an item whose marker names another action", async (t) => {
+  const other = viewed("FAILW-5", { description: renderDescription({ ...TRACKED, key: "fmea-min/ch-1/act-9" }) });
+  const s = jiraSession(t, docOn(jiraConfig, jiraLinked(act(1))), [authStatus(), project(), other]);
+  const { status, result } = await s.track("refresh");
+  assert.equal(status, 0);
+  assert.equal(result.items[0].finding, "link-mismatch");
+  assert.equal("observed" in result.items[0], false);
+  assert.equal("proposal" in result.items[0], false);
 });
 
 // the authored fields

@@ -169,12 +169,15 @@ function parentFields(stdout: string): { key: string; project: string; level: nu
 }
 
 /** The parent's key as `view` answered it and why no item can be created under it, if so (UJ10).
- *  The level is checked only against a work type that was found. */
+ *  A parent answered under another key, as an old key is after a re-key, keeps the configured key
+ *  and cannot take a new item, since create sends the configured key (R5). The level is checked
+ *  only against a work type that was found. */
 async function parentOf(ctx: Ctx, parent: string, type: WorkType | string): Promise<{ key: string; reason?: string }> {
   const answer = await run(ctx, ["workitem", "view", parent, "--fields=project,issuetype", "--json"]);
   if (answer.status === 1 && answer.firstLine === NOT_FOUND) return { key: parent, reason: `the parent ${parent} was not found` };
   if (answer.status !== 0) throw failure(answer);
   const found = parentFields(answer.stdout);
+  if (found.key !== parent) return { key: parent, reason: `the parent ${parent} is now keyed ${found.key} on ${ctx.host}: set the parent to ${found.key}` };
   if (found.project !== ctx.project) return { key: found.key, reason: `the parent ${found.key} sits in the project ${found.project}, not ${ctx.project}` };
   if (typeof type !== "string" && found.level <= type.hierarchyLevel) {
     return { key: found.key, reason: `the parent ${found.key} is not above the work type ${ctx.type} in the project's hierarchy` };
