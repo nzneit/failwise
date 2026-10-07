@@ -23,8 +23,8 @@ const vectors = loadFixture<{ vectors: string[] }>("injection-vectors.json").vec
   .map((v) => (/[<>&"']/.test(v) ? v : `${v}<&"'>`));
 
 // `update/stale-rows.fmea.json` is the one fixture with rows whose `stale.flag` is true: `ch-1`,
-// flagged `scales-version` with all three ratings still `provisional`, and `ch-2`, flagged
-// `element-changed` and re-scored by A. Reviewer on 2026-09-12. Task 26 fills `computed` only on
+// flagged `element-changed` with all three ratings still `provisional`, and `ch-2`, flagged
+// `scales-version` and re-scored by A. Reviewer on 2026-09-12. Task 26 fills `computed` only on
 // `checkout-service.fmea.json` and `update/before.fmea.json`, and Task 21's `--write` runs name
 // three fixtures that do not include this one, so this builder supplies `computed` and recomputes
 // `priority` from the shipped table, the way the other synthesised inputs below are built.
@@ -341,7 +341,7 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
 test("the Needs attention block lists stale rows with their reasons in words", () => {
   const header = headerOf(staleRows());
   const stale = header.indexOf(attnItem(`2 rows due to be rated again<br>${mark("stale")}`,
-    '<a href="#row-ch-1"><code>ch-1</code></a> the scales changed &middot; <a href="#row-ch-2"><code>ch-2</code></a> its element changed',
+    '<a href="#row-ch-1"><code>ch-1</code></a> its element changed &middot; <a href="#row-ch-2"><code>ch-2</code></a> the scales changed',
     "A stale row was rated before the design or the scales changed. Its ratings describe the earlier state until it is rated again."));
   assert.notEqual(stale, -1, "the stale item is missing or misprinted");
   assert.ok(stale < header.indexOf("3 ratings not yet reviewed"), "the stale item comes before the provisional item");
@@ -406,8 +406,8 @@ test("row marks: one handoff, three provisional rows, no stale row", () => {
 test("a flagged row carries the stale mark; a cleared row carries none", () => {
   const index = indexTable(renderHtml(staleRows(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 2);
-  assert.ok(index.includes(`<a href="#row-ch-1"><code>ch-1</code></a><br>${mark("stale")} ${mark("provisional")}</td>`), "ch-1 is flagged scales-version with three provisional ratings");
-  assert.ok(index.includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("stale")}</td>`), "ch-2 is flagged element-changed and fully re-scored");
+  assert.ok(index.includes(`<a href="#row-ch-1"><code>ch-1</code></a><br>${mark("stale")} ${mark("provisional")}</td>`), "ch-1 is flagged element-changed with three provisional ratings");
+  assert.ok(index.includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("stale")}</td>`), "ch-2 is flagged scales-version and fully re-scored");
   assert.ok(index.includes(`<a href="#row-ch-3"><code>ch-3</code></a></td>`), "ch-3 had its flag cleared and carries no mark");
 });
 

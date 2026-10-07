@@ -381,8 +381,8 @@ test("attention: stale rows in index order with their reasons in words", () => {
     label: "3 rows due to be rated again",
     rows: [
       { chainId: "ch-4", reason: null },
-      { chainId: "ch-1", reason: "the scales changed" },
-      { chainId: "ch-2", reason: "its element changed" },
+      { chainId: "ch-1", reason: "its element changed" },
+      { chainId: "ch-2", reason: "the scales changed" },
     ],
   });
   doc.chains[1].stale = { flag: false };

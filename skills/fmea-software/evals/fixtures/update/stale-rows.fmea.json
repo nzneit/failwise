@@ -42,7 +42,7 @@
       {
         "version": 2,
         "date": "2026-09-10",
-        "change": "Update run: the session-authentication element description changed; the scales pin was found at 1 behind the declared version 2 and was advanced. All five rated rows were marked stale, ch-2 with reason element-changed and the other four with reason scales-version, and all five were re-rated provisional."
+        "change": "Update run: the payment gateway's dependency was reclassified from strong to weak, which marks its row stale with reason element-changed; the session-authentication element's description was reworded, which marks nothing stale; the scales pin was found at 1 behind the declared version 2 and was advanced, which marks the session-authentication row stale with reason scales-version. Both rows were re-rated provisional."
       }
     ]
   },
@@ -66,7 +66,7 @@
       "boundary": "third_party",
       "security_relevant": false,
       "dependency": {
-        "strength": "strong",
+        "strength": "weak",
         "sla": "99.95% monthly",
         "limits": "50 rps per merchant"
       },
@@ -169,12 +169,12 @@
       },
       "actions": [],
       "catalog_refs": [],
-      "stale": { "flag": true, "reason": "scales-version", "since_version": 2 },
+      "stale": { "flag": true, "reason": "element-changed", "since_version": 2 },
       "history": [
         {
           "version": 2,
           "date": "2026-09-10",
-          "change": "Marked stale with reason scales-version at version 2 and re-rated provisional against the version 2 anchors."
+          "change": "Marked stale with reason element-changed at version 2, the gateway dependency having been reclassified from strong to weak. Re-rated provisional."
         }
       ]
     },
@@ -203,12 +203,12 @@
       },
       "actions": [],
       "catalog_refs": [],
-      "stale": { "flag": true, "reason": "element-changed", "since_version": 2 },
+      "stale": { "flag": true, "reason": "scales-version", "since_version": 2 },
       "history": [
         {
           "version": 2,
           "date": "2026-09-10",
-          "change": "Marked stale with reason element-changed at version 2, the session-authentication element description having changed; scales-version also applied and lost to it by precedence. Re-rated provisional."
+          "change": "Marked stale with reason scales-version at version 2; the description reworded in the same update did not count. Re-rated provisional."
         },
         {
           "version": 2,
