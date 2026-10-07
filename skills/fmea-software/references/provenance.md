@@ -54,7 +54,7 @@ The tag on such a statement is still `cites:`, and the sentence says the record 
 
 ## The source register
 
-One row per source in the research report's §9 bibliography, with the record range that source produced. [skill-authored]
+The first 26 rows follow the research report's §9 bibliography, one per source, with the record range that source produced; later rows are added, one per record range, as a research run admits a source. [skill-authored]
 A source that was fetched as more than one document or page has one row per range, so the same source can appear in more than one row. [skill-authored]
 These rows are license statements about the sources themselves, taken from the report's bibliography and license lines rather than from any record's claim, so this table alone carries no `Provenance` column and its rows carry no tag. [skill-authored]
 The Address column carries the web address the source's records share, so a record id can be traced to its source without the records file. [skill-authored]
@@ -121,7 +121,7 @@ MIL-STD-1629A is public domain under US government-work rules; the cancellation 
 Government-work note, the template attached to anything reproduced from any public-domain source in the register: *Reproduced from <document>, a work of the United States Government; public domain in the United States.* [skill-authored]
 `<document>` is that source's own name — MIL-STD-1629A, NASA-GB-8719.13, or the NASA Software Engineering Handbook (SWEHB Ver C) — so a `sourced:C110` or `sourced:C130` statement in another reference file carries the note with that name in it. [skill-authored]
 Records C131 to C134 are read from the standard's body, so MIL-STD-1629A content is citable through them; nothing is reproduced from it in this version, so no statement carries the note with that document's name. [skill-authored]
-The evidence base holds only the cancellation notice and, in verifier evidence, the base document's cover and foreword: the standard, dated 24 November 1980, was cancelled on 4 August 1998, and the notice names no successor, directing users generically to national and international FMECA documents. [paraphrased:C041] [paraphrased:C042] [paraphrased:C043] [paraphrased:C045]
+The evidence base holds the cancellation notice, the base document's cover and foreword in verifier evidence, and, since the element-kinds research of 2026-10-07, the standard's body as records C131 to C134: the standard, dated 24 November 1980, was cancelled on 4 August 1998, and the notice names no successor, directing users generically to national and international FMECA documents. [paraphrased:C041] [paraphrased:C042] [paraphrased:C043] [paraphrased:C045] [cites:C131]
 
 ## dora.dev, CC BY 4.0
 
