@@ -25,8 +25,15 @@ import { join } from "node:path";
 import { isEntry } from "./lib/entry.ts";
 
 export interface FmeaDocument {
-  elements: { id: string }[];
+  elements: { id: string; kind?: string; boundary?: string }[];
   chains: { priority: { value: string } }[];
+}
+
+/** How far two runs typed their shared elements alike: same kind and same boundary. */
+export interface Typing {
+  shared: number;
+  agreeing: number;
+  pass: boolean;
 }
 
 export interface Stability {
@@ -35,6 +42,7 @@ export interface Stability {
   countDiffs: Record<string, number>;
   bound: number;
   pass: boolean;
+  typing: Typing;
 }
 
 /** Minimum Jaccard similarity of the two runs' element id sets (§10). */
@@ -80,6 +88,29 @@ export function priorityCounts(doc: FmeaDocument, vocabulary: string[]): Record<
   return counts;
 }
 
+/** elements[] keyed by trimmed, lower-cased id, as elementIdSet matches them. */
+function elementsById(doc: FmeaDocument): Map<string, FmeaDocument["elements"][number]> {
+  return new Map(doc.elements.map((e) => [e.id.trim().toLowerCase(), e]));
+}
+
+/**
+ * Of the ids both runs carry, how many have the same kind and boundary in both.
+ * An element lacking either field in either run does not agree. With nothing
+ * shared the runs have agreed on nothing, so pass fails closed (s9).
+ */
+export function typing(run1: FmeaDocument, run2: FmeaDocument): Typing {
+  const second = elementsById(run2);
+  let shared = 0;
+  let agreeing = 0;
+  for (const [id, a] of elementsById(run1)) {
+    const b = second.get(id);
+    if (b === undefined) continue;
+    shared++;
+    if (a.kind !== undefined && a.boundary !== undefined && a.kind === b.kind && a.boundary === b.boundary) agreeing++;
+  }
+  return { shared, agreeing, pass: shared > 0 && agreeing === shared };
+}
+
 export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: string[]): Stability {
   const j = jaccard(elementIdSet(run1), elementIdSet(run2));
   const maxRows = Math.max(run1.chains.length, run2.chains.length);
@@ -96,7 +127,7 @@ export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: st
   const countDiffs: Record<string, number> = {};
   for (const v of vocabulary) countDiffs[v] = Math.abs(c1[v] - c2[v]);
   const pass = j >= JACCARD_MIN && Object.values(countDiffs).every((d) => d <= bound);
-  return { jaccard: j, maxRows, countDiffs, bound, pass };
+  return { jaccard: j, maxRows, countDiffs, bound, pass, typing: typing(run1, run2) };
 }
 
 function fail(code: "USAGE" | "IO_READ", message: string, status: 1 | 3): never {
@@ -115,6 +146,18 @@ function readJson(path: string): unknown {
   }
 }
 
+/** Why elements[i] is unusable (id not a string, kind or boundary present but not a string), or null. */
+function elementProblem(e: unknown, i: number): string | null {
+  if (typeof e !== "object" || e === null || typeof (e as { id?: unknown }).id !== "string") {
+    return `has an elements[${i}] that is not an object with a string id`;
+  }
+  for (const field of ["kind", "boundary"] as const) {
+    const value = (e as Record<string, unknown>)[field];
+    if (value !== undefined && typeof value !== "string") return `has an elements[${i}] whose ${field} is not a string`;
+  }
+  return null;
+}
+
 /**
  * Why the parsed value is not a usable document, phrased to finish the sentence
  * `<path> …`, or null when it is one. Both files are unvalidated model output, so
@@ -127,10 +170,8 @@ function documentProblem(v: unknown): string | null {
   const d = v as { elements?: unknown; chains?: unknown };
   if (!Array.isArray(d.elements) || !Array.isArray(d.chains)) return "has no elements[] and chains[]";
   for (let i = 0; i < d.elements.length; i++) {
-    const e = d.elements[i];
-    if (typeof e !== "object" || e === null || typeof (e as { id?: unknown }).id !== "string") {
-      return `has an elements[${i}] that is not an object with a string id`;
-    }
+    const problem = elementProblem(d.elements[i], i);
+    if (problem !== null) return problem;
   }
   for (let i = 0; i < d.chains.length; i++) {
     const c = d.chains[i];
