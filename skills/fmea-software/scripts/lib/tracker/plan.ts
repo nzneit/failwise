@@ -109,7 +109,7 @@ function digestOf(target: Target, actions: PlannedAction[], items: Map<string, T
     .flatMap((a) => (a.outcome === "adopt" && a.link ? [{ key: a.key, id: a.link.id }] : []))
     .sort(byKey)
     .map((a) => [a.key, a.id]);
-  const value = [[target.provider, target.host, target.project, target.label, target.visibility], creates, adopts];
+  const value = [[target.provider, target.host, target.project, target.label, target.visibility, target.type ?? null, target.parent ?? null], creates, adopts];
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 

@@ -353,3 +353,12 @@ test("read gives closed_date as the first ten characters of closedAt", async () 
   assert.equal(closed.closed_date, "2026-09-30");
   assert.ok(!("closed_date" in open));
 });
+
+test("a read whose links hold a Jira link is TRACKER_REJECTED naming its key and url, and nothing is read", async () => {
+  const jira: Link = { provider: "jira", id: "10015", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5" };
+  const { provider, calls } = setup([graphql([node(1), node(2)])]);
+  await assert.rejects(provider.read([linkOf(1), jira]), {
+    name: "ScriptError", code: "TRACKER_REJECTED", message: "the link FAILW-5 at https://jira.example.com/browse/FAILW-5 is not a GitHub issue that this script can read",
+  });
+  assert.equal(calls.length, 0);
+});

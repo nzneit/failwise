@@ -9,7 +9,7 @@ export interface ActionRef { key: string; pointer: string; chain: Chain; action:
 
 const TITLE_LIMIT = 100;
 // The schema's `plainId` pattern (schemas/fmea.schema.json), kept identical to it.
-const PLAIN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+export const PLAIN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
 /** `<meta id>/<chain id>/<action id>`: the plain-id grammar has no "/", so the key splits back. */
 export function itemKey(metaId: string, chainId: string, actionId: string): string {

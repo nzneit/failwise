@@ -2,7 +2,7 @@
 
 failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report.
 
-It is version 0.3.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions as GitHub issues, new in 0.2.0, has no evaluation. Version 0.3.0 changes the analysis schema to v2: every element now carries a boundary and a security flag, and the former `external_dependency` and `security_component` kinds became those two attributes; an analysis written against 0.2.x is refused with one `KIND_LEGACY` line and is migrated through the skill's update mode, as `SKILL.md` describes under "Migrate a v1 document". Read [Status and limitations](#status-and-limitations) before relying on it.
+It is version 0.4.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions has no evaluation, neither as GitHub issues, new in 0.2.0, nor as Jira work items, new in 0.4.0. Version 0.3.0 changed the analysis schema to v2: every element now carries a boundary and a security flag, and the former `external_dependency` and `security_component` kinds became those two attributes; an analysis written against 0.2.x is refused with one `KIND_LEGACY` line and is migrated through the skill's update mode, as `SKILL.md` describes under "Migrate a v1 document". Read [Status and limitations](#status-and-limitations) before relying on it.
 
 ## What an FMEA is
 
@@ -32,7 +32,7 @@ node skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/
 
 ## Install
 
-Requirements: Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that Node runs directly, so there is nothing else to install, except the GitHub CLI, `gh`, if you track actions as GitHub issues.
+Requirements: Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that Node runs directly, so there is nothing else to install, except the GitHub CLI, `gh`, if you track actions as GitHub issues, or the Atlassian CLI, `acli`, if you track them as Jira work items.
 
 From a shell:
 
@@ -69,9 +69,9 @@ The skill works from the inputs listed in [`design-inputs.md`](skills/fmea-softw
 
 A new analysis runs in seven steps: plan the scope, break the system into elements, state each element's functions, derive the failure chains, rate them, plan actions, and write the report. It ends with the JSON document, the rendered report, and a request that you re-score each rating in the session, one at a time, with your name and the date recorded on it. After your re-scores, Claude runs the scripts again, so that the priorities and the report follow your ratings. Expect several dozen for one service: each failure chain carries three ratings, and the four test runs of a new analysis wrote between 12 and 18 chains.
 
-## Tracking actions as GitHub issues
+## Tracking actions as GitHub issues or Jira work items
 
-Once an analysis has actions, you can ask Claude to create a GitHub issue for each one and, later, to read the issues' state back. This happens only when you ask, never as part of a run. It needs the GitHub CLI, `gh`, installed and signed in to the host: `gh auth login` for github.com, `gh auth login --hostname <host>` for another host. `plan` and `apply` need an account that can push to the repository, with issues turned on and the repository not archived; `refresh` needs only to read the issues.
+Once an analysis has actions, you can ask Claude to create a GitHub issue or a Jira work item for each one and, later, to read the items' state back. This happens only when you ask, never as part of a run. For GitHub, it needs the GitHub CLI, `gh`, installed and signed in to the host: `gh auth login` for github.com, `gh auth login --hostname <host>` for another host. `plan` and `apply` need an account that can push to the repository, with issues turned on and the repository not archived; `refresh` needs only to read the issues.
 
 Claude first asks where the issues go: the repository, as `owner/repo`, and the label every issue carries, `failwise` unless you choose another. It writes them into the analysis as `meta.tracker`, with the host when it is not github.com and, if the report is published, its address so that each issue links to its row. Then the script `track.ts` does the work in three commands:
 
@@ -81,11 +81,21 @@ Claude first asks where the issues go: the repository, as `owner/repo`, and the 
 
 Text taken from the analysis is written into an issue's body so that GitHub interprets nothing in it, which puts invisible characters into it, so text copied from an issue, or searched for on GitHub, will not match the analysis exactly. GitHub's listing of labelled issues can lag a new issue by some seconds, so after an `apply` that was interrupted, wait a moment before running `plan` again, and if `plan` reports a duplicate, remove the label from the extra issue.
 
-An analysis that carries a tracker target or a link is refused by the validator of 0.1.0, so people who share an analysis need to share the plugin version too.
+### Jira Cloud
+
+The same three commands track actions as work items in a Jira Cloud project. This needs the Atlassian CLI, `acli`, installed and signed in to your site; the version tested is 1.3.39-stable. Claude gives you the sign-in command and you run it yourself, so the plugin never sees your token: save an API token to a file outside any repository, run `acli jira auth login --site <host> --email <email> --token < token.txt`, and delete the file. Signing in through the browser with `acli jira auth login --web` works as well. If `acli` is signed in to another site, `track.ts` refuses to run and gives the command that switches it, `acli jira auth switch --site <host> --email <email>`. `plan` and `apply` need an account that can create work items in the project; `refresh` needs only to read them.
+
+For a Jira target, `meta.tracker` holds the site as `host`, such as `example.atlassian.net`, the project key, and the label. It can also hold the work type to create, `Task` unless you choose another, and the key of an Epic as `parent`, which Claude recommends so that the items are grouped under it. The differences from GitHub:
+
+- `apply` creates no label first, and since the script cannot tell who can see a Jira project, it treats every Jira target as one whose visibility is unknown: Claude asks you each time before anything is created.
+- `refresh` reads an item closed under the status or resolution `Done` as done and proposes Completed, and one closed as `Won't Do` as dropped and proposes Not Implemented. If your project's workflow closes work under other names, Claude writes the whole list in `meta.tracker.states`: a `done` or `dropped` list written there replaces its default, so it keeps `Done` or `Won't Do` while your site still closes work under that name. An item closed under a name in neither list is reported as `closed-unclear` with its status and resolution, so that you can choose, and add the name to the list.
+- A linked item whose description no longer carries its action's key, or carries another action's, is reported as `link-mismatch` and left as it is; check the link and, if it is wrong, remove the action's `tracker` block by hand. `refresh` refuses a link to an item on a site other than `host`; remove that link by hand too.
+
+An analysis that carries a tracker target or a link is refused by the validator of 0.1.0, and one with a Jira target by the validators of 0.2.0 and 0.3.0 as well, so people who share an analysis need to share the plugin version too.
 
 ## Status and limitations
 
-0.2.0 is a pre-release. Its skill was evaluated as 0.1.0, which did not pass its own acceptance gate, and the tracking of actions as GitHub issues that 0.2.0 adds has no evaluation. The skill was tested on four prompts, each at two model capabilities, high (filled by glm-5.3) and medium (glm-5.3-flash), and three of the eight combinations passed: converting a legacy RPN sheet at both, and updating an analysis after an architecture change at high. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md); both call that release v1.
+0.4.0 is a pre-release. Its skill was evaluated as 0.1.0, which did not pass its own acceptance gate, and the tracking of actions has no evaluation: neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds. The skill was tested on four prompts, each at two model capabilities, high (filled by glm-5.3) and medium (glm-5.3-flash), and three of the eight combinations passed: converting a legacy RPN sheet at both, and updating an analysis after an architecture change at high. New analyses and postmortem seeding did not pass. The scores are in the [eval results](docs/specs/2026-09-07-eval-results.md) and the ruling is in the [acceptance note](docs/specs/2026-09-07-acceptance.md); both call that release v1.
 
 The other six acceptance criteria pass, with one caveat: the check that each cited record supports its statement predates the edits of 2026-09-29. Four reference files have open findings from it, none about licensing, and two were not re-checked (see the acceptance note's addendum).
 
@@ -106,7 +116,7 @@ Not in this version:
 
 ## The scripts
 
-The skill has Claude run four scripts during a session and take every priority from them instead of working one out itself. You can also run them directly with `node`. The first three have no dependencies; `track.ts` needs `gh` installed and signed in. All four are in `skills/fmea-software/scripts/`.
+The skill has Claude run four scripts during a session and take every priority from them instead of working one out itself. You can also run them directly with `node`. The first three have no dependencies; `track.ts` needs `gh` installed and signed in for a GitHub target, and `acli` for a Jira target. All four are in `skills/fmea-software/scripts/`.
 
 All four scripts refuse a document in which one object carries the same key twice, as an edit by hand can leave it: the `IO_READ` line names the key and ends with the JSON pointer of the object, or says "the top-level object" when the repeat is at the top level. A JSON reader keeps only the last of the two values, so the first would be checked by nothing and the next `--write` would remove it from the file. Keep the value the analysis means, or join the two into one, and run the scripts again.
 
@@ -115,7 +125,7 @@ All four scripts refuse a document in which one object carries the same key twic
 | `validate.ts <analysis.json> [--write]` | Runs the schema checks, the document invariants and the lint rules, recomputes the priorities, and computes the quality score. On a clean run, `--write` stores the results in the document; `render.ts` requires them and refuses them when they no longer match the document. |
 | `priority.ts <analysis.json> --write [--change-table]` | Writes each row's priority from its ratings, and its post-action priority where the row has post-action ratings. Records the priority table's id in a document that records none yet, and refuses a document that records another table (`TABLE_ID_MISMATCH`) unless `--change-table` is given, which records the loaded table in its place. |
 | `render.ts <analysis.json> --out <report.html> [--force]` | Checks the document as `validate.ts` does and renders it to one HTML file. It refuses a document `validate.ts` refuses, one without the stored results of `validate.ts --write`, and one whose stored results no longer match it. `--force` overwrites an existing file. A document validated by an earlier version of the plugin may need one `validate.ts --write` before it renders. |
-| `track.ts plan <analysis.json>`<br>`track.ts apply <analysis.json> --plan <digest> [--only <key>,<key>] [--public-ok]`<br>`track.ts refresh <analysis.json> [--write]` | Tracks the actions as GitHub issues, as described [above](#tracking-actions-as-github-issues). `plan` writes nothing and prints the plan with its digest; `apply` carries out that plan, or only the actions `--only` names, and records each link in the document; `refresh` prints each linked issue's state with any proposal, and `--write` stores what it saw. |
+| `track.ts plan <analysis.json>`<br>`track.ts apply <analysis.json> --plan <digest> [--only <key>,<key>] [--public-ok]`<br>`track.ts refresh <analysis.json> [--write]` | Tracks the actions as GitHub issues or Jira work items, as described [above](#tracking-actions-as-github-issues-or-jira-work-items). `plan` writes nothing and prints the plan with its digest; `apply` carries out that plan, or only the actions `--only` names, and records each link in the document; `refresh` prints each linked item's state with any proposal, and `--write` stores what it saw. |
 
 `validate.ts --write`, `priority.ts --write`, `track.ts apply` and `track.ts refresh --write` read the analysis file again just before they replace it. When another program, such as your editor, saved the file after the script read or last wrote it, the script refuses with `IO_CHANGED` (exit status 3) and leaves the file as that program saved it; run the command again, or, after `apply`, run `plan` again.
 

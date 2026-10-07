@@ -579,12 +579,12 @@
       "required": ["provider", "project", "label"],
       "properties": {
         "provider": {
-          "enum": ["github"],
-          "description": "The tracker provider. Only github is supported, so a document cannot name a provider the scripts cannot run."
+          "enum": ["github", "jira"],
+          "description": "The tracker provider: github for GitHub Issues and jira for Jira Cloud."
         },
         "project": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The container items are created in. For GitHub, owner/repo."
+          "description": "The container items are created in. For GitHub, owner/repo. For Jira, the project key, such as PROJ."
         },
         "label": {
           "$ref": "#/$defs/plainId",
@@ -593,13 +593,41 @@
         "host": {
           "type": "string",
           "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$",
-          "description": "The tracker's host name. For GitHub, absent means github.com."
+          "description": "The tracker's host name. For GitHub, absent means github.com. For Jira, the site, such as example.atlassian.net; track.ts refuses a Jira target without it."
         },
         "record_url": {
           "type": "string",
           "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[A-Za-z0-9._~%/-]*)?$",
           "description": "Where the rendered report can be read: https, no query and no fragment. When present, each item links to record_url#row-<chain id>."
+        },
+        "type": {
+          "type": "string",
+          "pattern": "^[^-\\u0000-\\u001f\\u007f][^\\u0000-\\u001f\\u007f]*$",
+          "description": "Jira only. The name of the work type to create, as the project spells it; absent means Task."
+        },
+        "parent": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*-[1-9][0-9]*$",
+          "description": "Jira only. The key of the Epic every created item is a child of."
+        },
+        "states": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "done": { "$ref": "#/$defs/stateNames" },
+            "dropped": { "$ref": "#/$defs/stateNames" }
+          },
+          "description": "Jira only. The status or resolution names that close work on this site: done and dropped, each replacing its own default, Done and Won't Do."
         }
+      }
+    },
+    "stateNames": {
+      "title": "Tracker state names",
+      "description": "A list of status or resolution names, each non-empty and free of control characters.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
       }
     },
     "observed": {
@@ -635,16 +663,16 @@
       "required": ["provider", "id", "key", "url", "linked"],
       "properties": {
         "provider": {
-          "enum": ["github"],
-          "description": "The provider that holds the item."
+          "enum": ["github", "jira"],
+          "description": "The provider that holds the item: github for GitHub Issues and jira for Jira Cloud."
         },
         "id": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "The tracker's stable identifier. For GitHub, the issue's node_id."
+          "description": "The tracker's stable identifier. For GitHub, the issue's node_id. For Jira, the item's numeric id."
         },
         "key": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "A display key. For GitHub, owner/repo#number. Refreshed when the item moves."
+          "description": "A display key. For GitHub, owner/repo#number. For Jira, the item's key, such as PROJ-12. Refreshed when the item moves."
         },
         "url": {
           "type": "string",

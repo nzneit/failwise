@@ -7,6 +7,8 @@
 import { ScriptError } from "../codes.ts";
 import type { ObservedState, TrackerConfig } from "../types.ts";
 import { readMarker, renderBody, renderTitle } from "./github-body.ts";
+import { isRecord, recordOf } from "./json.ts";
+import type { Json } from "./json.ts";
 import { CreatedWithFault, TrackerWait } from "./provider.ts";
 import type { Link, Observation, Provider, RemoteItem, Target, TrackedItem, Visibility } from "./provider.ts";
 import type { ProcessResult } from "./spawn.ts";
@@ -28,7 +30,6 @@ const CLOSED_REASONS = new Map<string, [ObservedState, string]>([
   ["duplicate", ["closed", "closed: duplicate"]],
 ]);
 
-type Json = Record<string, unknown>;
 /** An answer as `gh api --include` printed it; header names in lower case. */
 interface Answer { status: number; headers: Map<string, string>; body: string }
 /** What a 404 means for a request: the repository is out of reach, the label is absent, or a refusal. */
@@ -38,15 +39,6 @@ interface Ctx { gh: Gh; host: string; project: string; label: string }
 
 const unavailable = (message: string): ScriptError => new ScriptError("TRACKER_UNAVAILABLE", message);
 const rejected = (message: string): ScriptError => new ScriptError("TRACKER_REJECTED", message);
-
-function isRecord(value: unknown): value is Json {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function recordOf(value: unknown, what: string): Json {
-  if (!isRecord(value)) throw rejected(`${what} is not the JSON object expected`);
-  return value;
-}
 
 /** The command that signs gh in to the host: github.com is its default, any other host is named. */
 function signIn(host: string): string {
@@ -269,7 +261,15 @@ async function readBatch(ctx: Ctx, batch: Link[]): Promise<Observation[]> {
   return batch.map((link, i) => observe(link, nodes[i], found.has(i)));
 }
 
+/** Every link is a GitHub link, before any request: a link of another provider is never read here. */
+function checkLinks(links: Link[]): void {
+  for (const link of links) {
+    if (link.provider !== "github") throw rejected(`the link ${link.key} at ${link.url} is not a GitHub issue that this script can read`);
+  }
+}
+
 async function read(ctx: Ctx, links: Link[]): Promise<Observation[]> {
+  checkLinks(links);
   const observations: Observation[] = [];
   for (let start = 0; start < links.length; start += READ_BATCH) {
     observations.push(...(await readBatch(ctx, links.slice(start, start + READ_BATCH))));

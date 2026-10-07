@@ -22,9 +22,10 @@ export interface Assumption { text: string; owner: string; status: AssumptionSta
 export interface Review { date: string; reviewers: string[]; outcome: string }
 export interface Boundary { included: string[]; excluded: string[]; security: string }
 export interface Scales { version: number; priority_table: string }
-export type TrackerProvider = "github";
+export type TrackerProvider = "github" | "jira";
+export interface TrackerStates { done?: string[]; dropped?: string[] }
 export type ObservedState = "open" | "done" | "dropped" | "closed" | "unreachable";
-export interface TrackerConfig { provider: TrackerProvider; project: string; label: string; host?: string; record_url?: string }
+export interface TrackerConfig { provider: TrackerProvider; project: string; label: string; host?: string; record_url?: string; type?: string; parent?: string; states?: TrackerStates }
 export interface Observed { state: ObservedState; detail: string; date: string; closed_date?: string }
 export interface TrackerLink { provider: TrackerProvider; id: string; key: string; url: string; linked: string; observed?: Observed }
 export interface Meta {

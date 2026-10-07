@@ -11,9 +11,13 @@ import { loadTable } from "./lib/table.ts";
 import { exitStatus } from "./lib/codes.ts";
 import { textHash } from "./lib/tracker/items.ts";
 import { fakeProvider } from "./tracker-fakes.ts";
+import { authStatus, count, created, epic, fakeAcli, HOST, jiraConfig, ok, project, status as jiraStatus, TRACKED, viewed, workItem } from "./tracker-acli.ts";
+import { jiraProvider } from "./lib/tracker/jira.ts";
+import { renderDescription } from "./lib/tracker/jira-body.ts";
+import type { ProcessResult } from "./lib/tracker/spawn.ts";
 import type { FakeOptions, FakeProvider } from "./tracker-fakes.ts";
-import type { Link, Observation, RemoteItem } from "./lib/tracker/provider.ts";
-import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerLink } from "./lib/types.ts";
+import type { Link, Observation, Provider, RemoteItem } from "./lib/tracker/provider.ts";
+import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerConfig, TrackerLink } from "./lib/types.ts";
 import { changedMessage, clone, minimalDoc, runCli } from "./test-helpers.ts";
 import { LEGACY_TRIGGERS, assertLegacyRefused, withTempDir, writeLegacy } from "./test-helpers.ts";
 
@@ -45,12 +49,22 @@ function observation(n: number, state: ObservedState, detail: string = state, cl
   return closed_date === undefined ? { link: linkOf(n), state, detail } : { link: linkOf(n), state, detail, closed_date };
 }
 
-/** minimalDoc with a tracker configuration and these actions on its only row. */
-function docWith(...actions: Action[]): FmeaDocument {
+/** The action linked to the Jira work item `jiraKey`, as apply would have recorded it. */
+function jiraLinked(a: Action, jiraKey = "FAILW-5", id = "10015"): Action {
+  return { ...a, tracker: { provider: "jira", id, key: jiraKey, url: `https://${HOST}/browse/${jiraKey}`, linked: "2026-10-07" } };
+}
+
+/** minimalDoc with this tracker configuration and these actions on its only row. */
+function docOn(config: TrackerConfig, ...actions: Action[]): FmeaDocument {
   const doc = minimalDoc();
-  doc.meta.tracker = { provider: "github", project: "acme/checkout", label: "failwise" };
+  doc.meta.tracker = config;
   doc.chains[0].actions = actions;
   return doc;
+}
+
+/** docOn with the GitHub configuration most tests use. */
+function docWith(...actions: Action[]): FmeaDocument {
+  return docOn({ provider: "github", project: "acme/checkout", label: "failwise" }, ...actions);
 }
 
 interface Entry { key: string; pointer: string; outcome: string; link?: Link; item?: { title: string } }
@@ -67,8 +81,9 @@ interface Session {
 }
 
 /** Writes the document to a fresh folder and returns a way to run track.ts on it against the fake,
- *  with a fixed today, a sleep that records and returns at once, and stdout and stderr collected. */
-function session(t: TestContext, doc: FmeaDocument, options: FakeOptions = {}): Session {
+ *  with a fixed today, a sleep that records and returns at once, and stdout and stderr collected.
+ *  `provider`, when given, is what makeProvider builds in place of the fake. */
+function session(t: TestContext, doc: FmeaDocument, options: FakeOptions = {}, provider?: Provider): Session {
   const dir = mkdtempSync(join(tmpdir(), "fmea-track-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "a.fmea.json");
@@ -81,7 +96,7 @@ function session(t: TestContext, doc: FmeaDocument, options: FakeOptions = {}): 
     const stderr = t.mock.method(process.stderr, "write", () => true);
     try {
       const status = await main(argv, {
-        makeProvider: () => { built += 1; return fake; },
+        makeProvider: () => { built += 1; return provider ?? fake; },
         today: () => TODAY,
         sleep: async (ms) => { sleeps.push(ms); },
         write: (text) => { stdout += text; },
@@ -112,8 +127,19 @@ async function applyPlanned(s: Session, ...flags: string[]): Promise<Run> {
   return s.track("apply", "--plan", await planDigest(s), ...flags);
 }
 
+/** A session on `doc` whose provider is the Jira adapter for the document's target, over a fake
+ *  acli that answers from `answers` in order. */
+function jiraSession(t: TestContext, doc: FmeaDocument, answers: ProcessResult[]): Session {
+  const config = doc.meta.tracker;
+  if (config === undefined) throw new Error("a Jira session needs a document with meta.tracker");
+  return session(t, doc, {}, jiraProvider(config, fakeAcli(answers).acli));
+}
+
+/** What describe and listMarked of the Jira adapter ask acli for on an empty project, in order. */
+const LISTED_EMPTY: ProcessResult[] = [authStatus(), project(), count(0), ok([])];
+
 /** Runs track.ts as a subprocess with the default provider and a PATH that is an empty folder, so
- *  no run can find gh, whatever the run reaches. Node itself is started by its absolute path. Every
+ *  no run can find gh or acli, whatever the run reaches. Node itself is started by its absolute path. Every
  *  subprocess run of track.ts goes through here. */
 function runTrack(t: TestContext, argv: string[]): { status: number; stdout: string; stderr: string } {
   const empty = mkdtempSync(join(tmpdir(), "fmea-no-gh-"));
@@ -193,6 +219,58 @@ test("a document with no meta.tracker is TRACKER_CONFIG at /meta/tracker, exit 2
   assert.equal(cli.stderr, "error TRACKER_CONFIG: the document has no meta.tracker at /meta/tracker\n");
 });
 
+test("a Jira target without host is TRACKER_CONFIG at /meta/tracker/host, exit 2, and the provider is never built", async (t) => {
+  const s = session(t, docOn({ provider: "jira", project: "FAILW", label: "failwise" }, act(1)));
+  const before = s.text();
+  for (const argv of [["plan", s.path], ["refresh", s.path], ["apply", s.path, "--plan", "0".repeat(64)]]) {
+    await assert.rejects(s.run(argv), { code: "TRACKER_CONFIG", pointer: "/meta/tracker/host" });
+    const cli = runTrack(t, argv);
+    assert.equal(cli.status, 2);
+    assert.equal(cli.stdout, "");
+    assert.match(cli.stderr, /error TRACKER_CONFIG: .* at \/meta\/tracker\/host/);
+  }
+  assert.equal(s.built(), 0);
+  assert.equal(s.text(), before);
+});
+
+test("type, parent and states on a GitHub target are each TRACKER_CONFIG at their pointer", async (t) => {
+  const github: TrackerConfig = { provider: "github", project: "acme/checkout", label: "failwise" };
+  const cases: [TrackerConfig, string][] = [
+    [{ ...github, type: "Task", parent: "FAILW-4", states: { done: ["Closed"] } }, "/meta/tracker/type"],
+    [{ ...github, parent: "FAILW-4", states: { done: ["Closed"] } }, "/meta/tracker/parent"],
+    [{ ...github, states: { done: ["Closed"] } }, "/meta/tracker/states"],
+  ];
+  for (const [config, pointer] of cases) {
+    const s = session(t, docOn(config, act(1)));
+    const before = s.text();
+    await assert.rejects(s.track("plan"), { code: "TRACKER_CONFIG", pointer });
+    const cli = runTrack(t, ["plan", s.path]);
+    assert.equal(cli.status, 2);
+    assert.match(cli.stderr, new RegExp(`is for a jira target; a github target cannot take it at ${pointer}\n$`));
+    assert.equal(s.built(), 0);
+    assert.equal(s.text(), before);
+  }
+});
+
+test("a Jira target without parent is accepted, and plan prints type and parent only when the target has them", async (t) => {
+  const config: TrackerConfig = { provider: "jira", host: "jira.example.com", project: "FAILW", label: "failwise" };
+  const target = { provider: "jira", host: "jira.example.com", project: "FAILW", visibility: "unknown", type: "Task", parent: "FAILW-4" } as const;
+  const s = session(t, docOn(config, act(1)), { target });
+  for (const run of [() => s.track("plan"), () => s.track("refresh"), () => applyPlanned(s, "--public-ok")]) {
+    const { status, result, stderr } = await run();
+    assert.equal(status, 0, stderr);
+    const printed = result.target as Record<string, unknown>;
+    assert.equal(printed.type, "Task");
+    assert.equal(printed.parent, "FAILW-4");
+  }
+
+  const plain = session(t, docWith(act(1)));
+  const { result } = await plain.track("plan");
+  const printed = result.target as Record<string, unknown>;
+  assert.equal("type" in printed, false);
+  assert.equal("parent" in printed, false);
+});
+
 test("a subprocess run of track.ts cannot find gh: a valid document stops at TRACKER_UNAVAILABLE", (t) => {
   const s = session(t, docWith(act(1)));
   for (const argv of [["plan", s.path], ["refresh", s.path]]) {
@@ -200,6 +278,17 @@ test("a subprocess run of track.ts cannot find gh: a valid document stops at TRA
     assert.equal(cli.status, 3);
     assert.equal(cli.stdout, "");
     assert.equal(cli.stderr, "error TRACKER_UNAVAILABLE: gh was not found: install the GitHub CLI and sign in with gh auth login\n");
+  }
+  assert.equal(s.built(), 0);
+});
+
+test("a subprocess run of track.ts on a Jira document cannot find acli: a valid document stops at TRACKER_UNAVAILABLE naming acli", (t) => {
+  const s = session(t, docOn(jiraConfig, act(1)));
+  for (const argv of [["plan", s.path], ["refresh", s.path]]) {
+    const cli = runTrack(t, argv);
+    assert.equal(cli.status, 3, cli.stderr);
+    assert.equal(cli.stdout, "");
+    assert.match(cli.stderr, /^error TRACKER_UNAVAILABLE: acli was not found/);
   }
   assert.equal(s.built(), 0);
 });
@@ -594,6 +683,88 @@ test("refresh on a document with no link exits 0, prints no items and makes no r
   assert.equal(status, 0);
   assert.deepEqual(result.items, []);
   assert.deepEqual(s.fake.calls, ["describe"]);
+});
+
+test("refresh gives link-mismatch, no proposal and no observed, for an observation whose marker names another key and for one whose marker is null, and --write leaves those actions as they were", async (t) => {
+  const s = session(t, docWith(linked(act(1), 1), linked(act(2), 2), linked(act(3), 3)), {
+    observations: [{ ...observation(1, "done"), marker: "fmea-min/ch-1/act-9" }, { ...observation(2, "done"), marker: null }, observation(3, "done")],
+  });
+  const stored = linksIn(s.doc());
+  const { status, result } = await s.track("refresh", "--write");
+  assert.equal(status, 0);
+  for (const [i, item] of result.items.slice(0, 2).entries()) {
+    assert.deepEqual(item, { key: key(i + 1), pointer: `/chains/0/actions/${i}`, status: "Open", link: linkOf(i + 1), finding: "link-mismatch" });
+    assert.equal("observed" in item, false);
+    assert.equal("proposal" in item, false);
+  }
+  assert.deepEqual(result.items[2].proposal, { status: "Completed" });
+  const after = linksIn(s.doc());
+  assert.deepEqual(after.slice(0, 2), stored.slice(0, 2));
+  assert.deepEqual(after[2]?.observed, { state: "done", detail: "done", date: TODAY });
+});
+
+// the Jira adapter behind track.ts
+
+test("plan on a Jira target whose work type the project does not offer, whose parent sits in another project, or whose parent answers under another key, is TRACKER_REJECTED with the reason, and refresh still reads", async (t) => {
+  const elsewhere = ok(workItem("FLSCR-1", "10030", { project: { id: "10002", key: "FLSCR", name: "Scratch" }, issuetype: { id: "10005", name: "Epic", hierarchyLevel: 1, subtask: false } }));
+  const cases: [TrackerConfig, ProcessResult[], RegExp][] = [
+    [{ ...jiraConfig, type: "Nope" }, [], /it offers: Epic, Subtask, Task, Story$/],
+    [{ ...jiraConfig, parent: "FLSCR-1" }, [elsewhere], /^the parent FLSCR-1 sits in the project FLSCR, not FAILW$/],
+    [{ ...jiraConfig, parent: "KAN-4" }, [epic("FAILW-4")], /^the parent KAN-4 is now keyed FAILW-4 on jira\.example\.com: set the parent to FAILW-4$/],
+  ];
+  for (const [config, parent, reason] of cases) {
+    const described = [authStatus(), project(), ...parent];
+    const s = jiraSession(t, docOn(config, jiraLinked(act(1))), [...described, ...described, viewed()]);
+    await assert.rejects(s.track("plan"), { code: "TRACKER_REJECTED", message: reason });
+    assert.equal(exitStatus("TRACKER_REJECTED"), 3);
+    const { status, result } = await s.track("refresh");
+    assert.equal(status, 0);
+    assert.equal(result.items.length, 1);
+  }
+});
+
+test("apply on a Jira target creates through the adapter, records the key and the url built from the host, and stops before the second write when the site changed, with that key in remaining and no link written for it", async (t) => {
+  const s = jiraSession(t, docOn(jiraConfig, act(1), act(2)), [...LISTED_EMPTY, ...LISTED_EMPTY, authStatus(), created("FAILW-5", "10015"), authStatus("other.atlassian.net")]);
+  const { status, result } = await applyPlanned(s, "--public-ok");
+  assert.equal(status, 3);
+  assert.deepEqual(result.done.map((d) => [d.key, d.link]), [[key(1), { provider: "jira", id: "10015", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5" }]]);
+  assert.deepEqual(result.remaining, [key(2)]);
+  assert.equal(result.failure?.code, "TRACKER_UNAVAILABLE");
+  assert.deepEqual(linksIn(s.doc()), [{ provider: "jira", id: "10015", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5", linked: TODAY }, undefined]);
+});
+
+test("a created Jira item that comes back without the label records its link, puts its key in done, and stops with TRACKER_REJECTED and no failure.link", async (t) => {
+  const s = jiraSession(t, docOn(jiraConfig, act(1)), [...LISTED_EMPTY, ...LISTED_EMPTY, authStatus(), created("FAILW-5", "10015", { labels: [] })]);
+  const { status, result } = await applyPlanned(s, "--public-ok");
+  assert.equal(status, 3);
+  assert.deepEqual(result.done.map((d) => d.key), [key(1)]);
+  assert.equal(result.failure?.code, "TRACKER_REJECTED");
+  assert.equal(result.failure !== undefined && "link" in result.failure, false);
+  assert.equal(linksIn(s.doc())[0]?.key, "FAILW-5");
+});
+
+test("refresh on a Jira item closed under names in neither list prints closed-unclear with a detail naming the status and the resolution", async (t) => {
+  const closed = viewed("FAILW-5", { status: jiraStatus("Closed", "done"), resolution: { name: "Duplicate" } });
+  const s = jiraSession(t, docOn(jiraConfig, jiraLinked(act(1))), [authStatus(), project(), closed]);
+  const { status, result } = await s.track("refresh");
+  assert.equal(status, 0);
+  assert.equal(result.items[0].finding, "closed-unclear");
+  assert.equal(result.items[0].observed.detail, "Closed, resolution Duplicate");
+});
+
+test("refresh through the Jira adapter gives link-mismatch, with no observed and no proposal, for an item whose marker names another action, and with --write on that item alone prints written false and leaves the file's bytes as they were", async (t) => {
+  const other = viewed("FAILW-5", { description: renderDescription({ ...TRACKED, key: "fmea-min/ch-1/act-9" }) });
+  for (const flags of [[], ["--write"]]) {
+    const s = jiraSession(t, docOn(jiraConfig, jiraLinked(act(1))), [authStatus(), project(), other]);
+    const before = readFileSync(s.path);
+    const { status, result } = await s.track("refresh", ...flags);
+    assert.equal(status, 0);
+    assert.equal(result.items[0].finding, "link-mismatch");
+    assert.equal("observed" in result.items[0], false);
+    assert.equal("proposal" in result.items[0], false);
+    assert.equal(result.written, false);
+    assert.ok(readFileSync(s.path).equals(before), flags.join(" "));
+  }
 });
 
 // the authored fields

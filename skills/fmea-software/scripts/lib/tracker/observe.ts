@@ -1,6 +1,6 @@
 import type { ActionStatus, ObservedState } from "../types.ts";
 
-export type RefreshFinding = "closed-unclear" | "disagree" | "still-open" | "unreachable";
+export type RefreshFinding = "closed-unclear" | "disagree" | "still-open" | "unreachable" | "link-mismatch";
 export interface Proposal { status: "Completed" | "Not Implemented"; completed_date?: string }
 export interface Verdict { proposal?: Proposal; finding?: RefreshFinding }
 

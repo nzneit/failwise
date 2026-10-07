@@ -7,7 +7,7 @@ import { Buffer } from "node:buffer";
 import process from "node:process";
 import { ScriptError, formatError } from "./lib/codes.ts";
 import type { Code } from "./lib/codes.ts";
-import type { FmeaDocument, Observed, TrackerConfig, TrackerLink } from "./lib/types.ts";
+import type { ActionStatus, FmeaDocument, Observed, TrackerConfig, TrackerLink } from "./lib/types.ts";
 import { loadTable } from "./lib/table.ts";
 import { parseArgs } from "./lib/args.ts";
 import type { ArgSpec, ParsedArgs } from "./lib/args.ts";
@@ -20,8 +20,10 @@ import type { ActionRef } from "./lib/tracker/items.ts";
 import { computePlan } from "./lib/tracker/plan.ts";
 import type { Plan, PlannedAction } from "./lib/tracker/plan.ts";
 import { judge } from "./lib/tracker/observe.ts";
+import type { Verdict } from "./lib/tracker/observe.ts";
 import { CreatedWithFault, TrackerWait } from "./lib/tracker/provider.ts";
 import { githubProvider } from "./lib/tracker/github.ts";
+import { jiraProvider } from "./lib/tracker/jira.ts";
 import { runProcess } from "./lib/tracker/spawn.ts";
 import type { Link, Observation, Provider, Target, Visibility } from "./lib/tracker/provider.ts";
 
@@ -48,7 +50,9 @@ const DETAIL_LIMIT = 80;
 const HTTPS_URL = /^https:\/\/\S+$/;
 
 const defaultDeps: Deps = {
-  makeProvider: (config) => githubProvider(config, (args, input) => runProcess("gh", args, input)),
+  makeProvider: (config) => config.provider === "jira"
+    ? jiraProvider(config, (args) => runProcess("acli", args))
+    : githubProvider(config, (args, input) => runProcess("gh", args, input)),
   today: () => nowIso().slice(0, 10),
   sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
   write: (text) => { process.stdout.write(text); },
@@ -61,6 +65,8 @@ interface Ctx { path: string; doc: FmeaDocument; bytes: Buffer; refs: ActionRef[
 interface Done { key: string; pointer: string; outcome: PlannedAction["outcome"]; link: Link }
 /** `link` is there only when the item was created and its link could not be recorded. */
 interface Failure { key: string; code: Code; message: string; link?: Link }
+/** What refresh prints for one linked action; `observed` is absent on a link-mismatch. */
+type RefreshItem = { key: string; pointer: string; status: ActionStatus; link: Link; observed?: Observed } & Verdict;
 interface ApplyOutcome { done: Done[]; remaining: string[]; failure?: Failure }
 
 function stringFlag(flags: Flags, name: string): string | undefined {
@@ -84,7 +90,19 @@ function open(path: string, flags: Flags, deps: Deps): Ctx | number {
   const doc = raw as FmeaDocument;
   const config = doc.meta.tracker;
   if (config === undefined) throw new ScriptError("TRACKER_CONFIG", "the document has no meta.tracker", "/meta/tracker");
+  checkConfig(config);
   return { path, doc, bytes: read.bytes, refs: actionRefs(doc), deps, provider: deps.makeProvider(config), waited: false };
+}
+
+/** What the schema cannot say of a flat `meta.tracker`: a jira target needs its host, and the
+ *  Jira-only fields are refused on a github target, the first of type, parent and states. */
+function checkConfig(config: TrackerConfig): void {
+  if (config.provider === "jira") {
+    if (config.host === undefined) throw new ScriptError("TRACKER_CONFIG", "a jira target needs host, the site such as example.atlassian.net", "/meta/tracker/host");
+    return;
+  }
+  const field = (["type", "parent", "states"] as const).find((f) => config[f] !== undefined);
+  if (field !== undefined) throw new ScriptError("TRACKER_CONFIG", `${field} is for a jira target; a github target cannot take it`, `/meta/tracker/${field}`);
 }
 
 /** A provider request under the wait policy of §6.2: one wait in the run, of 120 seconds or less,
@@ -104,8 +122,12 @@ async function call<T>(ctx: Ctx, request: () => Promise<T>): Promise<T> {
   }
 }
 
+/** The target as the commands print it: `type` and `parent` only when the target has them. */
 function publicTarget(t: Target): Omit<Target, "write_gap_ms" | "no_create"> {
-  return { provider: t.provider, host: t.host, project: t.project, label: t.label, visibility: t.visibility };
+  const shown: Omit<Target, "write_gap_ms" | "no_create"> = { provider: t.provider, host: t.host, project: t.project, label: t.label, visibility: t.visibility };
+  if (t.type !== undefined) shown.type = t.type;
+  if (t.parent !== undefined) shown.parent = t.parent;
+  return shown;
 }
 
 function plainLink(l: Link): Link {
@@ -303,6 +325,19 @@ function observedOf(o: Observation, today: string): Observed {
   return o.closed_date === undefined ? observed : { ...observed, closed_date: o.closed_date };
 }
 
+/** The item's marker was read and does not name this action, or it has none (s7). */
+function mismatched(now: Observation, key: string): boolean {
+  return now.marker !== undefined && now.marker !== key;
+}
+
+/** One refresh item: a mismatched link is reported with no observed state and no proposal, since
+ *  what was read is not this action's item; every other item carries both as judged. */
+function refreshItem(ref: ActionRef, now: Observation, today: string): RefreshItem {
+  const item = { key: ref.key, pointer: ref.pointer, status: ref.action.status, link: now.link };
+  if (mismatched(now, ref.key)) return { ...item, finding: "link-mismatch" };
+  return { ...item, observed: observedOf(now, today), ...judge(ref.action.status, now.state, now.closed_date) };
+}
+
 async function refreshCommand(path: string, flags: Flags, deps: Deps): Promise<number> {
   const ctx = open(path, flags, deps);
   if (typeof ctx === "number") return ctx;
@@ -311,13 +346,15 @@ async function refreshCommand(path: string, flags: Flags, deps: Deps): Promise<n
   const observations = linked.length === 0 ? [] : await call(ctx, () => ctx.provider.read(linked.map((l) => plainLink(l.link))));
   const today = deps.today();
   const seen = linked.map(({ ref, link }) => ({ ref, link, now: observationOf(observations, ref.key, link.id) }));
-  const items = seen.map(({ ref, now }) => ({
-    key: ref.key, pointer: ref.pointer, status: ref.action.status, link: now.link,
-    observed: observedOf(now, today), ...judge(ref.action.status, now.state, now.closed_date),
-  }));
-  const written = flags.write === true && seen.length > 0;
+  const items = seen.map(({ ref, now }) => refreshItem(ref, now, today));
+  // A link-mismatch has no observed, and its action's tracker block stays as it was; the file is
+  // written only when at least one item carries an observation to store.
+  const written = flags.write === true && items.some((item) => item.observed !== undefined);
   if (written) {
-    seen.forEach(({ ref, link, now }, i) => { ref.action.tracker = storedLink(link, now.link, items[i].observed); });
+    seen.forEach(({ ref, link, now }, i) => {
+      const { observed } = items[i];
+      if (observed !== undefined) ref.action.tracker = storedLink(link, now.link, observed);
+    });
     save(ctx);
   }
   print(deps, { command: "refresh", target: publicTarget(target), written, items });

@@ -3,6 +3,7 @@
 
 import { splitKey } from "./items.ts";
 import { CLOSING_LINE } from "./provider.ts";
+import { plain } from "./text.ts";
 import type { ItemContent, Marker, TrackedItem } from "./provider.ts";
 
 const WORD_JOINER = "\u2060";
@@ -20,12 +21,6 @@ function escapeCharacter(ch: string): string {
   return /[!-/:-@[-`{-~]/.test(ch) ? `\\${ch}${WORD_JOINER}` : ch;
 }
 
-/** A space for a C0 control character (the tab, a lone carriage return and a line feed included) or DEL. */
-function spaceControl(ch: string): string {
-  const code = ch.codePointAt(0) ?? 0;
-  return code <= 0x1f || code === 0x7f ? " " : ch;
-}
-
 /**
  * Text from the analysis, made literal on GitHub (§8.3, §19.1): every line break and every other
  * control character becomes one space and the ends are trimmed, so no text leaves its table cell or
@@ -33,8 +28,7 @@ function spaceControl(ch: string): string {
  * ASCII punctuation character is escaped, with a word joiner after it so no autolink forms across the gap.
  */
 export function literal(text: string): string {
-  const spaced = Array.from(text.replace(/\r\n/g, " "), spaceControl).join("").trim();
-  return Array.from(spaced.replace(HEX_RUN, breakHexRun), escapeCharacter).join("");
+  return Array.from(plain(text).replace(HEX_RUN, breakHexRun), escapeCharacter).join("");
 }
 
 /** A title is not interpreted by GitHub (the probe of §19.1), so it is written as it is. */
