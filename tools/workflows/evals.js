@@ -1,14 +1,22 @@
 // tools/workflows/evals.js
 //
-// Judges the 16 unattended eval runs under build/evals/ (4 prompts × 2 model capabilities ×
-// 2 runs, produced by tools/run-eval.sh), checks run-to-run stability per
-// (prompt, model capability), runs one completeness critic, and writes the result to
-// build/evals/results.json. Run with the Workflow tool:
-// {scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}.
+// Judges the unattended eval runs under the evals directory (by default the 16
+// under build/evals/: 4 prompts × 2 model capabilities × 2 runs, produced by
+// tools/run-eval.sh), checks run-to-run stability per (prompt, model
+// capability), runs one completeness critic, and writes the result to
+// results.json in that directory. Run with the Workflow tool:
+// {scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>",
+// prompts: [1, 6, 7], capabilities: ["high"], evalsDir: "build/evals/element-kinds"}}.
 // args.root is required because a workflow script has no filesystem access and
 // cannot work out where the repository is, so without an absolute path it
-// refuses before any agent is called. Returns
-// {runs, stability, critic, unverified}.
+// refuses before any agent is called. args.prompts (a non-empty subset of
+// [1, 5, 6, 7], default all four), args.capabilities (a non-empty subset of the
+// model table's keys, default ["high", "medium"]) and args.evalsDir (a path
+// relative to args.root, default "build/evals") are optional and choose the
+// roster this run judges and the directory it reads and writes; a value outside
+// those refuses before any agent is called. Returns
+// {models, rubric, runs, stability, critic, unverified}: models is the
+// effective model table, rubric the rubric version the judges scored against.
 //
 // Fail-closed (plan reference §C): every agent() call is made through tryAgent(),
 // which retries up to three times. A judge, stability pair, or critic that
@@ -31,17 +39,18 @@
 
 export const meta = {
   name: 'fmea-evals',
-  description: 'Judge the 16 fmea-software eval runs, check stability, and list what is missing',
+  description: 'Judge the fmea-software eval runs of a roster, check stability, and list what is missing',
   phases: [
     { title: 'Judge', detail: 'one judge per run directory, scoring by evals/rubric.md' },
     { title: 'Stability', detail: 'one agent per (prompt, model capability) running tools/eval-stability.ts' },
     { title: 'Critic', detail: 'one completeness critic over every score and stability result' },
-    { title: 'Persist', detail: 'one Sonnet agent writes the results object to build/evals/results.json' },
+    { title: 'Persist', detail: 'one Sonnet agent writes the results object to results.json in the evals directory' },
   ],
 }
 
-const PROMPTS = [1, 5, 6, 7]
-const MODEL_CAPABILITIES = ['high', 'medium']
+const DEFAULT_PROMPTS = [1, 5, 6, 7]
+const DEFAULT_MODEL_CAPABILITIES = ['high', 'medium']
+const DEFAULT_EVALS_DIR = 'build/evals'
 
 // The model table: one model name per model capability, resolved once here and
 // read by every agent() call below (amended 2026-09-12 by the user's ruling at
@@ -52,6 +61,42 @@ const MODEL_CAPABILITIES = ['high', 'medium']
 // that names no model for a capability this run judges at refuses before any
 // agent is called; the refusal is returned, not logged away.
 const DEFAULT_MODELS_BY_CAPABILITY = { high: 'opus', medium: 'sonnet', low: 'haiku' }
+
+// The roster (s13, 2026-10-07): args.prompts and args.capabilities choose which
+// (prompt, model capability) runs this file judges, and args.evalsDir the
+// directory, relative to args.root, that holds them and receives results.json,
+// so a partial eval never touches another run's evidence. Each defaults to the
+// whole v1 roster under build/evals. A prompt outside [1, 5, 6, 7], a capability
+// that is not a key of the model table, a repeated or empty list, or an evalsDir
+// that is not a non-empty relative path refuses before any agent is called,
+// returned in the same shape as the args.models refusal below.
+const argsObject = args && typeof args === 'object' ? args : {}
+const rosterProblems = []
+function rosterList(name, given, allowed, fallback) {
+  if (given === undefined) return fallback
+  if (!Array.isArray(given) || given.length === 0) {
+    rosterProblems.push(`args.${name} must be a non-empty list drawn from ${JSON.stringify(allowed)}`)
+    return fallback
+  }
+  for (const value of given) {
+    if (!allowed.includes(value)) rosterProblems.push(`args.${name} names ${JSON.stringify(value)}, which is not one of ${JSON.stringify(allowed)}`)
+  }
+  if (new Set(given).size !== given.length) rosterProblems.push(`args.${name} names a value more than once`)
+  return [...given]
+}
+const PROMPTS = rosterList('prompts', argsObject.prompts, DEFAULT_PROMPTS, DEFAULT_PROMPTS)
+const MODEL_CAPABILITIES = rosterList('capabilities', argsObject.capabilities, Object.keys(DEFAULT_MODELS_BY_CAPABILITY), DEFAULT_MODEL_CAPABILITIES)
+let EVALS_DIR = DEFAULT_EVALS_DIR
+if (argsObject.evalsDir !== undefined) {
+  EVALS_DIR = typeof argsObject.evalsDir === 'string' ? argsObject.evalsDir.trim().replace(/\/+$/, '') : ''
+  if (EVALS_DIR === '' || EVALS_DIR.startsWith('/')) rosterProblems.push('args.evalsDir must be a non-empty path relative to args.root')
+}
+if (rosterProblems.length > 0) {
+  const refused = `the roster refuses the run: ${rosterProblems.join('; ')}`
+  log(refused)
+  return { models: DEFAULT_MODELS_BY_CAPABILITY, runs: [], stability: [], critic: { missing: [], blocking_candidates: [refused] }, unverified: [], refused }
+}
+
 const argsModels = args && typeof args === 'object' && args.models !== undefined ? args.models : null
 let MODELS_BY_CAPABILITY = DEFAULT_MODELS_BY_CAPABILITY
 if (argsModels !== null) {
@@ -93,7 +138,12 @@ if (ROOT === '' || !ROOT.startsWith('/')) {
 const SKILL = `${ROOT}/skills/fmea-software`
 const RUNS = [1, 2]
 
-// The twelve rubric criteria (plan reference §I). c5 does not apply to prompt 6.
+// The rubric version this file judges against, written into results.json as
+// `rubric`. A criterion without a `rubric` field belongs to version 1.
+const RUBRIC = 2
+
+// The thirteen rubric criteria (plan reference §I; c13 added by rubric 2).
+// c5 does not apply to prompt 6; c13 applies to prompts 1 and 6 only.
 // Kept in sync by hand with tools/eval-report.ts CRITERIA; workflow scripts
 // cannot import.
 const CRITERIA = [
@@ -153,8 +203,13 @@ const STABILITY_SCHEMA = {
     },
     bound: { type: 'number' },
     pass: { type: 'boolean' },
+    typing: {
+      type: 'object',
+      properties: { shared: { type: 'integer' }, agreeing: { type: 'integer' }, pass: { type: 'boolean' } },
+      required: ['shared', 'agreeing', 'pass'],
+    },
   },
-  required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass'],
+  required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass', 'typing'],
 }
 
 const PERSIST_SCHEMA = {
@@ -211,7 +266,7 @@ async function tryAgent(prompt, options) {
 }
 
 function criteriaFor(prompt) {
-  return CRITERIA.filter((c) => c.prompts.includes(prompt))
+  return CRITERIA.filter((c) => c.prompts.includes(prompt) && (c.rubric ?? 1) <= RUBRIC)
 }
 
 // Recomputes total, max, musts_at_2 from the scores; a criterion the judge
@@ -245,7 +300,7 @@ Read, in full, before scoring:
 - The run's outputs: ${item.dir}/analysis.json, ${item.dir}/report.html, ${item.dir}/validate.json (the validator's stdout for analysis.json), the "result" field of ${item.dir}/transcript.json (the run's final message; one small JSON object, read it in full), and ${item.dir}/transcript.jsonl (the run's message stream, one JSON object per line). Do not read transcript.jsonl in full: it is large. Grep it for "priority.ts", "validate.ts" and "render.ts" and read only the matching lines. A match counts as an invocation only when it sits inside a tool_use block: a line of type "assistant" whose content holds {"type":"tool_use","name":"Bash","input":{"command":"..."}} with the script in the command. A match inside a text block, a tool_result, or a file the run was reading is narration or file content, not an invocation. Those tool_use blocks are the only record of which of the skill's scripts the run actually ran, and they are the evidence the rubric requires for c6-priority-by-script and c8-html-renders; transcript.json carries no tool call and is never evidence that a script ran. A criterion whose rubric text asks for a script invocation scores at most 1 when transcript.jsonl holds no matching tool_use block; say so in the evidence rather than inferring the invocation from the artifacts.
 - The catalog, for c9: ${SKILL}/references/design-failure-catalog.md (each row id and its provenance tag).${expected}
 
-Score exactly these criteria, by id: ${ids}. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json is missing or unparsable, score every criterion that reads it 0 and say so.
+Score exactly these criteria of rubric version ${RUBRIC}, by id: ${ids}. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json is missing or unparsable, score every criterion that reads it 0 and say so.
 
 Unattended runs cannot ask questions: the rubric says how c1 and, where it applies, c5 are judged in that setting (open assumptions with owner "user" in meta.assumptions[] plus the question in the final message; ratings written provisional with a re-scoring request in the final message). Expect rating-provisional lint warnings in validate.json; they count against nothing.
 
@@ -253,21 +308,23 @@ Return: scores (one entry per criterion id above, no others), total (sum of scor
 }
 
 function stabilityPrompt(pair) {
-  const a = `${ROOT}/build/evals/p${pair.prompt}/${pair.model_capability}/run1/analysis.json`
-  const b = `${ROOT}/build/evals/p${pair.prompt}/${pair.model_capability}/run2/analysis.json`
+  const a = `${ROOT}/${EVALS_DIR}/p${pair.prompt}/${pair.model_capability}/run1/analysis.json`
+  const b = `${ROOT}/${EVALS_DIR}/p${pair.prompt}/${pair.model_capability}/run2/analysis.json`
   return `Run this command exactly, from ${ROOT}, and return the JSON it prints as your structured result:
 
 cd ${ROOT} && node tools/eval-stability.ts ${a} ${b}
 
 The command needs Node 24.2 or later on PATH. On a machine where Node is installed only through nvm, run \`source ~/.nvm/nvm.sh\` first, in the same shell call as the command, because PATH does not carry over from one call to the next.
 
-It prints {jaccard, maxRows, countDiffs, bound, pass}; countDiffs has one integer per priority value, H, M and L. Return those five fields verbatim, with countDiffs as an object with exactly the keys H, M and L, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one.`
+It prints {jaccard, maxRows, countDiffs, bound, pass, typing}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. Return those six fields verbatim, with countDiffs as an object with exactly the keys H, M and L and typing as an object with exactly the keys shared, agreeing and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one.`
 }
 
 function criticPrompt(runs, stabilityResults, unverifiedUnits) {
   return `You are the completeness critic for the fmea-software v1 eval gate (spec §10, §11 phase 6).
 
-Everything below was produced by judges and the stability check. Your job is to say what is missing, not to re-score: an eval prompt whose runs both failed a must, a criterion every judge scored below 2 for the same reason, a stability failure, a judge whose evidence does not support its score, a run that produced no analysis.json, a rubric criterion no judge could assess, and anything the §10 eval design asked for that these results do not show. Read ${SKILL}/evals/rubric.md and the design's §10 and §15 in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md first; open any run directory under ${ROOT}/build/evals/ where a score needs checking.
+Everything below was produced by judges and the stability check. Your job is to say what is missing, not to re-score: an eval prompt whose runs both failed a must, a criterion every judge scored below 2 for the same reason, a stability failure, a judge whose evidence does not support its score, a run that produced no analysis.json, a rubric criterion no judge could assess, and anything the §10 eval design asked for that these results do not show. Read ${SKILL}/evals/rubric.md and the design's §10 and §15 in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md first; open any run directory under ${ROOT}/${EVALS_DIR}/ where a score needs checking.
+
+This file covers prompts ${PROMPTS.join(', ')} at model capabilities ${MODEL_CAPABILITIES.join(', ')} only, judged against rubric version ${RUBRIC}, with runs ${RUNS.join(' and ')} of each. A prompt or model capability outside that roster was never attempted by this file: do not report it as a missing run.
 
 Per-run results (scores recomputed from the judges' per-criterion scores):
 ${JSON.stringify(runs, null, 2)}
@@ -285,7 +342,7 @@ const runItems = []
 for (const prompt of PROMPTS) {
   for (const modelCapability of MODEL_CAPABILITIES) {
     for (const run of RUNS) {
-      runItems.push({ prompt, model_capability: modelCapability, run, dir: `${ROOT}/build/evals/p${prompt}/${modelCapability}/run${run}` })
+      runItems.push({ prompt, model_capability: modelCapability, run, dir: `${ROOT}/${EVALS_DIR}/p${prompt}/${modelCapability}/run${run}` })
     }
   }
 }
@@ -349,7 +406,7 @@ const stability = await pipeline(
     if (!result) {
       unverified.push({ unit: `stability p${pair.prompt} ${pair.model_capability}`, detail: 'the stability agent returned nothing on three attempts; the two runs were never compared' })
       log(`stability for p${pair.prompt} ${pair.model_capability} returned nothing on three attempts; recorded as unverified and not a pass`)
-      return { ...pair, jaccard: 0, maxRows: 0, countDiffs: { H: 0, M: 0, L: 0 }, bound: 0, pass: false, unverified: true }
+      return { ...pair, jaccard: 0, maxRows: 0, countDiffs: { H: 0, M: 0, L: 0 }, bound: 0, pass: false, typing: { shared: 0, agreeing: 0, pass: false }, unverified: true }
     }
     // The agent returns ok: false when tools/eval-stability.ts did not run or
     // printed no JSON. That pair was never compared, so recording pass: false
@@ -358,7 +415,7 @@ const stability = await pipeline(
     if (ok !== true) {
       unverified.push({ unit: `stability p${pair.prompt} ${pair.model_capability}`, detail: 'the tools/eval-stability.ts call failed, so the two runs were never compared; this is a hole in the evidence, not an unstable pair' })
       log(`stability for p${pair.prompt} ${pair.model_capability}: the eval-stability.ts call failed; recorded as unverified, not as an unstable pair`)
-      return { ...pair, jaccard: 0, maxRows: 0, countDiffs: { H: 0, M: 0, L: 0 }, bound: 0, pass: false, unverified: true }
+      return { ...pair, jaccard: 0, maxRows: 0, countDiffs: { H: 0, M: 0, L: 0 }, bound: 0, pass: false, typing: { shared: 0, agreeing: 0, pass: false }, unverified: true }
     }
     return { ...pair, ...measured, unverified: false }
   },
@@ -384,7 +441,7 @@ if (criticResult) {
 // `models` first: the reader of results.json sees which model filled each
 // capability before any score, so nothing below can be misread as a model
 // name.
-const results = { models: MODELS_BY_CAPABILITY, runs, stability, critic, unverified }
+const results = { models: MODELS_BY_CAPABILITY, rubric: RUBRIC, runs, stability, critic, unverified }
 // Measured outcomes only: an unverified run or pair is listed under `unverified`
 // below and never counted as a failure the evidence does not show.
 const failing = runs.filter((r) => !r.pass && !r.unverified).map((r) => `p${r.prompt} ${r.model_capability} run${r.run}`)
@@ -397,9 +454,9 @@ log(`runs failing the per-run rule: ${failing.length ? failing.join(', ') : 'non
 phase('Persist')
 const resultsJson = JSON.stringify(results, null, 2)
 const persisted = await tryAgent(
-  `Write a file. Everything between the two marker lines below, excluding the marker lines themselves, is the exact content of ${ROOT}/build/evals/results.json.
+  `Write a file. Everything between the two marker lines below, excluding the marker lines themselves, is the exact content of ${ROOT}/${EVALS_DIR}/results.json.
 
-Create ${ROOT}/build/evals/ if it does not exist, then write that text to ${ROOT}/build/evals/results.json unchanged: byte for byte, no reformatting, no re-indenting, no summarising, no truncation, no added commentary. Then read the file back, count its bytes, and check that JSON.parse succeeds on it.
+Create ${ROOT}/${EVALS_DIR}/ if it does not exist, then write that text to ${ROOT}/${EVALS_DIR}/results.json unchanged: byte for byte, no reformatting, no re-indenting, no summarising, no truncation, no added commentary. Then read the file back, count its bytes, and check that JSON.parse succeeds on it.
 
 Return: written (true only if the file now holds the whole text), bytes (the file's size in bytes as you read it back), parses (whether JSON.parse succeeded).
 
@@ -408,7 +465,7 @@ ${resultsJson}
 ----- END results.json -----`,
   { label: 'persist results.json', phase: 'Persist', schema: PERSIST_SCHEMA, model: MODELS_BY_CAPABILITY.medium },
 )
-log(`build/evals/results.json: written=${persisted ? persisted.written : false} bytes=${persisted ? persisted.bytes : 0} parses=${persisted ? persisted.parses : false} (expected ${resultsJson.length} characters)`)
+log(`${EVALS_DIR}/results.json: written=${persisted ? persisted.written : false} bytes=${persisted ? persisted.bytes : 0} parses=${persisted ? persisted.parses : false} (expected ${resultsJson.length} characters)`)
 
 // A Persist agent that never returned, or that did not confirm a whole file, is
 // not a written deliverable (plan reference §C: a unit that did not run is never
@@ -417,7 +474,7 @@ log(`build/evals/results.json: written=${persisted ? persisted.written : false} 
 // on-disk copy was serialised before this outcome was known and cannot carry the
 // entry, which is exactly why the next step re-checks the file itself.
 if (!persisted || persisted.written !== true) {
-  unverified.push({ unit: 'persist results.json', detail: 'the persist agent returned nothing on three attempts; build/evals/results.json is missing or half written' })
+  unverified.push({ unit: 'persist results.json', detail: `the persist agent returned nothing on three attempts; ${EVALS_DIR}/results.json is missing or half written` })
   log('the persist agent did not confirm a written results.json; recorded as unverified')
 }
 
