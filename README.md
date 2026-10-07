@@ -100,7 +100,7 @@ Known limitations:
 
 Not in this version:
 
-- Ready-made failure modes for every kind of element. The skill's catalog has them for services, external dependencies and components, with a short set for security components. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
+- Ready-made failure modes for every kind of element. The skill's catalog has them for services and components, with dependency rows for any element outside the analysis or carrying a dependency block and a short security set for security-relevant elements. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
 - Threat modeling. A failure whose cause is an adversary is recorded as a handoff to threat modeling.
 - Process-side FMEA (PFMEA) of delivery, pipelines or operations. Such a request gets a short answer naming what is sourced and what is missing, and no analysis.
 
