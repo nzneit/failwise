@@ -75,7 +75,8 @@ The Azure Well-Architected Framework's failure mode analysis classifies dependen
 
 The role tests are asked in the order of the Role table, and the first yes wins: an element that passes the `service` test is a `service` even when a later test would also fit it. [skill-authored]
 When the tests leave an element between two roles, the tie-breaks in the definitions decide, and each of them is the skill's own. [skill-authored]
-The data items of the NASA Software Safety Guidebook, its software events, and the CSCIs, units, objects and instances that the NASA Software Engineering Handbook has a software FMEA inventory by design phase are a basis for the `datastore`, `event_stream` and `component` tests, never their definition. [cites:C137] [cites:C138] [cites:C135]
+A tie-break that names the case settles it before the ordering rule is applied, so an item the tie-breaks name is typed by the tie-break even when an earlier test would also fit it. [skill-authored]
+The data items of the NASA Software Safety Guidebook, its software events, and the CSCIs, units, objects and instances the NASA Software Engineering Handbook lists as a software FMEA's inventory by design phase are a basis for the `datastore`, `event_stream` and `component` tests, never their definition. [cites:C137] [cites:C138] [cites:C135]
 The fit is loose on purpose: these are a basis, not a match. [skill-authored]
 
 ## Security relevance
@@ -83,7 +84,7 @@ The fit is loose on purpose: these are a basis, not a match. [skill-authored]
 An element is security-relevant when a required security property depends on it working correctly, the class NIST SP 800-53 Rev. 5 calls security-relevant components and Common Criteria calls the TOE security functionality. [paraphrased:C157] [cites:C158]
 The properties the skill counts are authentication, authorisation, confidentiality and integrity, a list that is the skill's own. [skill-authored]
 The test is one question: if this element misbehaves, can someone see or do what the system must prevent? [skill-authored]
-The class is worth marking because NIST SP 800-53 Rev. 5 asks for security functions to be isolated from the functions that are not, in control SC-3. [paraphrased:C156]
+The class is worth marking because NIST SP 800-53 Rev. 5 asks for security functions to be isolated from the functions that are not, in control SC-3. [paraphrased:C156] [skill-authored]
 A security-relevant element gets the security rows in addition to its role's rows. [skill-authored]
 The default answer is false; a run that sets the flag true states its reason in `security_rationale`, and it may record one when it sets the flag false. [skill-authored]
 

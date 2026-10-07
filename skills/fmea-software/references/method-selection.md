@@ -91,7 +91,7 @@ Howie, Jeli and PagerDuty are named nominatively here, and no endorsement is cla
 
 ## The threat-model handoff
 
-Security components are analysed as ordinary elements, with the same functions, modes, effects, causes and controls as anything else in the inventory. [skill-authored]
+Security-relevant elements are analysed as ordinary elements, with the same functions, modes, effects, causes and controls as anything else in the inventory. [skill-authored]
 Any failure whose cause is an adversary, on an element of any kind, is recorded as a handoff row to threat modeling; that is decision D6. [skill-authored]
 Routing is by cause and not by effect: a security attack or breach as an end effect stays on the Severity scale and is rated there, and only an adversarial cause writes a handoff. [skill-authored]
 
