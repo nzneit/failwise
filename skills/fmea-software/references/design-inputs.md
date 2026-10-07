@@ -10,8 +10,8 @@ No input is a rating and no input is a chain; an input is evidence about the sys
 |---|---|---|---|
 | 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. | [paraphrased:C014] |
 | 2 | Component inventory by type | The system decomposed by component type: ingress, networking, compute, data, storage, supporting services — identity, messaging, key and secret storage — and egress. | [paraphrased:C014] |
-| 3 | Dependency classification | Every dependency placed on two axes: internal to the system or external to it, and strong or weak. | [paraphrased:C014] |
-| 4 | Dependency reliability data | For internal dependencies, the availability SLA and the scaling limits. | [paraphrased:C014] |
+| 3 | Dependency classification | Every dependency placed on two axes: internal or external by the element's boundary (`in_scope` against `owned_outside` or `third_party`), and strong or weak. | [paraphrased:C014] |
+| 4 | Dependency reliability data | For every element that carries a `dependency` block, whatever its boundary, the availability SLA and the scaling limits. | [paraphrased:C014] [skill-authored] |
 | 5 | Incident history | The incidents the system has had, the postmortems written for them, and the follow-up tasks those postmortems raised. | [cites:C023] |
 | 6 | Release controls | Release-side controls such as canary releases and staged rollouts. | [cites:C018] |
 | 7 | Observability controls | Central error logging and alerting. | [cites:C022] |
@@ -27,12 +27,12 @@ Items 1 to 4 are the structure inputs and are wanted before step 2; items 5 to 9
 ## Flows, components and dependencies
 
 Flows come first: the analysis assumes user and system flows have already been identified and prioritised by criticality, and plans the components each critical flow needs against them. [paraphrased:C014]
-Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements — not the schema's `kind` vocabulary, which is the skill's own and drawn on different lines. [skill-authored]
+Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [skill-authored]
 A strong dependency is one the system cannot function or stay available without; a weak one, when absent, costs named features while the system as a whole keeps serving. [paraphrased:C014]
-The reliability data — availability SLA, scaling limits — is stated for internal dependencies; capturing it for external ones as well is a choice the analysis may make, not something the checklist asks for. [paraphrased:C014]
+The reliability data — availability SLA, scaling limits — is stated for internal dependencies; capturing it for external ones as well is a choice the analysis may make, not something the checklist asks for [paraphrased:C014]; this skill asks for it on every element carrying a `dependency` block, a `skill-authored` extension. [skill-authored]
 Internal or external is a boundary question, strong or weak is a criticality question, and an element is classified on both. [skill-authored]
 In the analysis JSON this lands on the element: `dependency.strength` holds strong or weak, `dependency.sla` and `dependency.limits` hold the commitment and the limits as free text in the source's own words. [skill-authored]
-An element of kind `external_dependency` must carry `dependency`; an internal dependency is any other element that carries one. [skill-authored]
+An element whose boundary is `owned_outside` or `third_party` must carry `dependency` and is an external dependency; an `in_scope` element that carries one is an internal dependency. [skill-authored]
 
 ## Incident history
 
@@ -88,7 +88,7 @@ v1 ships no catalog rows for interfaces, event streams or datastores; the questi
 | Contract files and data flows | The repository, beside the code that serves them. | [skill-authored] |
 | Ground rules and assumptions | Nowhere: they are decided by the analysis and written into `meta`. | [skill-authored] |
 
-Each place maps to a `sources[].kind` on the element it feeds: `document` for an architecture document or a converted sheet, `repo` for a repository, `interview` for a person, `incident` for an incident or postmortem record, `contract` for a supplier or service agreement, and `catalog` for a catalog row that prompted the element. [skill-authored] A service-catalog entry is `document`, never `catalog`; CI and observability configuration are `repo` when held in a repository and `document` otherwise; an interface definition file is `repo`, and `contract` is kept for a supplier or service agreement. [skill-authored]
+Each place maps to a `sources[].kind` on the element it feeds: `document` for an architecture document or a converted sheet, `repo` for a repository, `interview` for a person, `incident` for an incident or postmortem record, `contract` for a supplier or service agreement, and `catalog` for a catalog row that prompted the element. [skill-authored] A `repo` ref may take the form `owner/repo@commit:path` with a full 40-hex-digit SHA; a run over several codebases uses it on every `repo` ref. [skill-authored] A service-catalog entry is `document`, never `catalog`; CI and observability configuration are `repo` when held in a repository and `document` otherwise; an interface definition file is `repo`, and `contract` is kept for a supplier or service agreement. [skill-authored]
 Where an input is missing and a person supplies it instead, the source kind is `interview` and the person or role is the reference. [skill-authored]
 
 ## The non-catalog source rule
