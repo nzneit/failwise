@@ -236,11 +236,47 @@ test("meta.tracker and actions[].tracker validate in the shapes of §5.2 and §5
   assert.deepEqual(checkSchema(trackedDoc()), []);
 });
 
-test("a tracker provider other than github, an http url and a record_url with a query are schema issues", () => {
+/** trackedDoc() on a Jira target: every Jira field present, and the link a Jira link. */
+function jiraDoc(): FmeaDocument {
+  const doc = trackedDoc();
+  doc.meta.tracker = { provider: "jira", project: "FAILW", label: "failwise", host: "jira.example.com", type: "Task", parent: "FAILW-4", states: { done: ["Done", "Closed"], dropped: ["Won't Do"] } };
+  doc.chains[0].actions[0].tracker = { provider: "jira", id: "10019", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5", linked: "2026-10-07", observed: { state: "done", detail: "Done, resolution Done", date: "2026-10-07", closed_date: "2026-10-07" } };
+  return doc;
+}
+
+test("a Jira meta.tracker with type, parent and states, and a Jira link with observed, validate", () => {
+  assert.deepEqual(checkSchema(jiraDoc()), []);
+});
+
+test("a parent outside its grammar, a type with a control character or a leading -, and a states name that is empty or holds a control character, are schema issues", () => {
+  const cases: [Record<string, unknown>, string][] = [
+    [{ parent: "failw-4" }, "/meta/tracker/parent"],
+    [{ parent: "FAILW-0" }, "/meta/tracker/parent"],
+    [{ type: "-Task" }, "/meta/tracker/type"],
+    [{ type: "Ta\tsk" }, "/meta/tracker/type"],
+    [{ states: { done: [""] } }, "/meta/tracker/states/done/0"],
+    [{ states: { dropped: ["Won't\u0000Do"] } }, "/meta/tracker/states/dropped/0"],
+  ];
+  for (const [patch, pointer] of cases) {
+    const doc = jiraDoc();
+    Object.assign(doc.meta.tracker as unknown as Record<string, unknown>, patch);
+    assert.deepEqual(checkSchema(doc).map((i) => i.pointer), [pointer], JSON.stringify(patch));
+  }
+});
+
+test("states with one key only, with an empty list, and with no key validate", () => {
+  for (const states of [{ done: [] }, { dropped: ["Cancelled"] }, {}]) {
+    const doc = jiraDoc();
+    (doc.meta.tracker as unknown as Record<string, unknown>).states = states;
+    assert.deepEqual(checkSchema(doc), [], JSON.stringify(states));
+  }
+});
+
+test("a tracker provider other than github or jira, an http url and a record_url with a query are schema issues", () => {
   const doc = trackedDoc();
   const meta = doc.meta.tracker as unknown as Record<string, unknown>;
   const link = doc.chains[0].actions[0].tracker as unknown as Record<string, unknown>;
-  meta.provider = "jira";
+  meta.provider = "gitlab";
   meta.record_url = "https://a.example/r?x=1";
   meta.host = "bad host";
   link.url = "http://x/1";
@@ -365,6 +401,11 @@ function constrainedNodes(schema: SchemaNode): string[] {
 // pair's reach into the schema does not depend on whether Task 26 has already run.
 function derivationDoc(): Record<string, unknown> {
   const doc = trackedDoc();
+  Object.assign(doc.meta.tracker as unknown as Record<string, unknown>, { type: "Task", parent: "ACME-1", states: { done: ["Done"], dropped: ["Won't Do"] } });
+  doc.chains[0].actions.push({
+    id: "act-2", description: "add a circuit breaker", owner: "T. Tester", status: "Open", target_date: "2026-10-01",
+    tracker: { provider: "jira", id: "10019", key: "ACME-5", url: "https://jira.example.com/browse/ACME-5", linked: "2026-10-07" },
+  });
   const metaHistory: HistoryEntry[] = [{ version: 1, date: "2026-09-01", change: "created" }];
   const chainHistory: HistoryEntry[] = [{ version: 1, date: "2026-09-01", change: "rated" }];
   const stale: Stale = { flag: true, reason: "element-changed", since_version: 2 };
@@ -381,9 +422,14 @@ function derivationDoc(): Record<string, unknown> {
   return doc as unknown as Record<string, unknown>;
 }
 
+// "!!" violates every pattern but the control-character ones, which a control character violates.
+function violatingString(pattern: string): string {
+  return new RegExp(pattern).test("!!") ? String.fromCharCode(1) : "!!";
+}
+
 // Derives one violating copy of `doc` per required entry, enum, pattern, format and minLength the
 // schema declares at a location `doc` instantiates — delete the required property, set the enum to
-// a value outside it, set the patterned string to "!!", set the date to 2026-02-30, empty the
+// a value outside it, set the patterned string to "!!" (a control character where "!!" matches), set the date to 2026-02-30, empty the
 // non-empty string — and asserts
 // checkSchema reports an issue at that instance pointer. Returns how many copies it ran, how many
 // of those came from the `minLength` branch, and which schema nodes they came from. The separate
@@ -418,8 +464,9 @@ function deriveViolations(schema: SchemaNode, doc: unknown, label: string): { de
       }
       if (node.pattern !== undefined) {
         const copy = clone(doc);
-        setAt(copy, at, "!!");
-        expectIssueAt(copy, at, schemaPointer, `setting the patterned string at ${at} (schema ${schemaPointer}) to "!!"`);
+        const violating = violatingString(node.pattern as string);
+        setAt(copy, at, violating);
+        expectIssueAt(copy, at, schemaPointer, `setting the patterned string at ${at} (schema ${schemaPointer}) to ${JSON.stringify(violating)}`);
       }
       if (node.format !== undefined) {
         const copy = clone(doc);
