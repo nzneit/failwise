@@ -7,7 +7,7 @@
 import { ScriptError } from "../codes.ts";
 import type { ObservedState, TrackerConfig } from "../types.ts";
 import { readMarker, renderBody, renderTitle } from "./github-body.ts";
-import { isRecord, recordOf, rejected, unavailable } from "./json.ts";
+import { isRecord, recordOf } from "./json.ts";
 import type { Json } from "./json.ts";
 import { CreatedWithFault, TrackerWait } from "./provider.ts";
 import type { Link, Observation, Provider, RemoteItem, Target, TrackedItem, Visibility } from "./provider.ts";
@@ -36,6 +36,9 @@ interface Answer { status: number; headers: Map<string, string>; body: string }
 type NotFound = "unavailable" | "absent" | "rejected";
 interface Request { path: string; post?: boolean; body?: object; expect: 200 | 201; notFound?: NotFound }
 interface Ctx { gh: Gh; host: string; project: string; label: string }
+
+const unavailable = (message: string): ScriptError => new ScriptError("TRACKER_UNAVAILABLE", message);
+const rejected = (message: string): ScriptError => new ScriptError("TRACKER_REJECTED", message);
 
 /** The command that signs gh in to the host: github.com is its default, any other host is named. */
 function signIn(host: string): string {

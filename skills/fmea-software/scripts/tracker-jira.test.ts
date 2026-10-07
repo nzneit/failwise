@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { ScriptError } from "./lib/codes.ts";
 import { jiraProvider } from "./lib/tracker/jira.ts";
 import { renderDescription } from "./lib/tracker/jira-body.ts";
 import type { Provider } from "./lib/tracker/provider.ts";
@@ -18,13 +19,22 @@ function setup(answers: ProcessResult[], cfg: TrackerConfig = jiraConfig): Setup
   return { provider: jiraProvider(cfg, acli), calls, files };
 }
 
-/** Rejects with `code` and a message that holds `text`. */
-async function failsWith(promise: Promise<unknown>, code: string, text: string): Promise<void> {
-  await assert.rejects(promise, (err: Error & { code?: string }) => {
+/** Rejects with a ScriptError of `code`, at `pointer` when one is given, and gives its message. */
+async function rejectsWith(promise: Promise<unknown>, code: string, pointer?: string): Promise<string> {
+  let message = "";
+  await assert.rejects(promise, (err: unknown) => {
+    assert.ok(err instanceof ScriptError, String(err));
     assert.equal(err.code, code, err.message);
-    assert.ok(err.message.includes(text), `${JSON.stringify(err.message)} lacks ${JSON.stringify(text)}`);
+    if (pointer !== undefined) assert.equal(err.pointer, pointer, err.message);
+    message = err.message;
     return true;
   });
+  return message;
+}
+
+/** The message holds `text`. */
+function holds(message: string, text: string): void {
+  assert.ok(message.includes(text), `${JSON.stringify(message)} lacks ${JSON.stringify(text)}`);
 }
 
 const crlf = (r: ProcessResult): ProcessResult => ({ ...r, stdout: r.stdout.replaceAll("\n", "\r\n"), stderr: r.stderr.replaceAll("\n", "\r\n") });
@@ -42,16 +52,27 @@ const body = renderDescription({
 });
 const entry = (id: string, key: string, description: unknown = null): object => workItem(key, id, { description, labels: ["failwise"] });
 
+// the shared JSON readers (s1)
+
+test("json.ts holds the three readers s1 moves out of github.ts and nothing else, and recordOf refuses what is not an object", async () => {
+  const json = await import("./lib/tracker/json.ts");
+  assert.deepEqual(Object.keys(json).sort(), ["isRecord", "recordOf"]);
+  holds(await rejectsWith(Promise.resolve().then(() => json.recordOf([], "the answer")), "TRACKER_REJECTED"), "the answer is not the JSON object expected");
+  assert.deepEqual(json.recordOf({ a: 1 }, "the answer"), { a: 1 });
+});
+
 // construction
 
-test("a project outside the project-key grammar, a label outside the plain-id grammar, and a missing host are TRACKER_CONFIG at their pointer", () => {
-  const refused = (cfg: TrackerConfig, pointer: string, label: string): void => {
-    assert.throws(() => setup([], cfg), { name: "ScriptError", code: "TRACKER_CONFIG", pointer }, label);
-  };
-  for (const key of ["failw", "FAILW-1", "acme/checkout", "F AILW", ""]) refused({ ...jiraConfig, project: key }, "/meta/tracker/project", key);
-  for (const label of ["fail wise", ""]) refused({ ...jiraConfig, label }, "/meta/tracker/label", label);
+test("a project outside the project-key grammar, a label outside the plain-id grammar, and a missing host are TRACKER_CONFIG at their pointer", async () => {
+  const built = (cfg: TrackerConfig): Promise<Setup> => Promise.resolve().then(() => setup([], cfg));
+  for (const key of ["failw", "FAILW-1", "acme/checkout", "F AILW", ""]) {
+    holds(await rejectsWith(built({ ...jiraConfig, project: key }), "TRACKER_CONFIG", "/meta/tracker/project"), JSON.stringify(key));
+  }
+  for (const label of ["fail wise", ""]) {
+    holds(await rejectsWith(built({ ...jiraConfig, label }), "TRACKER_CONFIG", "/meta/tracker/label"), JSON.stringify(label));
+  }
   const { host: _host, ...hostless } = jiraConfig;
-  refused(hostless, "/meta/tracker/host", "no host");
+  await rejectsWith(built(hostless), "TRACKER_CONFIG", "/meta/tracker/host");
   assert.doesNotThrow(() => setup([], { ...jiraConfig, project: "FAIL_W2", label: "fail-wise:v1.0" }));
 });
 
@@ -110,40 +131,43 @@ test("an auth status with an extra line, with no Site line, or with a non-zero e
   ];
   for (const answer of answers) {
     const { provider, calls } = setup([answer]);
-    await failsWith(provider.describe(), "TRACKER_UNAVAILABLE", SIGN_IN);
+    holds(await rejectsWith(provider.describe(), "TRACKER_UNAVAILABLE"), SIGN_IN);
     assert.equal(calls.length, 1);
   }
-  await failsWith(setup([ok(`${recorded}x`)]).provider.describe(), "TRACKER_UNAVAILABLE", "in a form the script cannot read");
+  holds(await rejectsWith(setup([ok(`${recorded}x`)]).provider.describe(), "TRACKER_UNAVAILABLE"), "in a form the script cannot read");
 });
 
 test("another site is refused before any other request, in the recorded case and in another, with the switch command", async () => {
   for (const site of ["other.atlassian.net", "failwise.example.net"]) {
     const { provider, calls } = setup([authStatus(site), project()]);
-    await failsWith(provider.describe(), "TRACKER_UNAVAILABLE", SWITCH);
-    await failsWith(setup([authStatus(site)]).provider.describe(), "TRACKER_UNAVAILABLE", `signed in to ${site}, not ${HOST}`);
+    holds(await rejectsWith(provider.describe(), "TRACKER_UNAVAILABLE"), SWITCH);
+    holds(await rejectsWith(setup([authStatus(site)]).provider.describe(), "TRACKER_UNAVAILABLE"), `signed in to ${site}, not ${HOST}`);
     assert.equal(calls.length, 1);
   }
 });
 
 test("acli absent is TRACKER_UNAVAILABLE naming the install and the sign-in", async () => {
-  await failsWith(setup([MISSING]).provider.describe(), "TRACKER_UNAVAILABLE", `acli was not found: install the Atlassian CLI and sign in with ${SIGN_IN}`);
-  await failsWith(setup([count(0), MISSING]).provider.listMarked(), "TRACKER_UNAVAILABLE", "acli was not found");
+  holds(await rejectsWith(setup([MISSING]).provider.describe(), "TRACKER_UNAVAILABLE"), `acli was not found: install the Atlassian CLI and sign in with ${SIGN_IN}`);
+  holds(await rejectsWith(setup([count(0), MISSING]).provider.listMarked(), "TRACKER_UNAVAILABLE"), "acli was not found");
 });
 
 test("a project that is not found is TRACKER_UNAVAILABLE naming the project and the host", async () => {
   for (const answer of [failed("✗ Error: No project could be found with key 'FAILW'."), crlf(failed("✗ Error: No project could be found with key 'FAILW'."))]) {
-    await failsWith(setup([authStatus(), answer]).provider.describe(), "TRACKER_UNAVAILABLE", `the project FAILW was not found on ${HOST}, or the signed-in account cannot see it there`);
+    holds(await rejectsWith(setup([authStatus(), answer]).provider.describe(), "TRACKER_UNAVAILABLE"), `the project FAILW was not found on ${HOST}, or the signed-in account cannot see it there`);
   }
-  await failsWith(setup([authStatus(), failed("✗ Error: something else went wrong")]).provider.describe(), "TRACKER_REJECTED", "acli failed: ✗ Error: something else went wrong");
-  await failsWith(setup([authStatus(), { ...failed(""), stderr: "" }]).provider.describe(), "TRACKER_REJECTED", "acli failed: it said nothing");
+  for (const key of ["FLSCR", "failw", ""]) {
+    const line = `✗ Error: No project could be found with key '${key}'.`;
+    holds(await rejectsWith(setup([authStatus(), failed(line)]).provider.describe(), "TRACKER_REJECTED"), `acli failed: ${line}`);
+  }
+  holds(await rejectsWith(setup([authStatus(), failed("✗ Error: No project could be found with key 'FAILW'")]).provider.describe(), "TRACKER_REJECTED"), "acli failed");
+  holds(await rejectsWith(setup([authStatus(), failed("✗ Error: something else went wrong")]).provider.describe(), "TRACKER_REJECTED"), "acli failed: ✗ Error: something else went wrong");
+  holds(await rejectsWith(setup([authStatus(), { ...failed(""), stderr: "" }]).provider.describe(), "TRACKER_REJECTED"), "acli failed: it said nothing");
 });
 
 test("a failure's message carries the first line of stderr cut at 200 code points", async () => {
   const long = `✗ Error: ${"é".repeat(300)}`;
-  await assert.rejects(setup([authStatus(), failed(`${long}\nsecond line`)]).provider.describe(), (err: Error) => {
-    assert.equal(err.message, `acli failed: ${Array.from(long).slice(0, 200).join("")}`);
-    return true;
-  });
+  const message = await rejectsWith(setup([authStatus(), failed(`${long}\nsecond line`)]).provider.describe(), "TRACKER_REJECTED");
+  assert.equal(message, `acli failed: ${Array.from(long).slice(0, 200).join("")}`);
 });
 
 test("a project answer that is not JSON, or whose work types are not of the shape read, is TRACKER_REJECTED saying the form cannot be read", async () => {
@@ -157,7 +181,7 @@ test("a project answer that is not JSON, or whose work types are not of the shap
     project("FAILW", ["Task"] as unknown as object[]),
   ];
   for (const answer of answers) {
-    await failsWith(setup([authStatus(), answer]).provider.describe(), "TRACKER_REJECTED", "in a form the script cannot read");
+    holds(await rejectsWith(setup([authStatus(), answer]).provider.describe(), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
 });
 
@@ -195,9 +219,9 @@ test("a parent that is not found, that sits in another project, or that is not a
   assert.ok((await reasonOf(crlf(failed(NOT_FOUND))))?.includes("the parent FAILW-4 was not found"));
   assert.ok((await reasonOf(parentView({ project: { key: "FLSCR" }, issuetype })))?.includes("FLSCR"));
   assert.ok((await reasonOf(parentView({ project: { key: "FAILW" }, issuetype: { name: "Story", hierarchyLevel: 0, subtask: false } })))?.includes("FAILW-4"));
-  await failsWith(describeWith(failed("✗ Error: something else")), "TRACKER_REJECTED", "acli failed: ✗ Error: something else");
+  holds(await rejectsWith(describeWith(failed("✗ Error: something else")), "TRACKER_REJECTED"), "acli failed: ✗ Error: something else");
   for (const shape of [ok("<html>"), parentView({ project: { key: "FAILW" } }), ok({ id: "10004", fields: { project: { key: "FAILW" }, issuetype } })]) {
-    await failsWith(describeWith(shape), "TRACKER_REJECTED", "in a form the script cannot read");
+    holds(await rejectsWith(describeWith(shape), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
 });
 
@@ -218,27 +242,27 @@ test("a count of 0 with [] , with null, or with an empty stdout is the empty lis
     assert.deepEqual(await setup([crlf(count(0)), ok(stdout)]).provider.listMarked(), [], JSON.stringify(stdout));
   }
   for (const stdout of ["[]", "null", ""]) {
-    await failsWith(setup([count(1), ok(stdout)]).provider.listMarked(), "TRACKER_UNAVAILABLE", "the listing is not complete: run the command again");
+    holds(await rejectsWith(setup([count(1), ok(stdout)]).provider.listMarked(), "TRACKER_UNAVAILABLE"), "the listing is not complete: run the command again");
   }
 });
 
 test("a count in another form, and a search answer that is not one JSON array, are TRACKER_REJECTED saying the form cannot be read", async () => {
   for (const answer of [ok("Number of work items: 3\n"), ok("✓ Number of work items in the search: 3\nmore\n"), ok("✓ Number of work items in the search: -1\n")]) {
     const { provider, calls } = setup([answer]);
-    await failsWith(provider.listMarked(), "TRACKER_REJECTED", "in a form the script cannot read");
+    holds(await rejectsWith(provider.listMarked(), "TRACKER_REJECTED"), "in a form the script cannot read");
     assert.equal(calls.length, 1);
   }
   for (const stdout of ["[]\n[]", "{}", "[1] [2]", "\"x\""]) {
-    await failsWith(setup([count(0), ok(stdout)]).provider.listMarked(), "TRACKER_REJECTED", "in a form the script cannot read");
+    holds(await rejectsWith(setup([count(0), ok(stdout)]).provider.listMarked(), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
-  await failsWith(setup([failed("✗ Error: the query is wrong")]).provider.listMarked(), "TRACKER_REJECTED", "acli failed: ✗ Error: the query is wrong");
+  holds(await rejectsWith(setup([failed("✗ Error: the query is wrong")]).provider.listMarked(), "TRACKER_REJECTED"), "acli failed: ✗ Error: the query is wrong");
 });
 
 test("an id that appears twice, and a listing shorter than the count, are TRACKER_UNAVAILABLE", async () => {
   const twice = setup([count(2), ok([entry("10019", "FAILW-5"), entry("10019", "FAILW-5")])]);
-  await failsWith(twice.provider.listMarked(), "TRACKER_UNAVAILABLE", "10019");
+  holds(await rejectsWith(twice.provider.listMarked(), "TRACKER_UNAVAILABLE"), "10019");
   const short = setup([count(3), ok([entry("10019", "FAILW-5"), entry("10020", "FAILW-6")])]);
-  await failsWith(short.provider.listMarked(), "TRACKER_UNAVAILABLE", "the listing is not complete: run the command again");
+  holds(await rejectsWith(short.provider.listMarked(), "TRACKER_UNAVAILABLE"), "the listing is not complete: run the command again");
 });
 
 test("an entry without the id, the key or the description key, or whose description is neither null nor an ADF document, is TRACKER_REJECTED", async () => {
@@ -254,6 +278,6 @@ test("an entry without the id, the key or the description key, or whose descript
     "FAILW-5",
   ];
   for (const one of entries) {
-    await failsWith(setup([count(1), ok([one])]).provider.listMarked(), "TRACKER_REJECTED", "in a form the script cannot read");
+    holds(await rejectsWith(setup([count(1), ok([one])]).provider.listMarked(), "TRACKER_REJECTED"), "in a form the script cannot read");
   }
 });

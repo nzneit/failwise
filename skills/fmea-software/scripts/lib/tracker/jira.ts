@@ -10,7 +10,7 @@ import type { TrackerConfig } from "../types.ts";
 import { isAdfDocument, readMarker } from "./jira-body.ts";
 import type { AdfDoc } from "./jira-body.ts";
 import { PLAIN_ID } from "./items.ts";
-import { isRecord, rejected, unavailable } from "./json.ts";
+import { isRecord } from "./json.ts";
 import type { Link, Provider, RemoteItem, Target } from "./provider.ts";
 import type { ProcessResult } from "./spawn.ts";
 
@@ -21,7 +21,6 @@ const DEFAULT_TYPE = "Task";
 const EXCERPT_LIMIT = 200;
 const AUTH_STATUS = /^✓ Authenticated\n {2}Site: (\S+)\n {2}Email: [^\n]*\n {2}Authentication Type: \S+\n?$/;
 const COUNT = /^✓ Number of work items in the search: ([0-9]+)\n?$/;
-const NO_PROJECT = /^✗ Error: No project could be found with key '[^']*'\.$/;
 const NOT_FOUND = "✗ Error: Issue does not exist or you do not have permission to see it.";
 const FORM = "in a form the script cannot read";
 const INCOMPLETE = "so the listing is not complete: run the command again";
@@ -30,6 +29,16 @@ interface Ctx { acli: Acli; host: string; project: string; label: string; type: 
 /** acli's exit status, its stdout and the first line of its stderr, with CRLF made LF (s12). */
 interface Answer { status: number | null; stdout: string; firstLine: string }
 interface WorkType { name: string; hierarchyLevel: number; subtask: boolean }
+
+/** The two ways a request fails: the tracker is out of reach, or it answered what cannot be used. */
+function refusal(code: "TRACKER_UNAVAILABLE" | "TRACKER_REJECTED", message: string): ScriptError {
+  return new ScriptError(code, message);
+}
+
+/** acli's refusal of a project key it cannot find, the configured key quoted as acli quotes it. */
+function noProject(project: string): string {
+  return `✗ Error: No project could be found with key '${project}'.`;
+}
 
 /** The sign-in command of every message (s9); `<email>` is left for the person to fill. */
 function signIn(host: string): string {
@@ -53,7 +62,7 @@ function excerpt(text: string): string {
 /** The answer read, or acli's absence; a missing acli is the same failure for every request. */
 async function run(ctx: Ctx, args: string[]): Promise<Answer> {
   const result = await ctx.acli(["jira", ...args]);
-  if (result.missing) throw unavailable(`acli was not found: install the Atlassian CLI and sign in with ${signIn(ctx.host)}`);
+  if (result.missing) throw refusal("TRACKER_UNAVAILABLE", `acli was not found: install the Atlassian CLI and sign in with ${signIn(ctx.host)}`);
   const lf = (text: string): string => text.replace(/\r\n/g, "\n");
   return { status: result.status, stdout: lf(result.stdout), firstLine: lf(result.stderr).split("\n")[0] };
 }
@@ -61,7 +70,7 @@ async function run(ctx: Ctx, args: string[]): Promise<Answer> {
 /** A non-zero exit no rule above explains (UJ2). */
 function failure(answer: Answer): ScriptError {
   const line = cut(answer.firstLine);
-  return rejected(`acli failed: ${line === "" ? "it said nothing" : line}`);
+  return refusal("TRACKER_REJECTED", `acli failed: ${line === "" ? "it said nothing" : line}`);
 }
 
 /** The stdout of a request that must succeed; any non-zero exit fails it. */
@@ -72,7 +81,7 @@ async function succeeded(ctx: Ctx, args: string[]): Promise<string> {
 }
 
 function unreadable(what: string, stdout: string): ScriptError {
-  return rejected(`acli answered ${what} ${FORM}: ${excerpt(stdout)}`);
+  return refusal("TRACKER_REJECTED", `acli answered ${what} ${FORM}: ${excerpt(stdout)}`);
 }
 
 function parsed(what: string, stdout: string): unknown {
@@ -87,14 +96,14 @@ function parsed(what: string, stdout: string): unknown {
 async function signedInSite(ctx: Ctx): Promise<string> {
   const answer = await run(ctx, ["auth", "status"]);
   const site = answer.status === 0 ? AUTH_STATUS.exec(answer.stdout)?.[1] : undefined;
-  if (site === undefined) throw unavailable(`acli's sign-in answer could not be read, ${FORM}: sign in with ${signIn(ctx.host)}`);
+  if (site === undefined) throw refusal("TRACKER_UNAVAILABLE", `acli's sign-in answer could not be read, ${FORM}: sign in with ${signIn(ctx.host)}`);
   return site;
 }
 
 /** Fails unless acli is signed in to the document's host, compared without regard to case. */
 async function checkSite(ctx: Ctx): Promise<void> {
   const site = await signedInSite(ctx);
-  if (site.toLowerCase() !== ctx.host.toLowerCase()) throw unavailable(`acli is signed in to ${site}, not ${ctx.host}: run ${switchTo(ctx.host)}`);
+  if (site.toLowerCase() !== ctx.host.toLowerCase()) throw refusal("TRACKER_UNAVAILABLE", `acli is signed in to ${site}, not ${ctx.host}: run ${switchTo(ctx.host)}`);
 }
 
 function isWorkType(value: unknown): value is WorkType {
@@ -104,8 +113,8 @@ function isWorkType(value: unknown): value is WorkType {
 /** The project's work types (§6 item 2): a project acli cannot find is out of reach. */
 async function workTypes(ctx: Ctx): Promise<WorkType[]> {
   const answer = await run(ctx, ["project", "view", `--key=${ctx.project}`, "--json"]);
-  if (answer.status === 1 && NO_PROJECT.test(answer.firstLine)) {
-    throw unavailable(`the project ${ctx.project} was not found on ${ctx.host}, or the signed-in account cannot see it there`);
+  if (answer.status === 1 && answer.firstLine === noProject(ctx.project)) {
+    throw refusal("TRACKER_UNAVAILABLE", `the project ${ctx.project} was not found on ${ctx.host}, or the signed-in account cannot see it there`);
   }
   if (answer.status !== 0) throw failure(answer);
   const project = parsed("the project", answer.stdout);
@@ -203,11 +212,11 @@ async function listMarked(ctx: Ctx): Promise<RemoteItem[]> {
   const items: RemoteItem[] = [];
   for (const entry of await entriesOf(ctx)) {
     const { id, key, description } = entryOf(entry);
-    if (seen.has(id)) throw unavailable(`the listing names the id ${id} (${key}) twice, ${INCOMPLETE}`);
+    if (seen.has(id)) throw refusal("TRACKER_UNAVAILABLE", `the listing names the id ${id} (${key}) twice, ${INCOMPLETE}`);
     seen.add(id);
     items.push({ link: linkOf(ctx, id, key), marker: readMarker(description) });
   }
-  if (items.length < n) throw unavailable(`the listing holds ${items.length} items where the count was ${n}, ${INCOMPLETE}`);
+  if (items.length < n) throw refusal("TRACKER_UNAVAILABLE", `the listing holds ${items.length} items where the count was ${n}, ${INCOMPLETE}`);
   return items;
 }
 
@@ -226,7 +235,7 @@ export function jiraProvider(config: TrackerConfig, acli: Acli, _tempRoot?: stri
   return {
     describe: () => describe(ctx),
     listMarked: () => listMarked(ctx),
-    create: () => Promise.reject(rejected("creating a Jira item is not built")),
-    read: () => Promise.reject(rejected("reading Jira items is not built")),
+    create: () => Promise.reject(refusal("TRACKER_REJECTED", "creating a Jira item is not built")),
+    read: () => Promise.reject(refusal("TRACKER_REJECTED", "reading Jira items is not built")),
   };
 }
