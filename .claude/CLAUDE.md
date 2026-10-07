@@ -78,6 +78,9 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
   "Generated with" line, no session trailer. This applies to your commits and to any brief
   you give a subagent.
 - **Commits stay local.** Claude never pushes; the user working in this checkout does.
+- **Every drafted pull request body opens with the diff link.** Its first line is
+  `Read the diff: https://revision.city/diffs/nzneit/failwise/compare/main...<branch>`, with the
+  branch name filled in, as the "Opening a pull request" section of `CONTRIBUTING.md` describes.
 - **Provenance is mandatory.** Every sourced statement in `skills/fmea-software/references/`
   cites a record id; every other statement is tagged `skill-authored`. The tag vocabulary is
   `references/provenance.md`, whose register traces each record id to its source. The evidence,
