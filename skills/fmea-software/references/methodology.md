@@ -2,7 +2,7 @@
 
 This file records what the classical FMEA canon supplies to this skill, what it withholds, and under which licence each backbone document may be used at all. [skill-authored]
 It stands behind three claims the skill makes about itself: its spine is prior-art structure rather than handbook text, every classical rule it uses carries a transfer status, and its prioritization is severity-first by ruling rather than by inheritance. [skill-authored]
-`references/provenance.md` holds the tag vocabulary and the 26-source register; where that register and the matrix below could differ on a source's status, the register governs and this file follows it. [skill-authored]
+`references/provenance.md` holds the tag vocabulary and the source register; where that register and the matrix below could differ on a source's status, the register governs and this file follows it. [skill-authored]
 
 ## The five backbone documents
 
