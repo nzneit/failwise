@@ -42,15 +42,15 @@ Open the body of a pull request with a line that links its diff in Revision City
 viewer of GitHub diffs, above everything else:
 
 ```
-Read the diff: https://revision.city/diffs/nzneit/failwise/compare/main...<branch>
+Read the diff: https://revision.city/diffs/nzneit/failwise/compare/<base>...<branch>
 ```
 
-`<branch>` is the branch of the pull request. The link works as soon as the branch is pushed and
-needs no sign-in, since this repository is public. It stops working when the branch is deleted
-after the merge, and the pull request's own page on GitHub remains the record. The viewer's
-Symbols tab lists the functions, classes and headings a change added, changed, renamed, moved or
-deleted, for the TypeScript, Markdown, JSON, YAML and CSS files of this repository; it does not
-parse the HTML report template.
+`<base>` is the branch the pull request targets and `<branch>` the branch it merges from. The link
+works as soon as the branch is pushed and needs no sign-in, since this repository is public. It
+stops working when the branch is deleted after the merge, and the pull request's own page on
+GitHub remains the record. The viewer's Symbols tab lists the functions, classes and headings a
+change added, changed, renamed, moved or deleted, for the TypeScript, Markdown, JSON, YAML and CSS
+files of this repository; it does not parse the HTML report template.
 
 ## Before every commit
 
