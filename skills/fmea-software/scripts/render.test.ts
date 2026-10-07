@@ -1,18 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import process from "node:process";
 import { TEMPLATE_PATH, renderHtml, sortChains } from "./render.ts";
 import { escapeHtml } from "./lib/escape.ts";
 import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
+import { loadVocabulary } from "./lib/vocabulary.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
-import { bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
+import { SKILL_ROOT, bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
 import { LEGACY_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
+const vocabulary = loadVocabulary();
 const template = readFileSync(TEMPLATE_PATH, "utf8");
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
 const vectors = loadFixture<{ vectors: string[] }>("injection-vectors.json").vectors
@@ -99,7 +103,7 @@ function between(html: string, open: string, close: string): string {
   return html.slice(start, html.indexOf(close, start));
 }
 const sectionOf = (html: string, id: string, next: string): string => between(html, `id="${id}"`, `id="${next}"`);
-const headerOf = (doc: FmeaDocument): string => sectionOf(renderHtml(doc, table, template), "header", "ground-rules");
+const headerOf = (doc: FmeaDocument): string => sectionOf(renderHtml(doc, table, template, vocabulary), "header", "ground-rules");
 
 function withComputed(doc: FmeaDocument, lints: Lint[], quality_score = 0): FmeaDocument {
   doc.computed = { quality_score, lints, validated_at: "2026-09-12T11:00:00Z", validator_version: "0.1.0" };
@@ -152,7 +156,7 @@ function everyPart(): FmeaDocument {
 }
 
 test("the report carries every section id, in the order section 9 fixes", () => {
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   const ids = ["header", "ground-rules", "assumptions", "reviews", "structure", "chains", "actions", "lints", "provenance", "fmea-data"];
   const positions = ids.map((id) => {
     const at = html.indexOf(`id="${id}"`);
@@ -164,7 +168,7 @@ test("the report carries every section id, in the order section 9 fixes", () => 
 
 test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
   const doc = golden();
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   const section = (id: string, next: string): string =>
     html.slice(html.indexOf(`id="${id}"`), html.indexOf(`id="${next}"`));
   const count = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
@@ -190,7 +194,7 @@ test("the ground-rules, assumptions and review-record sections carry the documen
 });
 
 test("the automated checks section explains the checks, states the score and groups the findings", () => {
-  const checks = sectionOf(renderHtml(golden(), table, template), "lints", "provenance");
+  const checks = sectionOf(renderHtml(golden(), table, template, vocabulary), "lints", "provenance");
   assert.ok(checks.includes("<h2>Automated checks and quality score</h2>"));
   const text = stripTags(checks);
   assert.ok(text.includes(escapeHtml("Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A blocker must be fixed before the row it names, or the analysis as a whole, can be relied on. A warning is for a reviewer to judge and may be acceptable as it stands.")));
@@ -213,10 +217,10 @@ test("the automated checks section explains the checks, states the score and gro
   assert.ok(checks.includes('<a href="#row-ch-7"><code>ch-7</code></a> D</td><td>Detection is 1 with no existing detection control carrying evidence</td>'));
   assert.ok(checks.includes('<a href="#row-ch-8"><code>ch-8</code></a> act-2</td>'));
 
-  const missing = sectionOf(renderHtml(minimalDoc(), table, template), "lints", "provenance");
+  const missing = sectionOf(renderHtml(minimalDoc(), table, template, vocabulary), "lints", "provenance");
   assert.ok(missing.includes('<p class="empty">No computed block.</p>'));
   assert.ok(!missing.includes("Quality score"), "a document without computed has no score to state");
-  const clean = sectionOf(renderHtml(withComputed(minimalDoc(), [], 100), table, template), "lints", "provenance");
+  const clean = sectionOf(renderHtml(withComputed(minimalDoc(), [], 100), table, template, vocabulary), "lints", "provenance");
   assert.ok(clean.includes("<strong>Quality score: 100 of 100</strong>"));
   assert.ok(clean.includes('<p class="empty">No findings.</p>'));
   assert.ok(!clean.includes("<table"));
@@ -228,7 +232,7 @@ test("a computed block whose rule id and pointer hold markup is escaped in the b
     { rule, severity: "blocker", pointer: "/chains/0/<b>row</b>", message: "row finding" },
     { rule, severity: "blocker", pointer: "/meta/<i>doc</i>", message: "document finding" },
     { rule, severity: "warning", pointer: "/chains/9/<u>gone</u>", message: "unknown-row finding" },
-  ]), table, template);
+  ]), table, template, vocabulary);
   for (const raw of ["<img", "<b>row</b>", "<i>doc</i>", "<u>gone</u>"]) assert.ok(!html.includes(raw), `raw markup printed: ${raw}`);
   const code = (s: string): string => `<code>${escapeHtml(s)}</code>`;
   const attention = between(html, 'class="attn"', 'class="toc"');
@@ -244,7 +248,7 @@ test("a computed block whose rule id and pointer hold markup is escaped in the b
 
 test("the header carries every field section 9 requires, and the provisional count", () => {
   const doc = golden();
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   const header = html.slice(html.indexOf('id="header"'), html.indexOf('id="ground-rules"'));
   assert.ok(header.includes("<h1>Checkout service DFMEA</h1>"), "the header is missing the analysis name");
   for (const pair of [
@@ -266,7 +270,7 @@ test("the provisional count and the row mark cover the post-action ratings", () 
   doc.chains[0].actions = [{ id: "act-1", description: "add a retry", owner: "T. Tester", status: "Completed", target_date: "2026-08-01", completed_date: "2026-08-15" }];
   doc.chains[0].post_ratings = { S: rating(4, "provisional"), O: rating(3), D: rating(2) };
   doc.chains[0].post_priority = computePriority(table, doc.chains[0].post_ratings);
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   assert.ok(html.includes('<span class="big">1 <small>of 6</small></span><span class="sub">provisional, in 1 row</span>'), "the tile counts the post-action ratings, both in the total and in the provisional count");
   assert.ok(
     indexTable(html).includes(`<td class="nw"><a href="#row-ch-1"><code>ch-1</code></a><br>${mark("provisional")}</td>`),
@@ -361,7 +365,7 @@ test("with nothing to list, the Needs attention block holds its one sentence", (
 
 test("a rating-provisional finding of severity blocker is listed in the Needs attention block and in its row", () => {
   const doc = withComputed(minimalDoc(), [lint("blocker", "rating-provisional", "/chains/0/ratings/S", "The rating is still provisional and needs re-scoring")]);
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   const header = sectionOf(html, "header", "ground-rules");
   assert.ok(header.includes(`<div class="attn-item"><div class="what">1 row fails an automated check<br>${mark("blocker")}</div>`), "the blocker item");
   assert.ok(!header.includes("attn-none"), "the nothing-needs-attention sentence");
@@ -393,14 +397,14 @@ test("the contents line wraps between its links, and each link is at least 24 px
 });
 
 test("row marks: one handoff, three provisional rows, no stale row", () => {
-  const index = indexTable(renderHtml(golden(), table, template));
+  const index = indexTable(renderHtml(golden(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
   assert.equal(occurrences(index, 'class="mark mark-provisional"'), 3);
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
 });
 
 test("a flagged row carries the stale mark; a cleared row carries none", () => {
-  const index = indexTable(renderHtml(staleRows(), table, template));
+  const index = indexTable(renderHtml(staleRows(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 2);
   assert.ok(index.includes(`<a href="#row-ch-1"><code>ch-1</code></a><br>${mark("stale")} ${mark("provisional")}</td>`), "ch-1 is flagged scales-version with three provisional ratings");
   assert.ok(index.includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("stale")}</td>`), "ch-2 is flagged element-changed and fully re-scored");
@@ -409,7 +413,7 @@ test("a flagged row carries the stale mark; a cleared row carries none", () => {
 
 test("chains sort by priority, then by severity descending, then by id", () => {
   assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   const table_start = html.indexOf('id="chains"');
   const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
@@ -419,7 +423,7 @@ const INDEX_CAPTION_TEXT = "Rows are sorted by the pre-action priority, then by 
 const FRAME = /<div class="frame" tabindex="0" role="region" aria-label="([^"]+)"><table[ >]/g;
 
 test("every table is inside a frame that takes focus, is a region and has a label, and no two labels repeat", () => {
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   const labels = [...html.matchAll(FRAME)].map((match) => match[1]);
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
@@ -431,7 +435,7 @@ test("every table is inside a frame that takes focus, is a region and has a labe
 });
 
 test("no table carries a caption; each of the three that had one is named by the paragraph above its frame", () => {
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   assert.equal(occurrences(html, "<caption"), 0);
   const named: [string, string, string, string][] = [
     ["index-caption", INDEX_CAPTION_TEXT, "Index of failure chains", '<table class="index" aria-labelledby="index-caption">'],
@@ -458,7 +462,7 @@ test("the template lets a frame scroll sideways, keeps a framed table's shape, a
 });
 
 test("the key lists the loaded table's vocabulary and all five marks; a document with no chains has no key and no index", () => {
-  const key = between(renderHtml(golden(), table, template), '<div class="key">', "</div>");
+  const key = between(renderHtml(golden(), table, template, vocabulary), '<div class="key">', "</div>");
   const entries = [
     '<h3 class="key-title">How to read this table</h3><dl>',
     `<dt><b>S</b>, <b>O</b>, <b>D</b></dt><dd>${escapeHtml(SOD_TEXT)}</dd>`,
@@ -472,14 +476,14 @@ test("the key lists the loaded table's vocabulary and all five marks; a document
 
   const empty = minimalDoc();
   empty.chains = [];
-  const chains = sectionOf(renderHtml(empty, table, template), "chains", "actions");
+  const chains = sectionOf(renderHtml(empty, table, template, vocabulary), "chains", "actions");
   assert.ok(chains.includes('<p class="empty">No chains.</p>'));
   for (const absent of ['class="key"', 'class="index"', "<article"]) assert.ok(!chains.includes(absent), `a document with no chains has ${absent}`);
 });
 
 test("the index has a titled head and one row per chain linking to the row's section", () => {
   const doc = golden();
-  const index = indexTable(renderHtml(doc, table, template));
+  const index = indexTable(renderHtml(doc, table, template, vocabulary));
   const sod = (f: string): string => `<th class="num"><abbr title="${escapeHtml(SOD_TEXT)}">${f}</abbr></th>`;
   assert.ok(index.includes(
     `<thead><tr><th><abbr title="${escapeHtml(PRIORITY_TEXT)}">Priority</abbr></th><th>Row</th><th>Element</th><th>Failure mode</th><th>End effect</th>` +
@@ -501,7 +505,7 @@ test("an expanded row shows the post-action priority letter and RPN in its post-
   doc.chains[0].actions = [{ id: "act-1", description: "add a retry", owner: "T. Tester", status: "Completed", target_date: "2026-08-01", completed_date: "2026-08-15" }];
   doc.chains[0].post_ratings = { S: rating(4), O: rating(3), D: rating(2) };
   doc.chains[0].post_priority = computePriority(table, doc.chains[0].post_ratings);
-  const section = rowSection(renderHtml(doc, table, template), "ch-1");
+  const section = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   assert.ok(section.includes('<br><span class="muted">after actions:</span> <span class="pri pri-mid">M</span> <span class="muted">RPN 24</span></div></header>'), "the header's second line");
   assert.ok(section.includes('<span class="lbl">Post-action ratings — priority M, RPN 24</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1 after actions"><table>'), "the post-action block leads with the post-action priority");
   assert.ok(section.includes('<span class="lbl">Ratings</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1"><table>'), "the pre-action block carries no such line");
@@ -512,7 +516,7 @@ test("an expanded row shows the post-action priority letter and RPN in its post-
 
 test("a row section carries its parts in order on a row that has every part", () => {
   const doc = everyPart();
-  const article = rowSection(renderHtml(doc, table, template), "ch-1");
+  const article = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   const post = doc.chains[0].post_priority!;
   const parts = [
     `<header><span class="pri pri-mid">M</span><h3><code>ch-1</code>&nbsp; stops serving</h3><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
@@ -543,7 +547,7 @@ test("a row section carries its parts in order on a row that has every part", ()
 test("a row section leaves out each part it has nothing for", () => {
   const doc = minimalDoc();
   doc.chains[0].trigger = "   ";
-  const article = rowSection(renderHtml(doc, table, template), "ch-1");
+  const article = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   for (const absent of ['<p class="finding', '<p class="stale-notice">', '<span class="lbl">Handoff</span>', '<span class="lbl">Seeded from incident</span>',
     '<span class="lbl">Trigger</span>', '<span class="lbl">Post-action ratings', '<span class="lbl">Row history</span>', "mark-trigger", "after actions:"]) {
     assert.ok(!article.includes(absent), `the row has ${absent}`);
@@ -558,7 +562,7 @@ test("a row section leaves out each part it has nothing for", () => {
 
 test("a trigger equal to a cause marks that cause and gets no part of its own", () => {
   const doc = golden();
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   const ch2 = rowSection(html, "ch-2");
   assert.ok(ch2.includes(`<li>${escapeHtml(doc.chains[1].causes[0].text)} <span class="muted">[design]</span> <span class="mark mark-trigger">trigger</span></li>`));
   assert.equal(occurrences(ch2, "mark-trigger"), 1);
@@ -572,7 +576,7 @@ test("a trigger equal to a cause marks that cause and gets no part of its own", 
 
 test("a finding on the row alone prints no location label", () => {
   const doc = withComputed(minimalDoc(), [lint("warning", "test-row", "/chains/0", "row-alone finding")]);
-  assert.ok(rowSection(renderHtml(doc, table, template), "ch-1").includes(
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-1").includes(
     `<p class="finding warn">${mark("warning")} &nbsp;row-alone finding <span class="muted"><code>test-row</code></span></p>`,
   ));
 });
@@ -580,27 +584,27 @@ test("a finding on the row alone prints no location label", () => {
 test("renderHtml still renders a chain with no function and two chains with one id; render.ts refuses both before it renders", () => {
   const lost = minimalDoc();
   lost.chains[0].function = "fn-missing";
-  const html = renderHtml(lost, table, template);
+  const html = renderHtml(lost, table, template, vocabulary);
   assert.ok(indexTable(html).includes("</td><td><code></code></td><td>stops serving</td>"), "an empty element cell");
   assert.ok(rowSection(html, "ch-1").includes('<div><span class="lbl">Function</span></div>'), "an empty function part");
 
   const twins = minimalDoc();
   twins.chains.push({ ...twins.chains[0], failure_mode: "second" });
-  const both = renderHtml(twins, table, template);
+  const both = renderHtml(twins, table, template, vocabulary);
   assert.equal(occurrences(both, '<article class="row" id="row-ch-1">'), 2);
   assert.ok(both.includes("second</h3>"));
 });
 
 test("a three-value and a one-value supplied table get the rank styles of section 4.7", () => {
   // Letters reversed, so a style that followed the letter instead of the rank would fail.
-  const html = renderHtml(priced(golden(), 0, "L"), suppliedTable(["L", "M", "H"]), template);
+  const html = renderHtml(priced(golden(), 0, "L"), suppliedTable(["L", "M", "H"]), template, vocabulary);
   assert.ok(html.includes('<dt><span class="pri pri-top">L</span> <span class="pri pri-mid">M</span> <span class="pri pri-low">H</span></dt>'));
   const index = indexTable(html);
   for (const [style, value, id] of [["top", "L", "ch-1"], ["low", "H", "ch-2"], ["mid", "M", "ch-3"]]) {
     assert.ok(index.includes(`<tr><td><span class="pri pri-${style}">${value}</span></td><td class="nw"><a href="#row-${id}">`), `index row ${id}`);
     assert.ok(rowSection(html, id).includes(`<header><span class="pri pri-${style}">${value}</span><h3>`), `row header ${id}`);
   }
-  const one = renderHtml(priced(minimalDoc(), 0, "P"), suppliedTable(["P"]), template);
+  const one = renderHtml(priced(minimalDoc(), 0, "P"), suppliedTable(["P"]), template, vocabulary);
   assert.ok(one.includes('<dt><span class="pri pri-top">P</span></dt>'));
   assert.ok(indexTable(one).includes('<tr><td><span class="pri pri-top">P</span></td>'));
   assert.ok(rowSection(one, "ch-1").includes('<header><span class="pri pri-top">P</span><h3>'));
@@ -610,7 +614,7 @@ test("a supplied table's vocabulary values are escaped in every badge", () => {
   const doc = priced(minimalDoc(), 0, vectors[0]);
   doc.chains[0].post_ratings = { S: rating(8), O: rating(2), D: rating(4) };
   doc.chains[0].post_priority = { value: vectors[1], table: "priority-test-v1", rpn: 64 };
-  const html = renderHtml(doc, suppliedTable(vectors), template);
+  const html = renderHtml(doc, suppliedTable(vectors), template, vocabulary);
   for (const vector of vectors) {
     assert.ok(!html.includes(vector), `raw vector present: ${JSON.stringify(vector)}`);
     assert.ok(html.includes(`>${escapeHtml(vector)}</span>`), `no escaped badge for ${JSON.stringify(vector)}`);
@@ -636,7 +640,7 @@ test("a post_priority does not move a row in the sort order", () => {
 });
 
 test("the provenance appendix names the catalog row, its tag, and the record the tag carries", () => {
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   assert.ok(html.includes("<td><code>cat-service-01</code></td><td><code>cites:C036</code></td><td><code>C036</code></td>"));
   assert.ok(html.includes("<td><code>cat-service-02</code></td><td><code>adapted-from:C031</code></td><td><code>C031</code></td>"));
 });
@@ -644,12 +648,12 @@ test("the provenance appendix names the catalog row, its tag, and the record the
 test("a skill-authored tag carries no record, so the record cell is an em dash", () => {
   const doc = minimalDoc();
   doc.chains[0].catalog_refs = [{ id: "cat-security-01", provenance: "skill-authored" }];
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   assert.ok(html.includes("<td><code>cat-security-01</code></td><td><code>skill-authored</code></td><td>&mdash;</td>"));
 });
 
 test("injection vectors are escaped everywhere they are printed", () => {
-  const html = renderHtml(poisonedDocument(), table, template);
+  const html = renderHtml(poisonedDocument(), table, template, vocabulary);
   for (const vector of vectors) {
     assert.ok(!html.includes(vector), `raw vector present: ${JSON.stringify(vector)}`);
   }
@@ -659,7 +663,7 @@ test("injection vectors are escaped everywhere they are printed", () => {
 
 test("the embedded JSON block round-trips and holds no raw vector", () => {
   const doc = poisonedDocument();
-  const block = dataBlock(renderHtml(doc, table, template));
+  const block = dataBlock(renderHtml(doc, table, template, vocabulary));
   for (const vector of vectors) assert.ok(!block.includes(vector), `raw vector in the data block: ${JSON.stringify(vector)}`);
   for (const ch of ["<", ">", "&", "\u2028", "\u2029"]) assert.ok(!block.includes(ch), `unescaped ${JSON.stringify(ch)} in the data block`);
   assert.deepEqual(JSON.parse(block), doc);
@@ -667,7 +671,7 @@ test("the embedded JSON block round-trips and holds no raw vector", () => {
 
 test("the report loads nothing from the network and runs no script", () => {
   const doc = golden();
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   assert.ok(!html.includes("<details"), "no <details> remains");
   assert.equal(occurrences(html, '<article class="row"'), doc.chains.length);
   assert.ok(!html.includes("<script src"));
@@ -920,7 +924,7 @@ test("a stored lint whose message alone differs from the validator's is refused,
 });
 
 test("every slot in the template is filled", () => {
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   assert.equal(html.match(/<!--@[a-z-]+-->/g), null, "an unfilled slot remains in the report");
 });
 
@@ -953,7 +957,7 @@ function structureDoc(): FmeaDocument {
 }
 
 test("the structure section prints every element once, each child inside its parent's nested list", () => {
-  const structure = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   const ids = ["checkout", "checkout.api", "checkout.payment-gateway", "checkout.order-store", "checkout.session-auth", "pricing"];
   assert.equal(occurrences(structure, '<div class="el" '), ids.length, "the section prints a different number of .el blocks than elements");
   for (const id of ids) elBlock(structure, id);
@@ -965,7 +969,7 @@ test("the structure section prints every element once, each child inside its par
 });
 
 test("the structure section's grandchild sits inside its parent's nested list, which sits inside the root's", () => {
-  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
   const shard = structure.indexOf('<span class="el-prefix">svc.db.</span>shard');
   const store = structure.indexOf('<span class="el-prefix">svc.</span>db</code>');
   const lists = [...structure.matchAll(/<ul class="tree">/g)].map((m) => m.index);
@@ -974,7 +978,7 @@ test("the structure section's grandchild sits inside its parent's nested list, w
 });
 
 test("an element's block holds its name, its kind in words and its description", () => {
-  const structure = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   const auth = elBlock(structure, "checkout.session-auth");
   const el = golden().elements.find((x) => x.id === "checkout.session-auth");
   assert.ok(el !== undefined);
@@ -985,37 +989,37 @@ test("an element's block holds its name, its kind in words and its description",
 });
 
 test("an element with an empty description prints no el-desc paragraph", () => {
-  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
   assert.ok(!elBlock(structure, "svc").includes("el-desc"), "an empty description printed a paragraph");
 });
 
 test("a root prints its whole id, a child its parent's part in el-prefix, and a stray id prints whole", () => {
-  const golden_ = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const golden_ = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   assert.ok(golden_.includes('<code class="el-id">checkout</code>'), "a root's id is not printed whole");
   assert.ok(golden_.includes('<code class="el-id">pricing</code>'));
   assert.ok(golden_.includes('<code class="el-id"><span class="el-prefix">checkout.</span>payment-gateway</code>'), "a child's id is not split at its parent's part");
-  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
   assert.ok(structure.includes('<code class="el-id"><span class="el-prefix">svc.db.</span>shard</code>'), "a grandchild's prefix is not its parent's whole id");
   assert.ok(structure.includes('<code class="el-id">elsewhere</code>'), "an id that does not extend its parent's is not printed whole");
   assert.ok(!elBlock(structure, "elsewhere").includes("el-prefix"));
 });
 
 test("each element's block carries its depth in the tree", () => {
-  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
   const depth = (id: string): string | undefined => elBlock(structure, id).match(/^style="--el-depth:(\d+)">/)?.[1];
   assert.deepEqual(["svc", "svc.db", "svc.db.shard", "elsewhere"].map(depth), ["0", "1", "2", "1"]);
-  const golden_ = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const golden_ = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   assert.ok(golden_.includes('<li><div class="el" style="--el-depth:0"><div class="el-who"><span class="el-name">'), "a root's block is not shaped as specified");
 });
 
 test("the facts list appears only for a dependency, and holds SLA and limits only when they are set", () => {
-  const golden_ = sectionOf(renderHtml(golden(), table, template), "structure", "chains");
+  const golden_ = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   assert.ok(elBlock(golden_, "checkout.payment-gateway").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>SLA</dt><dd>99.95% monthly</dd><dt>Limits</dt><dd>50 rps per merchant</dd></dl>'));
   assert.ok(elBlock(golden_, "pricing").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd><dt>SLA</dt><dd>99.9% monthly</dd></dl>'));
   for (const id of ["checkout", "checkout.api", "checkout.order-store", "checkout.session-auth"]) {
     assert.ok(!elBlock(golden_, id).includes("el-facts"), `${id} has no dependency but prints a facts list`);
   }
-  const structure = sectionOf(renderHtml(structureDoc(), table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
   assert.ok(elBlock(structure, "svc.db").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd></dl>'));
   assert.ok(elBlock(structure, "svc.db.shard").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>Limits</dt><dd>10 rps</dd></dl>'));
 });
@@ -1029,7 +1033,7 @@ test("every string in the structure section is entity-escaped", () => {
   shard.dependency = { strength: "strong", sla: `sla ${bad}`, limits: `limits ${bad}` };
   shard.id = `svc.db.${bad}`;
   doc.elements[3].id = `else${bad}`;
-  const structure = sectionOf(renderHtml(doc, table, template), "structure", "chains");
+  const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
   const safe = escapeHtml(bad);
   for (const text of [`name ${safe}`, `desc ${safe}`, `sla ${safe}`, `limits ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
     assert.ok(structure.includes(text), `missing the escaped form: ${text}`);
@@ -1037,21 +1041,100 @@ test("every string in the structure section is entity-escaped", () => {
   assert.ok(!structure.includes(bad), "a raw string reached the structure section");
 });
 
+test("every element's tag holds its boundary in words", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  const expected: Record<string, string> = {
+    checkout: "in scope",
+    "checkout.api": "in scope",
+    "checkout.payment-gateway": "third party",
+    "checkout.order-store": "in scope",
+    "checkout.session-auth": "in scope",
+    pricing: "owned outside",
+  };
+  for (const [id, words] of Object.entries(expected)) {
+    assert.ok(elBlock(structure, id).includes(`<span class="el-kind">`), `${id} lost its kind`);
+    assert.ok(elBlock(structure, id).includes(`</span><span class="el-boundary">${words}</span>`), `${id} does not print "${words}" after its kind`);
+  }
+});
+
+test("a security-relevant element carries the mark and its rationale; another carries neither", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  const el = golden().elements.find((x) => x.id === "checkout.session-auth");
+  assert.ok(el?.security_rationale !== undefined);
+  const auth = elBlock(structure, "checkout.session-auth");
+  assert.ok(auth.includes('<span class="el-boundary">in scope</span><span class="el-security">security-relevant</span></span>'), "the mark is not the tag's last span");
+  assert.ok(auth.includes(`<p class="el-desc">${escapeHtml(el.description)}</p><p class="el-rationale">${escapeHtml(el.security_rationale)}</p>`), "the rationale does not follow the description");
+  const root = elBlock(structure, "checkout");
+  assert.ok(!root.includes("el-security") && !root.includes("el-rationale"), "an element that is not security-relevant carries the mark or a rationale");
+});
+
+test("a rationale is escaped, and one recorded on a false flag is printed without the mark", () => {
+  const doc = structureDoc();
+  doc.elements[0].security_rationale = 'serves <b>&"x';
+  const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  const svc = elBlock(structure, "svc");
+  assert.ok(svc.includes(`<p class="el-rationale">serves ${escapeHtml('<b>&"x')}</p>`), "the rationale is not printed escaped");
+  assert.ok(!svc.includes("el-security"), "a false flag printed the mark");
+  assert.ok(elBlock(structure, "elsewhere").includes('<span class="el-security">security-relevant</span>'));
+});
+
+test("the structure section opens with the vocabulary, each role, boundary and the flag with its test, then the tree", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  const afterHeading = structure.slice(structure.indexOf("<h2>Structure</h2>") + "<h2>Structure</h2>".length).trimStart();
+  assert.ok(afterHeading.startsWith('<section class="vocabulary">'), "the vocabulary is not the heading's first follower");
+  const block = afterHeading.slice(0, afterHeading.indexOf("</section>") + "</section>".length);
+  const pairs = [...vocabulary.roles, ...vocabulary.boundaries, vocabulary.security].map((x) => `<dt>${escapeHtml(x.label)}</dt><dd>${escapeHtml(x.test)}</dd>`);
+  assert.equal(occurrences(block, "<dt>"), pairs.length, "the vocabulary holds a different number of terms than roles, boundaries and the flag");
+  let at = 0;
+  for (const pair of pairs) {
+    const next = block.indexOf(pair, at);
+    assert.ok(next >= at, `missing or out of order: ${pair}`);
+    at = next;
+  }
+  for (const label of ["Service", "In scope", "Security-relevant"]) assert.ok(block.includes(`<dt>${label}</dt>`), `the vocabulary does not list ${label}`);
+  assert.ok(afterHeading.slice(block.length).startsWith('<ul class="tree">'), "the tree does not follow the vocabulary");
+});
+
+// render.ts run from a copy of the skill folder whose vocabulary file is changed by `alter`: it
+// exits 3 with one VOCABULARY_READ line and writes no report.
+function assertVocabularyRefused(alter: (path: string) => void): void {
+  withTempDir((dir) => {
+    const skill = join(dir, "fmea-software");
+    cpSync(SKILL_ROOT, skill, { recursive: true });
+    alter(join(skill, "data", "element-vocabulary-v1.json"));
+    const out = join(dir, "report.html");
+    const r = spawnSync(process.execPath, [join(skill, "scripts", "render.ts"), fixturePath("checkout-service.fmea.json"), "--out", out], { encoding: "utf8" });
+    assert.equal(r.status, 3, r.stderr);
+    const lines = r.stderr.split("\n").filter((line) => line !== "");
+    assert.equal(lines.length, 1, r.stderr);
+    assert.match(lines[0], /^error VOCABULARY_READ: /);
+    assert.equal(existsSync(out), false, "a report was written");
+  });
+}
+
+test("render.ts with the vocabulary file gone exits 3 with one VOCABULARY_READ line and writes nothing", () => {
+  assertVocabularyRefused((path) => rmSync(path));
+});
+
+test("render.ts with a malformed vocabulary file exits 3 with one VOCABULARY_READ line and writes nothing", () => {
+  assertVocabularyRefused((path) => writeFileSync(path, JSON.stringify({ version: 1, roles: [] })));
+});
+
 test("a document with no elements prints the empty state", () => {
   const doc = minimalDoc();
   doc.elements = [];
-  assert.ok(sectionOf(renderHtml(doc, table, template), "structure", "chains").includes('<p class="empty">No elements.</p>'));
+  assert.ok(sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains").includes('<p class="empty">No elements.</p>'));
 });
 
 test("the actions table carries the document's rows", () => {
-  const html = renderHtml(golden(), table, template);
+  const html = renderHtml(golden(), table, template, vocabulary);
   const actions = html.slice(html.indexOf('id="actions"'), html.indexOf('id="lints"'));
   assert.ok(actions.includes("<th>Status</th>"), "the actions table has no status column");
   assert.ok(actions.includes("<code>ch-3</code>"), "the actions table is missing ch-3's actions");
 });
 
 test("the actions table is in the order of section 5.2, open actions first and each row id a link", () => {
-  const actions = sectionOf(renderHtml(golden(), table, template), "actions", "lints");
+  const actions = sectionOf(renderHtml(golden(), table, template, vocabulary), "actions", "lints");
   assert.ok(actions.includes('<p class="caption" id="actions-caption">Open actions first, by target date; closed actions last.</p>'));
   // The fixture links three actions, so the head ends in the Tracker column.
   assert.ok(actions.includes("<thead><tr><th>Target</th><th>Row</th><th>Action</th><th>Description</th><th>Owner</th><th>Status</th><th>Completed</th><th>Tracker</th></tr></thead>"));
@@ -1068,23 +1151,23 @@ test("the actions table is in the order of section 5.2, open actions first and e
 test("slot filling never re-expands a $ pattern from a field value", () => {
   const doc = minimalDoc();
   doc.meta.name = "Cost $& rises $1 and $` here";
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   assert.ok(html.includes("<title>Cost $&amp; rises $1 and $` here</title>"), "a $ pattern in a field value was re-expanded by the slot filler");
 });
 
 test("the provenance appendix has a head row, and a chain named like a section keeps its own anchor", () => {
-  const provenance = sectionOf(renderHtml(golden(), table, template), "provenance", "fmea-data");
+  const provenance = sectionOf(renderHtml(golden(), table, template, vocabulary), "provenance", "fmea-data");
   assert.ok(provenance.includes("<thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>"));
   const doc = minimalDoc();
   doc.chains[0].id = "actions";
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   assert.equal(occurrences(html, 'id="actions"'), 1);
   assert.equal(occurrences(html, 'id="row-actions"'), 1);
 });
 
 test("every href in the report resolves to exactly one id, and the actions, checks and provenance sections link every row id", () => {
   for (const doc of [golden(), staleRows()]) {
-    const html = renderHtml(doc, table, template);
+    const html = renderHtml(doc, table, template, vocabulary);
     const targets = new Set([...html.matchAll(/href="#([^"]*)"/g)].map((m) => m[1]));
     assert.ok(targets.size > 0);
     for (const target of targets) assert.equal(occurrences(html, `id="${target}"`), 1, `#${target} does not resolve to exactly one id`);
@@ -1103,7 +1186,7 @@ test("a chain id holding an injection vector is escaped in the row's id and in e
   doc.chains[0].id = vector;
   doc.chains[0].actions = [{ id: "act-1", description: "add alerting", owner: "T. Tester", status: "Open", target_date: "2026-10-01" }];
   doc.chains[0].catalog_refs = [{ id: "cat-service-01", provenance: "cites:C036" }];
-  const html = renderHtml(doc, table, template);
+  const html = renderHtml(doc, table, template, vocabulary);
   const escaped = escapeHtml(vector);
   assert.ok(!html.includes("<img"), "the vector opened a tag");
   assert.equal(occurrences(html, `id="row-${escaped}"`), 1);
@@ -1130,7 +1213,7 @@ function linkedAction(overrides: Partial<TrackerLink> = {}): FmeaDocument {
 
 test("the Actions table has no Tracker column when no action is linked: the report is what it was", () => {
   // The fixture is linked now, so the unlinked report is the fixture with its links removed.
-  const html = renderHtml(withoutTracker(golden()), table, template);
+  const html = renderHtml(withoutTracker(golden()), table, template, vocabulary);
   const actions = sectionOf(html, "actions", "lints");
   assert.ok(actions.includes(`${TABLE_HEAD}</tr></thead>`));
   assert.ok(!html.includes("Tracker"), "no tracker text anywhere");
@@ -1138,7 +1221,7 @@ test("the Actions table has no Tracker column when no action is linked: the repo
 });
 
 test("with a link, the Actions table gains a Tracker heading and a cell per row, a dash where there is no link", () => {
-  const actions = sectionOf(renderHtml(linkedAction(), table, template), "actions", "lints");
+  const actions = sectionOf(renderHtml(linkedAction(), table, template, vocabulary), "actions", "lints");
   assert.ok(actions.includes(`${TABLE_HEAD}<th>Tracker</th></tr></thead>`));
   const rows = actions.match(/<tr[ >].*?<\/tr>/g) ?? [];
   assert.equal(rows.length, 3, "head and two body rows");
@@ -1146,12 +1229,12 @@ test("with a link, the Actions table gains a Tracker heading and a cell per row,
 });
 
 test("a tracker cell is the key as a link, then the seen text", () => {
-  const actions = sectionOf(renderHtml(linkedAction(), table, template), "actions", "lints");
+  const actions = sectionOf(renderHtml(linkedAction(), table, template, vocabulary), "actions", "lints");
   assert.ok(actions.includes(`<td><a href="${LINK_URL}">acme/checkout#12</a> <span class="muted">open, seen 2026-10-02</span></td></tr>`));
 });
 
 test("a null url renders the key as text, with no anchor", () => {
-  const html = renderHtml(linkedAction({ url: "http://github.example.com/x" }), table, template);
+  const html = renderHtml(linkedAction({ url: "http://github.example.com/x" }), table, template, vocabulary);
   const actions = sectionOf(html, "actions", "lints");
   assert.ok(actions.includes(`<td>acme/checkout#12 <span class="muted">open, seen 2026-10-02</span></td></tr>`));
   assert.ok(!html.slice(0, html.indexOf('id="fmea-data"')).includes("http://github.example.com/x"), "the url is not printed in the report");
@@ -1159,7 +1242,7 @@ test("a null url renders the key as text, with no anchor", () => {
 
 test("a key holding markup is entity-escaped, and a detail holding markup is not printed in the tracker text", () => {
   const evil = `<img src=x onerror="alert(1)">&'`;
-  const html = renderHtml(linkedAction({ key: evil, observed: { state: "open", detail: evil, date: "2026-10-02" } }), table, template);
+  const html = renderHtml(linkedAction({ key: evil, observed: { state: "open", detail: evil, date: "2026-10-02" } }), table, template, vocabulary);
   assert.ok(!html.includes("<img src=x"), "no raw markup");
   assert.ok(html.includes(escapeHtml(evil)), "the key is escaped");
   const model = buildReportModel(linkedAction({ observed: { state: "open", detail: evil, date: "2026-10-02" } }), table);
@@ -1167,7 +1250,7 @@ test("a key holding markup is entity-escaped, and a detail holding markup is not
 });
 
 test("a row section's action line ends with the same tracker text when the action is linked", () => {
-  const html = renderHtml(linkedAction(), table, template);
+  const html = renderHtml(linkedAction(), table, template, vocabulary);
   const section = between(html, 'id="row-ch-1"', "</article>");
   const text = `<a href="${LINK_URL}">acme/checkout#12</a> <span class="muted">open, seen 2026-10-02</span>`;
   assert.ok(section.includes(`target 2026-11-01)</span> ${text}</li>`), "the linked action line");

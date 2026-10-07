@@ -86,7 +86,7 @@ test("formatError escapes a line separator in the pointer, the class the message
   assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u2028b\\u2029c");
 });
 
-test("CODES holds exactly the twenty-one codes of the closed list", () => {
+test("CODES holds exactly the twenty-two codes of the closed list", () => {
   assert.deepEqual(Object.keys(CODES), [
     "USAGE",
     "NODE",
@@ -106,6 +106,7 @@ test("CODES holds exactly the twenty-one codes of the closed list", () => {
     "IO_EXISTS",
     "IO_CHANGED",
     "TABLE_MALFORMED",
+    "VOCABULARY_READ",
     "TRACKER_UNAVAILABLE",
     "TRACKER_REJECTED",
     "INTERNAL",
@@ -128,6 +129,7 @@ test("exitStatus maps every code to 1 usage, 2 validation, or 3 I/O", () => {
   assert.equal(exitStatus("IO_EXISTS"), 3);
   assert.equal(exitStatus("IO_CHANGED"), 3);
   assert.equal(exitStatus("TABLE_MALFORMED"), 3);
+  assert.equal(exitStatus("VOCABULARY_READ"), 3);
   assert.equal(exitStatus("INTERNAL"), 3);
   assert.equal(exitStatus("TRACKER_PLAN"), 1);
   assert.equal(exitStatus("TRACKER_PUBLIC"), 1);
