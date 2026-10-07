@@ -322,7 +322,7 @@
         },
         "security_relevant": {
           "type": "boolean",
-          "description": "True when the element is trusted to perform correctly to maintain a required security property (authentication, authorisation, confidentiality or integrity). A run's default answer is false. The security rows of the catalog apply when true."
+          "description": "True when a required security property (authentication, authorisation, confidentiality or integrity) depends on the element working correctly. A run's default answer is false. The security rows of the catalog apply when true."
         },
         "security_rationale": {
           "$ref": "#/$defs/nonEmptyString",

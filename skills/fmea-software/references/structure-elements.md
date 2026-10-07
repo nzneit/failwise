@@ -7,7 +7,7 @@ Each element answers three questions, in this order: its boundary, its role and 
 
 1. **Boundary:** does this analysis cover the element, does the organisation own it outside this analysis, or is it outside the organisation's control? [skill-authored] The answer is the element's `boundary`, one of `in_scope`, `owned_outside` and `third_party`. [skill-authored]
 2. **Role:** what kind of element is it? [skill-authored] The answer is the element's `kind`, one of `service`, `datastore`, `event_stream`, `interface` and `component`, taken from the first role test it passes. [skill-authored]
-3. **Security relevance:** does a required security property depend on the element working correctly? [skill-authored] The answer is the element's `security_relevant`, true or false. [skill-authored]
+3. **Security relevance:** does a required security property depend on the element working correctly? [paraphrased:C157] The answer is the element's `security_relevant`, true or false. [skill-authored]
 
 The three answers are independent of one another: the role says which catalog rows apply, the boundary whether the dependency rows apply on top of them, and the flag whether the security rows apply as well. [skill-authored]
 The tests that decide each answer are in the definitions below, and the sections after them say what each answer brings. [skill-authored]
@@ -26,7 +26,7 @@ The region between the two markers below is generated from `data/element-vocabul
 | Datastore (`datastore`) | Holds state at rest that other elements read or write; does nothing on its own | The data-store container of the C4 model (C153) and the data store in Microsoft's SDL threat-modeling article (C147); the data items of the NASA Software Safety Guidebook (C137) are a basis for per-kind data fault types. | [paraphrased:C153] [cites:C147] [cites:C137] [skill-authored] |
 | Event stream (`event_stream`) | Decouples producers from consumers in time: one queue, topic or log, never the broker | Queues and topics as containers in the C4 model (C154); the software events of the NASA Software Safety Guidebook (C138) are a basis for per-kind event fault types. | [paraphrased:C154] [cites:C138] [skill-authored] |
 | Interface (`interface`) | A contract between two elements that is analysed in its own right: its schema, versions, limits and error contract | The interface failure class of the NASA Software Safety Guidebook (C136) and the TSF interfaces of Common Criteria (C158). | [cites:C136] [cites:C158] [skill-authored] |
-| Component (`component`) | Everything else: code that ships inside another element's deployable and has no runtime of its own, including a library, a module, a handler, a job function, an ML model | The component of the C4 model (C153); the decomposition below the deployable into CSCI, unit and object in the NASA Software Engineering Handbook (C135) is a basis for this role. | [paraphrased:C153] [cites:C135] [skill-authored] |
+| Component (`component`) | Everything else: code that ships inside another element's deployable and has no runtime of its own, including a library, a module, a handler, a job function, an ML model | The component of the C4 model (C153); the CSCIs, units, objects and instances a software FMEA inventories by design phase in the NASA Software Engineering Handbook (C135) are a basis for this role. | [paraphrased:C153] [cites:C135] [skill-authored] |
 
 ### Boundary
 
@@ -40,7 +40,7 @@ The region between the two markers below is generated from `data/element-vocabul
 
 | Flag | Test | Basis | Provenance |
 |---|---|---|---|
-| Security-relevant | If this element misbehaves, can someone see or do what the system must prevent? | The security-relevant hardware, software and firmware of NIST SP 800-53 Rev. 5 (C157), the TOE security functionality of Common Criteria (C158), and the isolation of security functions in NIST SP 800-53 Rev. 5 (C156), the reason the class is worth marking; the list of properties, authentication, authorisation, confidentiality or integrity, is the skill's own. | [cites:C157] [cites:C158] [cites:C156] [skill-authored] |
+| Security-relevant | If this element misbehaves, can someone see or do what the system must prevent? | The security-relevant components of NIST SP 800-53 Rev. 5 (C157), the TOE security functionality of Common Criteria (C158), and the isolation of security functions in NIST SP 800-53 Rev. 5 (C156), the reason the class is worth marking; the list of properties, authentication, authorisation, confidentiality or integrity, is the skill's own. | [paraphrased:C157] [cites:C158] [cites:C156] [skill-authored] |
 
 ### Tie-breaks
 
@@ -70,12 +70,12 @@ Strength stays in the `dependency` block, strong or weak, as a property of the e
 
 The role tests are asked in the order of the Role table, and the first yes wins: an element that passes the `service` test is a `service` even when a later test would also fit it. [skill-authored]
 When the tests leave an element between two roles, the tie-breaks in the definitions decide, and each of them is the skill's own. [skill-authored]
-The data items of the NASA Software Safety Guidebook, its software events, and the NASA Software Engineering Handbook's decomposition below the deployable into CSCI, unit and object are a basis for the `datastore`, `event_stream` and `component` tests, never their definition. [cites:C137] [cites:C138] [cites:C135]
-The fit is loose on purpose: the guidebook's data items are variables, its events are software events, and a CSCI can be a whole deployable. [cites:C137] [cites:C138] [cites:C135]
+The data items of the NASA Software Safety Guidebook, its software events, and the CSCIs, units, objects and instances that the NASA Software Engineering Handbook has a software FMEA inventory by design phase are a basis for the `datastore`, `event_stream` and `component` tests, never their definition. [cites:C137] [cites:C138] [cites:C135]
+The fit is loose on purpose: these are a basis, not a match. [skill-authored]
 
 ## Security relevance
 
-An element is security-relevant when a required security property depends on it working correctly, the class NIST SP 800-53 Rev. 5 calls security-relevant components and Common Criteria calls the TOE security functionality. [cites:C157] [cites:C158]
+An element is security-relevant when a required security property depends on it working correctly, the class NIST SP 800-53 Rev. 5 calls security-relevant components and Common Criteria calls the TOE security functionality. [paraphrased:C157] [cites:C158]
 The properties the skill counts are authentication, authorisation, confidentiality and integrity, a list that is the skill's own. [skill-authored]
 The test is one question: if this element misbehaves, can someone see or do what the system must prevent? [skill-authored]
 The class is worth marking because NIST SP 800-53 Rev. 5 asks for security functions to be isolated from the functions that are not, in control SC-3. [cites:C156]

@@ -127,7 +127,7 @@ On a cascading chain the `trigger` field therefore repeats the cause it was fill
 
 `seeded-action-without-incident` fires on every action lacking a `source_incident` on a chain that has one, because the JSON does not record whether an action was carried over from the postmortem's action items or authored during the analysis. [skill-authored]
 The reviewer decides which: a carried-over action breaches the rule and is given the incident identifier, an authored action is left as it stands and is never given a `source_incident` it did not come from. [skill-authored]
-The second clause of the same record, that every implemented action is re-analysed as a potential cause, is a reviewer rule and is carried below as `implemented-action-as-cause`. [skill-authored]
+The second clause of the same record, that every implemented action is re-analysed as a potential cause, is a reviewer rule and is carried below as `implemented-action-as-cause`. [paraphrased:C076]
 
 ## WS5. Rating scales and prioritization
 
@@ -154,7 +154,7 @@ The four AIAG-VDA rows above — `no-aiag-occurrence-table`, `occurrence-footnot
 | Id | Rule | Severity | Records | Enforcement | Provenance |
 |---|---|---|---|---|---|
 | `schema` | An imported `actions[].status` of Discarded is migrated to the post-errata vocabulary or the import fails; it is never silently accepted. | blocker | C064 | validator | [paraphrased:C064] |
-| `post-ratings-without-completed` | A row whose actions all resolve to no action carries no `post_ratings` and no `post_priority`, so its risk and its priority stand unchanged; the invariant admits a post-action re-rating only when at least one action has status Completed, and a blank post-action field is never read as an improvement. | blocker | C064 | validator | [paraphrased:C064] |
+| `post-ratings-without-completed` | A row whose actions all resolve to no action carries no `post_ratings` and no `post_priority`, so its risk and its priority stand unchanged, and a blank post-action field is never read as an improvement. | blocker | C064 | validator | [paraphrased:C064] |
 | `mixed-action-status-not-no-action` | A row whose prevention and detection actions carry different statuses is not a no-action row, so each action's own status is read before concluding that no action was taken. | warning | C064 | reviewer | [paraphrased:C064] |
 | `priority-value-mismatch` | The loaded table file, not the document, holds the priority vocabulary, so a value outside it fails and an extended vocabulary a catalog declares — a non-participating marker, a safety marker, a top marker, a numeric rendering — is accepted when that table declares it. | blocker | C122 | validator | [paraphrased:C122] |
 | `priority-row-table-mismatch` | Every row names the priority table it was rated under, because each table declares its own value set and its own mapping from S, O and D. | blocker | C122 | validator | [paraphrased:C122] |
@@ -167,11 +167,12 @@ The four AIAG-VDA rows above — `no-aiag-occurrence-table`, `occurrence-footnot
 | `similar-modes-severity-spread` | Similar failure modes at the same level whose severities differ by more than two are flagged. | warning | C090 | reviewer | [paraphrased:C090] |
 | `high-priority-without-action` | A chain whose `actions[]` is empty and whose `priority.value` is not the last value in the declared order of the table named by `priority.table` is flagged. | blocker | C090 | reviewer | [adapted-from:C090] |
 | `mode-text-contains-cause` | A failure mode whose text carries cause language is flagged. | warning | C090 | reviewer | [paraphrased:C090] |
-| `schema` | Computed fields live only in the `computed` block, so the quality score and the lint findings never mix with authored fields; `validate.ts --write` replaces that block whole. | blocker | C090 | validator | [paraphrased:C090] |
+| `schema` | Computed fields live only in the `computed` block, so the quality score and the lint findings never mix with authored fields. | blocker | C090 | validator | [paraphrased:C090] |
 | `schema` | `controls[].kind` carries three values, prevention, detection and compensating, because a field split only two ways cannot represent a compensating provision. | blocker | C120 | validator | [paraphrased:C120] |
 
 `detection-1-without-evidenced-control` is the implemented form of that row: it fires when `ratings.D.value` equals 1 and no `controls[]` entry has `kind` `detection`, `status` `existing` and an `evidence.kind` other than `none`, the condition `scales-software.md` states under the same id. [skill-authored]
 Version 1's implemented lints cover only that detection half at the bottom value; the occurrence half of the same machine row has the same shape in the JSON — `ratings.O.value` at the bottom of the scale with no such `prevention` control — but is unimplemented in version 1 and is not restated as a reviewer rule, so the defect is still reported once. [skill-authored]
+The `post-ratings-without-completed` invariant goes further than its record: it admits a post-action re-rating only when at least one action has status Completed. [skill-authored]
 `high-priority-without-action` is stated table-scoped rather than as a fixed H or M, because the vocabulary and its order come from the loaded table rather than from the document. [skill-authored]
 That is also why it is a reviewer rule and not a lint: the analysis JSON carries only the table's id in `priority.table` and `meta.scales.priority_table`, so whether a value is the last in the declared order is read from the loaded table, not decided from the document alone. [skill-authored]
 
