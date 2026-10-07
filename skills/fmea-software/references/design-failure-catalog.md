@@ -58,7 +58,7 @@ Cross-references: a control that becomes the cause is filed here as `cat-service
 
 ### Dependency rows
 
-Placement: these rows apply to any element outside the analysis boundary — boundary `owned_outside` or `third_party` — and to any in-scope element that carries a `dependency` block, on top of its role's rows; which is exactly the dependency-classification material in the Azure records and the recovery-chain material in the Gunawi records. [skill-authored]
+Placement: these rows apply to any element outside the analysis boundary — boundary `owned_outside` or `third_party` — and to any in-scope element that carries a `dependency` block, on top of its role's rows; that is exactly the dependency-classification material in the Azure records and the recovery-chain material in the Gunawi records. [skill-authored]
 Cross-references: cascading failure is filed as `cat-service-01` and applies to a dependency that shifts load onto its own survivors; metastable failure is filed as `cat-service-02` and applies when the sustaining loop lives in the dependency; retry amplification is filed as `cat-service-03` and applies to retries aimed at a dependency. [skill-authored]
 
 | Row | Mode | Effects | Causes | Controls | Trigger or exposure | Provenance |

@@ -10,7 +10,7 @@ No input is a rating and no input is a chain; an input is evidence about the sys
 |---|---|---|---|
 | 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. | [paraphrased:C014] |
 | 2 | Component inventory by type | The system decomposed by component type: ingress, networking, compute, data, storage, supporting services — identity, messaging, key and secret storage — and egress. | [paraphrased:C014] |
-| 3 | Dependency classification | Every dependency placed on two axes: internal or external by the element's boundary (`in_scope` against `owned_outside` or `third_party`), and strong or weak. | [paraphrased:C014] |
+| 3 | Dependency classification | Every dependency placed on two axes: internal or external by the element's boundary (`in_scope` against `owned_outside` or `third_party`), and strong or weak. | [paraphrased:C014] [skill-authored] |
 | 4 | Dependency reliability data | For every element that carries a `dependency` block, whatever its boundary, the availability SLA and the scaling limits. | [paraphrased:C014] [skill-authored] |
 | 5 | Incident history | The incidents the system has had, the postmortems written for them, and the follow-up tasks those postmortems raised. | [cites:C023] |
 | 6 | Release controls | Release-side controls such as canary releases and staged rollouts. | [cites:C018] |
@@ -29,7 +29,8 @@ Items 1 to 4 are the structure inputs and are wanted before step 2; items 5 to 9
 Flows come first: the analysis assumes user and system flows have already been identified and prioritised by criticality, and plans the components each critical flow needs against them. [paraphrased:C014]
 Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [skill-authored]
 A strong dependency is one the system cannot function or stay available without; a weak one, when absent, costs named features while the system as a whole keeps serving. [paraphrased:C014]
-The reliability data — availability SLA, scaling limits — is stated for internal dependencies; capturing it for external ones as well is a choice the analysis may make, not something the checklist asks for [paraphrased:C014]; this skill asks for it on every element carrying a `dependency` block, a `skill-authored` extension. [skill-authored]
+The reliability data — availability SLA, scaling limits — is stated for internal dependencies; capturing it for external ones as well is a choice the analysis may make, not something the checklist asks for. [paraphrased:C014]
+This skill asks for it on every element carrying a `dependency` block, a `skill-authored` extension. [skill-authored]
 Internal or external is a boundary question, strong or weak is a criticality question, and an element is classified on both. [skill-authored]
 In the analysis JSON this lands on the element: `dependency.strength` holds strong or weak, `dependency.sla` and `dependency.limits` hold the commitment and the limits as free text in the source's own words. [skill-authored]
 An element whose boundary is `owned_outside` or `third_party` must carry `dependency` and is an external dependency; an `in_scope` element that carries one is an internal dependency. [skill-authored]
