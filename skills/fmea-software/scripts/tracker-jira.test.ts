@@ -583,6 +583,20 @@ test("closed_date is the UTC date of the resolution date, in the recorded form, 
   assert.ok(!Object.hasOwn(undated, "closed_date"));
 });
 
+test("a resolution date outside the recorded timestamp form is TRACKER_REJECTED, even one Node would parse to a date (R3)", async () => {
+  for (const resolutiondate of ["1", "2026-10-07", "2026-10-07T00:50:25", "October 7, 2026", "2026-10-07 00:50:25Z", " 2026-10-07T04:50:25Z", "2026-10-07T04:50:25.Z"]) {
+    holds(await rejectsWith(readOne(viewed("FAILW-5", { resolutiondate })), "TRACKER_REJECTED"), "in a form the script cannot read");
+  }
+  assert.equal((await readOne(viewed("FAILW-5", { resolutiondate: "2026-10-07T04:50:25+00:00" }))).closed_date, "2026-10-07");
+});
+
+test("a view whose id is not the link's id, or that has no id, fails the read with TRACKER_REJECTED (R4)", async () => {
+  const { id: _id, ...idless } = JSON.parse(viewed().stdout) as Record<string, unknown>;
+  for (const answer of [viewed("FAILW-5", {}, "10016"), ok(idless)]) {
+    holds(await rejectsWith(readOne(answer), "TRACKER_REJECTED"), "in a form the script cannot read");
+  }
+});
+
 test("a moved item answers under its new key, and the link's key and url follow it", async () => {
   const [moved] = await setup([viewed("FLSCR-5", { status: status("Backlog", "new"), resolution: null, resolutiondate: null }, "10019")]).provider.read([linkTo("FAILW-8", "10019")]);
   assert.deepEqual(moved.link, { provider: "jira", id: "10019", key: "FLSCR-5", url: "https://jira.example.com/browse/FLSCR-5" });

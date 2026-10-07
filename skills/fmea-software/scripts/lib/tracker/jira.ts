@@ -25,6 +25,8 @@ const PROJECT_KEY = /^[A-Z][A-Z0-9_]*$/;
 /** The grammars under which a stored link is read (§5.2): a numeric id and a work item key. */
 const ITEM_ID = /^[0-9]+$/;
 const ITEM_KEY = /^[A-Z][A-Z0-9_]*-[1-9][0-9]*$/;
+/** A resolution date as Jira writes one: a date, a time and an offset or Z (R3). */
+const TIMESTAMP = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:?[0-9]{2})$/;
 const CATEGORIES = new Set(["new", "indeterminate", "done", "undefined"]);
 const VIEW_FIELDS = "--fields=status,resolution,resolutiondate,description";
 const DEFAULT_TYPE = "Task";
@@ -338,11 +340,12 @@ function resolutionOf(fields: Json): string | null | undefined {
   return isRecord(resolution) && typeof resolution.name === "string" ? resolution.name : undefined;
 }
 
-/** The UTC date of the resolution date (s5), null when there is none, or undefined when Node cannot parse it. */
+/** The UTC date of the resolution date (s5), null when there is none, or undefined when it is not a
+ *  timestamp of the recorded form or Node cannot parse it (R3). */
 function resolvedOn(fields: Json): string | null | undefined {
   const { resolutiondate } = fields;
   if (resolutiondate === null || resolutiondate === undefined) return null;
-  const time = typeof resolutiondate === "string" ? new Date(resolutiondate) : undefined;
+  const time = typeof resolutiondate === "string" && TIMESTAMP.test(resolutiondate) ? new Date(resolutiondate) : undefined;
   const date = time === undefined || Number.isNaN(time.getTime()) ? "" : time.toISOString().slice(0, 10);
   return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date) ? date : undefined;
 }
@@ -366,14 +369,15 @@ function stateOf(fields: Json, lists: Lists): { state: ObservedState; detail: st
   return state === "open" || date === null ? { state, detail } : { state, detail, closed_date: date };
 }
 
-/** The answered key, the fields and the description of a view, each of the shape read. The key is
- *  held to the work item key grammar: the observation's link is stored, and the next read refuses a
- *  stored key outside it before any request (R2). */
-function viewOf(stdout: string): { key: string; fields: Json; description: AdfDoc | null } {
+/** The answered key, the fields and the description of a view of the item `id`, each of the shape
+ *  read. The key is held to the work item key grammar: the observation's link is stored, and the
+ *  next read refuses a stored key outside it before any request (R2). An answer for another id is
+ *  not of the shape read (R4). */
+function viewOf(stdout: string, id: string): { key: string; fields: Json; description: AdfDoc | null } {
   const item = jsonOf(stdout);
   const fields: unknown = isRecord(item) ? item.fields : undefined;
   const description = descriptionOf(fields);
-  if (!isRecord(item) || typeof item.key !== "string" || !ITEM_KEY.test(item.key) || !isRecord(fields) || description === undefined) {
+  if (!isRecord(item) || item.id !== id || typeof item.key !== "string" || !ITEM_KEY.test(item.key) || !isRecord(fields) || description === undefined) {
     throw unreadable("the view", stdout);
   }
   return { key: item.key, fields, description };
@@ -384,7 +388,7 @@ async function observe(ctx: Ctx, link: Link): Promise<Observation> {
   const answer = await run(ctx, ["workitem", "view", link.id, VIEW_FIELDS, "--json"]);
   if (answer.status === 1 && answer.firstLine === NOT_FOUND) return { link, state: "unreachable", detail: "not found" };
   if (answer.status !== 0) throw failure(answer);
-  const { key, fields, description } = viewOf(answer.stdout);
+  const { key, fields, description } = viewOf(answer.stdout, link.id);
   return { link: linkOf(ctx, link.id, key), ...stateOf(fields, ctx.lists), marker: readMarker(description)?.key ?? null };
 }
 

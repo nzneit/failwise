@@ -11,6 +11,9 @@ import { loadTable } from "./lib/table.ts";
 import { exitStatus } from "./lib/codes.ts";
 import { textHash } from "./lib/tracker/items.ts";
 import { fakeProvider } from "./tracker-fakes.ts";
+import { authStatus, count, created, fakeAcli, HOST, jiraConfig, ok, project, status as jiraStatus, viewed, workItem } from "./tracker-acli.ts";
+import { jiraProvider } from "./lib/tracker/jira.ts";
+import type { ProcessResult } from "./lib/tracker/spawn.ts";
 import type { FakeOptions, FakeProvider } from "./tracker-fakes.ts";
 import type { Link, Observation, Provider, RemoteItem } from "./lib/tracker/provider.ts";
 import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerConfig, TrackerLink } from "./lib/types.ts";
@@ -42,6 +45,11 @@ function remote(n: number, of: Action): RemoteItem {
 
 function observation(n: number, state: ObservedState, detail: string = state, closed_date?: string): Observation {
   return closed_date === undefined ? { link: linkOf(n), state, detail } : { link: linkOf(n), state, detail, closed_date };
+}
+
+/** The action linked to the Jira work item `jiraKey`, as apply would have recorded it. */
+function jiraLinked(a: Action, jiraKey = "FAILW-5", id = "10015"): Action {
+  return { ...a, tracker: { provider: "jira", id, key: jiraKey, url: `https://${HOST}/browse/${jiraKey}`, linked: "2026-10-07" } };
 }
 
 /** minimalDoc with this tracker configuration and these actions on its only row. */
@@ -117,8 +125,19 @@ async function applyPlanned(s: Session, ...flags: string[]): Promise<Run> {
   return s.track("apply", "--plan", await planDigest(s), ...flags);
 }
 
+/** A session on `doc` whose provider is the Jira adapter for the document's target, over a fake
+ *  acli that answers from `answers` in order. */
+function jiraSession(t: TestContext, doc: FmeaDocument, answers: ProcessResult[]): Session {
+  const config = doc.meta.tracker;
+  if (config === undefined) throw new Error("a Jira session needs a document with meta.tracker");
+  return session(t, doc, {}, jiraProvider(config, fakeAcli(answers).acli));
+}
+
+/** What describe and listMarked of the Jira adapter ask acli for on an empty project, in order. */
+const LISTED_EMPTY: ProcessResult[] = [authStatus(), project(), count(0), ok([])];
+
 /** Runs track.ts as a subprocess with the default provider and a PATH that is an empty folder, so
- *  no run can find gh, whatever the run reaches. Node itself is started by its absolute path. Every
+ *  no run can find gh or acli, whatever the run reaches. Node itself is started by its absolute path. Every
  *  subprocess run of track.ts goes through here. */
 function runTrack(t: TestContext, argv: string[]): { status: number; stdout: string; stderr: string } {
   const empty = mkdtempSync(join(tmpdir(), "fmea-no-gh-"));
@@ -251,6 +270,17 @@ test("a subprocess run of track.ts cannot find gh: a valid document stops at TRA
     assert.equal(cli.status, 3);
     assert.equal(cli.stdout, "");
     assert.equal(cli.stderr, "error TRACKER_UNAVAILABLE: gh was not found: install the GitHub CLI and sign in with gh auth login\n");
+  }
+  assert.equal(s.built(), 0);
+});
+
+test("a subprocess run of track.ts on a Jira document cannot find acli: a valid document stops at TRACKER_UNAVAILABLE naming acli", (t) => {
+  const s = session(t, docOn(jiraConfig, act(1)));
+  for (const argv of [["plan", s.path], ["refresh", s.path]]) {
+    const cli = runTrack(t, argv);
+    assert.equal(cli.status, 3, cli.stderr);
+    assert.equal(cli.stdout, "");
+    assert.match(cli.stderr, /^error TRACKER_UNAVAILABLE: acli was not found/);
   }
   assert.equal(s.built(), 0);
 });
@@ -645,6 +675,72 @@ test("refresh on a document with no link exits 0, prints no items and makes no r
   assert.equal(status, 0);
   assert.deepEqual(result.items, []);
   assert.deepEqual(s.fake.calls, ["describe"]);
+});
+
+test("refresh gives link-mismatch, no proposal and no observed, for an observation whose marker names another key and for one whose marker is null, and --write leaves those actions as they were", async (t) => {
+  const s = session(t, docWith(linked(act(1), 1), linked(act(2), 2), linked(act(3), 3)), {
+    observations: [{ ...observation(1, "done"), marker: "fmea-min/ch-1/act-9" }, { ...observation(2, "done"), marker: null }, observation(3, "done")],
+  });
+  const stored = linksIn(s.doc());
+  const { status, result } = await s.track("refresh", "--write");
+  assert.equal(status, 0);
+  for (const [i, item] of result.items.slice(0, 2).entries()) {
+    assert.deepEqual(item, { key: key(i + 1), pointer: `/chains/0/actions/${i}`, status: "Open", link: linkOf(i + 1), finding: "link-mismatch" });
+    assert.equal("observed" in item, false);
+    assert.equal("proposal" in item, false);
+  }
+  assert.deepEqual(result.items[2].proposal, { status: "Completed" });
+  const after = linksIn(s.doc());
+  assert.deepEqual(after.slice(0, 2), stored.slice(0, 2));
+  assert.deepEqual(after[2]?.observed, { state: "done", detail: "done", date: TODAY });
+});
+
+// the Jira adapter behind track.ts
+
+test("plan on a Jira target whose work type the project does not offer, or whose parent sits in another project, is TRACKER_REJECTED with the reason, and refresh still reads", async (t) => {
+  const elsewhere = ok(workItem("FLSCR-1", "10030", { project: { id: "10002", key: "FLSCR", name: "Scratch" }, issuetype: { id: "10005", name: "Epic", hierarchyLevel: 1, subtask: false } }));
+  const cases: [TrackerConfig, ProcessResult[], RegExp][] = [
+    [{ ...jiraConfig, type: "Nope" }, [], /it offers: Epic, Subtask, Task, Story$/],
+    [{ ...jiraConfig, parent: "FLSCR-1" }, [elsewhere], /^the parent FLSCR-1 sits in the project FLSCR, not FAILW$/],
+  ];
+  for (const [config, parent, reason] of cases) {
+    const described = [authStatus(), project(), ...parent];
+    const s = jiraSession(t, docOn(config, jiraLinked(act(1))), [...described, ...described, viewed()]);
+    await assert.rejects(s.track("plan"), { code: "TRACKER_REJECTED", message: reason });
+    assert.equal(exitStatus("TRACKER_REJECTED"), 3);
+    const { status, result } = await s.track("refresh");
+    assert.equal(status, 0);
+    assert.equal(result.items.length, 1);
+  }
+});
+
+test("apply on a Jira target creates through the adapter, records the key and the url built from the host, and stops before the second write when the site changed, with that key in remaining and no link written for it", async (t) => {
+  const s = jiraSession(t, docOn(jiraConfig, act(1), act(2)), [...LISTED_EMPTY, ...LISTED_EMPTY, authStatus(), created("FAILW-5", "10015"), authStatus("other.atlassian.net")]);
+  const { status, result } = await applyPlanned(s, "--public-ok");
+  assert.equal(status, 3);
+  assert.deepEqual(result.done.map((d) => [d.key, d.link]), [[key(1), { provider: "jira", id: "10015", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5" }]]);
+  assert.deepEqual(result.remaining, [key(2)]);
+  assert.equal(result.failure?.code, "TRACKER_UNAVAILABLE");
+  assert.deepEqual(linksIn(s.doc()), [{ provider: "jira", id: "10015", key: "FAILW-5", url: "https://jira.example.com/browse/FAILW-5", linked: TODAY }, undefined]);
+});
+
+test("a created Jira item that comes back without the label records its link, puts its key in done, and stops with TRACKER_REJECTED and no failure.link", async (t) => {
+  const s = jiraSession(t, docOn(jiraConfig, act(1)), [...LISTED_EMPTY, ...LISTED_EMPTY, authStatus(), created("FAILW-5", "10015", { labels: [] })]);
+  const { status, result } = await applyPlanned(s, "--public-ok");
+  assert.equal(status, 3);
+  assert.deepEqual(result.done.map((d) => d.key), [key(1)]);
+  assert.equal(result.failure?.code, "TRACKER_REJECTED");
+  assert.equal(result.failure !== undefined && "link" in result.failure, false);
+  assert.equal(linksIn(s.doc())[0]?.key, "FAILW-5");
+});
+
+test("refresh on a Jira item closed under names in neither list prints closed-unclear with a detail naming the status and the resolution", async (t) => {
+  const closed = viewed("FAILW-5", { status: jiraStatus("Closed", "done"), resolution: { name: "Duplicate" } });
+  const s = jiraSession(t, docOn(jiraConfig, jiraLinked(act(1))), [authStatus(), project(), closed]);
+  const { status, result } = await s.track("refresh");
+  assert.equal(status, 0);
+  assert.equal(result.items[0].finding, "closed-unclear");
+  assert.equal(result.items[0].observed.detail, "Closed, resolution Duplicate");
 });
 
 // the authored fields
