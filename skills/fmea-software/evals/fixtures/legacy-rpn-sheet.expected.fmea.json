@@ -12,7 +12,7 @@
       "excluded": [
         "every element the sheet does not name"
       ],
-      "security": "The sheet records no security component and no security boundary; the boundary is left undeclared by the conversion and belongs to the first review."
+      "security": "The sheet records no security-relevant element and no security boundary; the boundary is left undeclared by the conversion and belongs to the first review."
     },
     "ground_rules": [
       "The conversion carries the sheet's own values and does not re-rate them.",
@@ -41,7 +41,7 @@
       {
         "version": 1,
         "date": "2026-09-07",
-        "change": "Converted from legacy-rpn-sheet.csv on 2026-09-07. Column mapping: Item to elements[].name and its derived id; Function to functions[].statement; Failure Mode to chains[].failure_mode; Effect to chains[].effects.end; Cause to chains[].causes[0].text; Current Controls to chains[].controls[0], whose kind is read from the cell's own prefix; S, O and D to chains[].ratings.S|O|D.value; RPN read for reference only and never copied, priority.rpn being recomputed by priority.ts from the retained ratings; Recommended Action to chains[].actions[0].description; Owner to chains[].actions[0].owner; Status to chains[].actions[0].status; Justification to chains[].ratings.S|O|D.rationale. Ratings retained with review status authored, by J. Legacy, date 2025-11-30, both read from the sheet's header rows. Declared defaults, each counted here rather than invented: rationale substituted with the text 'converted from legacy-rpn-sheet.csv; no rationale recorded' on 1 of 4 rows; evidence_kind set to estimate on 4 of 4 rows because the sheet has no evidence column; trigger left empty on 4 of 4 rows; effects.local and effects.next_level set to 'not recorded in legacy-rpn-sheet.csv' on 4 of 4 rows because the sheet carries a single Effect column; functions[].for_whom set to 'not recorded in legacy-rpn-sheet.csv' on 4 of 4 functions; controls[].status set to existing and controls[].evidence.kind set to none on 4 of 4 rows because the sheet records neither; actions[].target_date set to the conversion date 2026-09-07 on 4 of 4 actions because the sheet has no target date column; dependency.strength set to strong on the 1 of 4 elements typed external_dependency, because section 6 requires a dependency block on that kind and the sheet records no classification; the choice is recorded as an open assumption. The sheet's stated RPN differs from the product of the retained ratings on 1 of 4 rows and the sheet's value is recorded in that row's history."
+        "change": "Converted from legacy-rpn-sheet.csv on 2026-09-07. Column mapping: Item to elements[].name and its derived id; Function to functions[].statement; Failure Mode to chains[].failure_mode; Effect to chains[].effects.end; Cause to chains[].causes[0].text; Current Controls to chains[].controls[0], whose kind is read from the cell's own prefix; S, O and D to chains[].ratings.S|O|D.value; RPN read for reference only and never copied, priority.rpn being recomputed by priority.ts from the retained ratings; Recommended Action to chains[].actions[0].description; Owner to chains[].actions[0].owner; Status to chains[].actions[0].status; Justification to chains[].ratings.S|O|D.rationale. Ratings retained with review status authored, by J. Legacy, date 2025-11-30, both read from the sheet's header rows. Declared defaults, each counted here rather than invented: rationale substituted with the text 'converted from legacy-rpn-sheet.csv; no rationale recorded' on 1 of 4 rows; evidence_kind set to estimate on 4 of 4 rows because the sheet has no evidence column; trigger left empty on 4 of 4 rows; effects.local and effects.next_level set to 'not recorded in legacy-rpn-sheet.csv' on 4 of 4 rows because the sheet carries a single Effect column; functions[].for_whom set to 'not recorded in legacy-rpn-sheet.csv' on 4 of 4 functions; controls[].status set to existing and controls[].evidence.kind set to none on 4 of 4 rows because the sheet records neither; actions[].target_date set to the conversion date 2026-09-07 on 4 of 4 actions because the sheet has no target date column; elements typed by the converter from the item text, the sheet having no type, owner or external column: Checkout API an interface in scope, Payment Gateway a service outside the organisation, Order Store a datastore in scope, Pricing Service a service in scope; security_relevant set to false on 4 of 4 elements because the sheet says nothing otherwise; dependency.strength set to strong on the 1 of 4 elements whose boundary is third_party, because a boundary other than in_scope requires a dependency block and the sheet records no classification, the fail-safe reading being that the system cannot serve without it; the choice is recorded as an open assumption. The sheet's stated RPN differs from the product of the retained ratings on 1 of 4 rows and the sheet's value is recorded in that row's history."
       }
     ]
   },
@@ -52,6 +52,8 @@
       "name": "Checkout API",
       "description": "Item 'Checkout API' of legacy-rpn-sheet.csv.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -61,10 +63,12 @@
     },
     {
       "id": "payment-gateway",
-      "kind": "external_dependency",
+      "kind": "service",
       "name": "Payment Gateway",
       "description": "Item 'Payment Gateway' of legacy-rpn-sheet.csv.",
       "parent": null,
+      "boundary": "third_party",
+      "security_relevant": false,
       "dependency": {
         "strength": "strong"
       },
@@ -81,6 +85,8 @@
       "name": "Order Store",
       "description": "Item 'Order Store' of legacy-rpn-sheet.csv.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -94,6 +100,8 @@
       "name": "Pricing Service",
       "description": "Item 'Pricing Service' of legacy-rpn-sheet.csv.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",

@@ -5,7 +5,7 @@
 // prompt (model, run, total/max, musts at 2, pass), a stability table, an
 // overall table per (prompt, model), and the completeness critic's lists.
 //
-// Usage: node tools/eval-report.ts [--results build/evals/results.json] [--out docs/specs/2026-09-07-eval-results.md]
+// Usage: node tools/eval-report.ts [--results build/evals/results.json] [--out docs/specs/2026-09-07-eval-results.md] [--title "Eval results, v1"]
 //
 // The pass rule (spec §10, evals/rubric.md): a run passes when every `must`
 // criterion scores 2 and the total is at least 80% of the maximum; a
@@ -14,7 +14,7 @@
 // scores rather than trusting the judge's arithmetic.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { isEntry } from "./lib/entry.ts";
 
 /** The repository root. Judge text quotes paths absolute under it; `oneLine` strips the prefix. */
@@ -30,9 +30,14 @@ const ROOT_AT_BOUNDARY = new RegExp(
   "g",
 );
 
-export interface Criterion { id: string; must: boolean; prompts: number[] }
+/** A rubric criterion; `rubric` is the rubric version that introduced it, 1 when absent. */
+export interface Criterion { id: string; must: boolean; prompts: number[]; rubric?: number }
 
-/** The twelve rubric criteria (plan reference §I). c5 does not apply to prompt 6, c11 applies to prompt 6 only, c12 to prompt 7 only. */
+/**
+ * The thirteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
+ * c11 applies to prompt 6 only, c12 to prompt 7 only, and c13 to prompts 1 and 6
+ * under rubric 2 only.
+ */
 export const CRITERIA: Criterion[] = [
   { id: "c1-missing-inputs-asked", must: true, prompts: [1, 5, 6, 7] },
   { id: "c2-element-traceability", must: true, prompts: [1, 5, 6, 7] },
@@ -46,6 +51,7 @@ export const CRITERIA: Criterion[] = [
   { id: "c10-no-invented-elements", must: true, prompts: [1, 5, 6, 7] },
   { id: "c11-prompt6-conversion", must: true, prompts: [6] },
   { id: "c12-prompt7-update", must: true, prompts: [7] },
+  { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 },
 ];
 
 /** Short titles for the four prompts, in the words of spec §10. */
@@ -290,8 +296,9 @@ function pairOutcome(results: EvalResults, p: number, c: string): PairOutcome {
   const r1 = runOf(results, p, c, 1);
   const r2 = runOf(results, p, c, 2);
   const s = stabilityFor(results, p, c);
-  const p1 = r1 ? summarizeRun(p, r1.scores).pass : false;
-  const p2 = r2 ? summarizeRun(p, r2.scores).pass : false;
+  const rubric = rubricOf(results);
+  const p1 = r1 ? summarizeRun(p, r1.scores, rubric).pass : false;
+  const p2 = r2 ? summarizeRun(p, r2.scores, rubric).pass : false;
   const st = s ? s.pass : false;
   const unver = (r1?.unverified ?? false) || (r2?.unverified ?? false) || (s?.unverified ?? false);
   return { r1, r2, s, p1, p2, st, unver };
@@ -473,6 +480,8 @@ export interface StabilityResult {
   jaccard: number; maxRows: number; countDiffs: Record<string, number>; bound: number; pass: boolean;
   /** True when the stability agent never returned: the two runs were never compared. */
   unverified?: boolean;
+  /** Of the element ids both runs carry, how many agree on role and boundary (eval-stability.ts). */
+  typing?: { shared: number; agreeing: number; pass: boolean };
 }
 export interface CriticResult { missing: { area: string; detail: string }[]; blocking_candidates: string[] }
 /** A judge, stability pair, or critic whose agent never returned (plan reference §C). */
@@ -487,6 +496,8 @@ export interface Rejudging {
   models?: Record<string, string>; reason: string; unverified: number;
 }
 export interface EvalResults {
+  /** The rubric version the runs were judged under (evals/rubric.md); absent means 1. */
+  rubric?: number;
   /** The effective model table the judging ran under: model capability -> model name (first in results.json since 2026-09-12). */
   models: Record<string, string>;
   runs: RunResult[]; stability: StabilityResult[]; critic: CriticResult;
@@ -497,13 +508,19 @@ export interface EvalResults {
 
 export interface RunSummary { total: number; max: number; mustsAt2: number; mustCount: number; pass: boolean }
 
-export function criteriaFor(prompt: number): Criterion[] {
-  return CRITERIA.filter((c) => c.prompts.includes(prompt));
+/** The criteria a prompt is scored on under a rubric version: those it applies to that the version had introduced. */
+export function criteriaFor(prompt: number, rubric = 1): Criterion[] {
+  return CRITERIA.filter((c) => c.prompts.includes(prompt) && (c.rubric ?? 1) <= rubric);
+}
+
+/** The rubric version a results file was judged under: 1 when it records none. */
+function rubricOf(results: EvalResults): number {
+  return results.rubric ?? 1;
 }
 
 /** Totals from the per-criterion scores; a criterion the judge omitted scores 0. */
-export function summarizeRun(prompt: number, scores: RunScore[]): RunSummary {
-  const applicable = criteriaFor(prompt);
+export function summarizeRun(prompt: number, scores: RunScore[], rubric = 1): RunSummary {
+  const applicable = criteriaFor(prompt, rubric);
   const byId = new Map(scores.map((s) => [s.id, s.score]));
   let total = 0;
   let mustsAt2 = 0;
@@ -717,13 +734,19 @@ function stabilityFor(results: EvalResults, prompt: number, capability: string):
   return results.stability.find((s) => s.prompt === prompt && s.model_capability === capability);
 }
 
-export function renderReport(results: EvalResults): string {
+/** The document's title and how its header names the results file. */
+interface ReportOptions { title: string; resultsLabel: string }
+
+/** The options the v1 document was generated with, and the CLI's defaults. */
+const V1_OPTIONS: ReportOptions = { title: "Eval results, v1", resultsLabel: "build/evals/results.json" };
+
+export function renderReport(results: EvalResults, options: ReportOptions = V1_OPTIONS): string {
   const prompts = [...new Set(results.runs.map((r) => r.prompt))].sort((a, b) => a - b);
   const capabilities = [...new Set(results.runs.map((r) => r.model_capability))].sort();
   return [
-    "# Eval results, v1",
+    `# ${options.title}`,
     "",
-    "Generated by `node tools/eval-report.ts` from `build/evals/results.json`. Scores follow `skills/fmea-software/evals/rubric.md`; every criterion is 0 to 2. A run passes when every must scores 2 and the total is at least 80% of the maximum. A (prompt, model capability) pair passes when both runs pass and the stability check passes.",
+    `Generated by \`node tools/eval-report.ts\` from \`${options.resultsLabel}\`. Scores follow \`skills/fmea-software/evals/rubric.md\`; every criterion is 0 to 2. A run passes when every must scores 2 and the total is at least 80% of the maximum. A (prompt, model capability) pair passes when both runs pass and the stability check passes.`,
     "",
     ...preRulingScoresSection(results),
     ...scoresPerPromptSection(results, prompts),
@@ -788,7 +811,7 @@ function promptScores(results: EvalResults, p: number): string[] {
     .filter((r) => r.prompt === p)
     .sort((a, b) => a.model_capability.localeCompare(b.model_capability) || a.run - b.run);
   for (const r of runs) {
-    const s = summarizeRun(r.prompt, r.scores);
+    const s = summarizeRun(r.prompt, r.scores, rubricOf(results));
     // A run whose judge never returned is not a scored 0: it is a hole in the evidence.
     const verdict = r.unverified ? "UNVERIFIED" : yesNo(s.pass);
     lines.push(`| ${r.model_capability} | ${r.run} | ${s.total} / ${s.max} | ${s.mustsAt2} / ${s.mustCount} | ${verdict} |`);
@@ -798,7 +821,7 @@ function promptScores(results: EvalResults, p: number): string[] {
   // score on every prompt-6 run, judged before ruling 9 took c5 out of prompt 6,
   // and summarizeRun ignores it. A criterion the run was not scored on has no
   // business in a list of the criteria it scored below 2.
-  const applicable = new Set(criteriaFor(p).map((c) => c.id));
+  const applicable = new Set(criteriaFor(p, rubricOf(results)).map((c) => c.id));
   const belowTwo = runs.flatMap((r) =>
     r.scores
       .filter((sc) => applicable.has(sc.id) && sc.score < 2)
@@ -822,25 +845,38 @@ function promptScores(results: EvalResults, p: number): string[] {
 
 /** `## Stability between runs`: one row per (prompt, model capability) pair. */
 function stabilitySection(results: EvalResults, prompts: number[], capabilities: string[]): string[] {
+  // The Typing column appears only when some entry carries typing, so a results
+  // file written before eval-stability.ts reported it renders as it always did.
+  const typed = results.stability.some((s) => s.typing !== undefined);
   const lines: string[] = [];
   lines.push("## Stability between runs");
   lines.push("");
-  lines.push("| Prompt | Model capability | Jaccard | Max rows | Bound | Count diffs | Pass |");
-  lines.push("|---|---|---|---|---|---|---|");
+  lines.push(`| Prompt | Model capability | Jaccard | Max rows | Bound | Count diffs |${typingCell(typed, "Typing")} Pass |`);
+  lines.push(`|---|---|---|---|---|---|${typed ? "---|" : ""}---|`);
   for (const p of prompts) {
     for (const m of capabilities) {
       const s = stabilityFor(results, p, m);
       if (!s) {
-        lines.push(`| ${p} | ${m} | — | — | — | — | FAIL (no result) |`);
+        lines.push(`| ${p} | ${m} | — | — | — | — |${typingCell(typed, "—")} FAIL (no result) |`);
         continue;
       }
       const diffs = Object.entries(s.countDiffs).map(([k, v]) => `${k}: ${v}`).join(", ");
       const verdict = s.unverified ? "UNVERIFIED" : yesNo(s.pass);
-      lines.push(`| ${p} | ${m} | ${fmt(s.jaccard)} | ${s.maxRows} | ${fmt(s.bound)} | ${diffs} | ${verdict} |`);
+      lines.push(`| ${p} | ${m} | ${fmt(s.jaccard)} | ${s.maxRows} | ${fmt(s.bound)} | ${diffs} |${typingCell(typed, typingText(s))} ${verdict} |`);
     }
   }
   lines.push("");
   return lines;
+}
+
+/** The Typing column's cell, with its leading space and closing bar, or nothing when the table has no such column. */
+function typingCell(typed: boolean, text: string): string {
+  return typed ? ` ${text} |` : "";
+}
+
+/** A stability entry's typing as `agreeing/shared pass`, or a dash when the entry carries none. */
+function typingText(s: StabilityResult): string {
+  return s.typing === undefined ? "—" : `${s.typing.agreeing}/${s.typing.shared} ${yesNo(s.typing.pass)}`;
 }
 
 /** `## Overall per prompt and model capability`: one row per pair. */
@@ -1026,6 +1062,7 @@ type ResultsShape = {
   critic: Record<string, unknown>;
   unverified?: unknown;
   rejudged?: unknown;
+  rubric?: unknown;
 };
 
 // The top-level shape: runs and stability are lists and critic is an object.
@@ -1090,6 +1127,19 @@ function stabilityEntryProblem(s: unknown, i: number): string | null {
   }
   if (!isObject(s.countDiffs)) return `has a stability entry with no countDiffs object ${at}`;
   if (typeof s.pass !== "boolean") return `has a stability entry whose pass is not a boolean ${at}`;
+  if (s.typing !== undefined && !isTyping(s.typing)) return `has a stability entry whose typing is not {shared, agreeing, pass} ${at}`;
+  return null;
+}
+
+/** A stability entry's typing as eval-stability.ts writes it: two counts and a verdict. */
+function isTyping(t: unknown): boolean {
+  return isObject(t) && typeof t.shared === "number" && typeof t.agreeing === "number" && typeof t.pass === "boolean";
+}
+
+/** The top-level rubric version: absent (rubric 1), or a whole number of at least 1. */
+function rubricProblem(rubric: unknown): string | null {
+  if (rubric === undefined) return null;
+  if (typeof rubric !== "number" || !Number.isInteger(rubric) || rubric < 1) return "has a rubric that is not a positive integer";
   return null;
 }
 
@@ -1165,18 +1215,31 @@ function resultsProblem(v: unknown): string | null {
     // criticListsProblem proved both critic lists are lists.
     ?? criticEntriesProblem(critic.missing as unknown[], critic.blocking_candidates as unknown[])
     ?? unverifiedProblem(results.unverified)
-    ?? rejudgedProblem(results.rejudged);
+    ?? rejudgedProblem(results.rejudged)
+    ?? rubricProblem(results.rubric);
+}
+
+/**
+ * How the header names the results file: relative to the repository root when
+ * the file is inside it, so the default prints `build/evals/results.json`, and
+ * as given otherwise.
+ */
+function resultsLabel(resultsPath: string): string {
+  const rel = relative(ROOT, resolve(resultsPath));
+  return rel.startsWith("..") ? resultsPath : rel;
 }
 
 function main(argv: string[]): number {
   let resultsPath = join(ROOT, "build", "evals", "results.json");
   let outPath = join(ROOT, "docs", "specs", "2026-09-07-eval-results.md");
+  let title = V1_OPTIONS.title;
   for (let i = 0; i < argv.length; i++) {
     const value = argv[i + 1];
     if (argv[i] === "--results" && value !== undefined) { resultsPath = value; i++; }
     else if (argv[i] === "--out" && value !== undefined) { outPath = value; i++; }
+    else if (argv[i] === "--title" && value !== undefined) { title = value; i++; }
     else {
-      fail("USAGE", "usage: node tools/eval-report.ts [--results results.json] [--out report.md]");
+      fail("USAGE", "usage: node tools/eval-report.ts [--results results.json] [--out report.md] [--title text]");
       return 1;
     }
   }
@@ -1192,7 +1255,7 @@ function main(argv: string[]): number {
     fail("IO_READ", `${resultsPath} ${problem}`);
     return 3;
   }
-  writeFileSync(outPath, renderReport(parsed as EvalResults));
+  writeFileSync(outPath, renderReport(parsed as EvalResults, { title, resultsLabel: resultsLabel(resultsPath) }));
   process.stdout.write(`wrote ${outPath}\n`);
   return 0;
 }

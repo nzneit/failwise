@@ -9,6 +9,7 @@ import {
   jaccard,
   priorityCounts,
   stability,
+  typing,
   SHIPPED_TABLE_PATH,
   JACCARD_MIN,
   COUNT_BOUND_FRACTION,
@@ -22,6 +23,12 @@ function doc(ids: string[], priorities: string[]): FmeaDocument {
     elements: ids.map((id) => ({ id })),
     chains: priorities.map((value) => ({ priority: { value } })),
   };
+}
+
+type Typed = [id: string, kind?: string, boundary?: string];
+
+function typedDoc(elements: Typed[]): FmeaDocument {
+  return { elements: elements.map(([id, kind, boundary]) => ({ id, kind, boundary })), chains: [] };
 }
 
 test("identical documents: jaccard 1, every count diff 0, pass", () => {
@@ -108,7 +115,7 @@ test("CLI prints the Stability JSON for two files and a table file", () => {
     );
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assert.deepEqual(out, { jaccard: 1, maxRows: 2, countDiffs: { H: 0, M: 1, L: 1 }, bound: 0.4, pass: false });
+    assert.deepEqual(out, { jaccard: 1, maxRows: 2, countDiffs: { H: 0, M: 1, L: 1 }, bound: 0.4, pass: false, typing: { shared: 2, agreeing: 0, pass: false } });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -251,6 +258,72 @@ test("a malformed JSON file is one coded IO_READ line even though the parse mess
     assert.equal(r.status, 3);
     assert.equal(r.stderr.trimEnd().split("\n").length, 1, r.stderr);
     assert.match(r.stderr, /^error IO_READ: cannot read /);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("typing: every shared id with equal kind and boundary agrees and passes", () => {
+  const els: Typed[] = [["a", "service", "internal"], ["b", "store", "internal"], ["c", "actor", "external"]];
+  const t = typing(typedDoc(els), typedDoc(els));
+  assert.deepEqual(t, { shared: 3, agreeing: 3, pass: true });
+});
+
+test("typing: a shared id whose boundary differs does not agree", () => {
+  const a = typedDoc([["a", "service", "internal"], ["b", "store", "internal"], ["c", "actor", "external"]]);
+  const b = typedDoc([["A ", "service", "internal"], ["b", "store", "internal"], ["c", "actor", "internal"]]);
+  assert.deepEqual(typing(a, b), { shared: 3, agreeing: 2, pass: false });
+});
+
+test("typing: an id in one run only is not shared", () => {
+  const a = typedDoc([["a", "service", "internal"], ["b", "store", "internal"]]);
+  const b = typedDoc([["a", "service", "internal"], ["c", "store", "internal"]]);
+  assert.deepEqual(typing(a, b), { shared: 1, agreeing: 1, pass: true });
+});
+
+test("typing: no shared id fails closed", () => {
+  const a = typedDoc([["a", "service", "internal"]]);
+  const b = typedDoc([["b", "service", "internal"]]);
+  assert.deepEqual(typing(a, b), { shared: 0, agreeing: 0, pass: false });
+});
+
+test("typing: a run whose element lacks kind or boundary does not agree on that id", () => {
+  const full = typedDoc([["a", "service", "internal"], ["b", "store", "internal"], ["c", "actor", "external"]]);
+  const gaps = typedDoc([["a", undefined, "internal"], ["b", "store", undefined], ["c", "actor", "external"]]);
+  assert.deepEqual(typing(full, gaps), { shared: 3, agreeing: 1, pass: false });
+  assert.deepEqual(typing(gaps, gaps), { shared: 3, agreeing: 1, pass: false });
+});
+
+test("the CLI prints typing beside the five stability fields", () => {
+  const dir = mkdtempSync(join(tmpdir(), "eval-stability-typing-"));
+  try {
+    const els: Typed[] = [["a", "service", "internal"], ["b", "actor", "external"]];
+    writeFileSync(join(dir, "run1.json"), JSON.stringify(typedDoc(els)));
+    writeFileSync(join(dir, "run2.json"), JSON.stringify(typedDoc(els)));
+    const r = spawnSync(process.execPath, [join(import.meta.dirname, "eval-stability.ts"), join(dir, "run1.json"), join(dir, "run2.json")], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.deepEqual(Object.keys(out), ["jaccard", "maxRows", "countDiffs", "bound", "pass", "typing"]);
+    assert.deepEqual(out.typing, { shared: 2, agreeing: 2, pass: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an element whose kind or boundary is present but not a string is one coded IO_READ line", () => {
+  const script = join(import.meta.dirname, "eval-stability.ts");
+  const dir = mkdtempSync(join(tmpdir(), "eval-stability-badtype-"));
+  try {
+    const good = join(dir, "run2.json");
+    writeFileSync(good, JSON.stringify(doc(["a"], ["H"])));
+    for (const bad of [{ id: "a", kind: 3 }, { id: "a", boundary: null }]) {
+      const path = join(dir, "run1.json");
+      writeFileSync(path, JSON.stringify({ elements: [bad], chains: [] }));
+      const r = spawnSync(process.execPath, [script, path, good], { encoding: "utf8" });
+      assert.equal(r.status, 3);
+      assert.equal(r.stderr.trimEnd().split("\n").length, 1, r.stderr);
+      assert.match(r.stderr, /^error IO_READ: .*elements\[0\]/);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

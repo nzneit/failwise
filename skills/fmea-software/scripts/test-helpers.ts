@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,6 +111,45 @@ export function changedMessage(path: string): string {
   return `${path} changed after this command last read or wrote it, so it was not replaced and holds the other writer's change: run the command again on the file as it now is`;
 }
 
+/** One way a v1 document reaches a script: a name, the change that turns the checkout fixture into
+ *  it, and the pointer of the KIND_LEGACY line that refuses it. validate.ts, render.ts and track.ts
+ *  are each run over the whole list. */
+export interface LegacyTrigger { name: string; mutate: (doc: FmeaDocument) => void; pointer: string }
+
+const element = (doc: FmeaDocument, i: number): Record<string, unknown> => doc.elements[i] as unknown as Record<string, unknown>;
+
+export const LEGACY_TRIGGERS: LegacyTrigger[] = [
+  { name: "a v1 document with no boundary is KIND_LEGACY, pointing at the element, before the schema runs",
+    mutate: (doc) => { delete element(doc, 0).boundary; }, pointer: "/elements/0" },
+  { name: "a v1 document with no security_relevant is KIND_LEGACY",
+    mutate: (doc) => { delete element(doc, 0).security_relevant; }, pointer: "/elements/0" },
+  { name: "a removed kind is KIND_LEGACY, pointing at the kind",
+    mutate: (doc) => { element(doc, 2).kind = "external_dependency"; }, pointer: "/elements/2/kind" },
+  { name: "a legacy row id in catalog_refs is KIND_LEGACY, pointing at the id",
+    mutate: (doc) => { doc.chains[0].catalog_refs[0].id = "cat-external_dependency-01"; }, pointer: "/chains/0/catalog_refs/0/id" },
+  { name: "a legacy row id that survives only in a catalog source is KIND_LEGACY, pointing at the ref",
+    mutate: (doc) => { doc.elements[2].sources[1].ref = "cat-security_component-01"; }, pointer: "/elements/2/sources/1/ref" },
+];
+
+/** Writes the checkout fixture, changed by `trigger`, to analysis.json in `dir` and returns the path. */
+export function writeLegacy(dir: string, trigger: LegacyTrigger): string {
+  const doc = loadFixture<FmeaDocument>("checkout-service.fmea.json");
+  trigger.mutate(doc);
+  const path = join(dir, "analysis.json");
+  writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+  return path;
+}
+
+/** A script's run refused the document with exit 2 and one KIND_LEGACY line at `pointer`, and the
+ *  schema stage never ran. */
+export function assertLegacyRefused(r: { status: number; stderr: string }, pointer: string): void {
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^error KIND_LEGACY: format-legacy: document predates schema v2 \(/m);
+  assert.ok(r.stderr.endsWith(` at ${pointer}\n`), r.stderr);
+  assert.equal(r.stderr.split("\n").length, 2, r.stderr);
+  assert.ok(!r.stderr.includes("error SCHEMA:"), r.stderr);
+}
+
 /** A rating for test documents. A provisional review carries no `by` or `date`; any other status
  *  must carry both (an invariant the validator checks). */
 export function rating(value: number, status: ReviewStatus = "rescored", evidence: RatingEvidenceKind = "estimate"): Rating {
@@ -134,7 +174,7 @@ export function minimalDoc(): FmeaDocument {
       version: 1,
       branch: "DFMEA",
       scope: "one element",
-      boundary: { included: ["svc"], excluded: [], security: "no security component in scope" },
+      boundary: { included: ["svc"], excluded: [], security: "no security-relevant element in scope" },
       ground_rules: [],
       assumptions: [],
       reviews: [],
@@ -144,7 +184,7 @@ export function minimalDoc(): FmeaDocument {
       history: [],
     },
     elements: [
-      { id: "svc", kind: "service", name: "Service", description: "", parent: null, sources: [{ kind: "document", ref: "arch.md" }] },
+      { id: "svc", kind: "service", name: "Service", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] },
     ],
     functions: [
       { id: "fn-1", element: "svc", statement: "serve requests", conditions: [], for_whom: "clients" },

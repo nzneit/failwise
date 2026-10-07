@@ -12,6 +12,7 @@ export const CODES = {
   TRACKER_PLAN: EXIT_USAGE,
   TRACKER_PUBLIC: EXIT_USAGE,
   SCHEMA: EXIT_VALIDATION,
+  KIND_LEGACY: EXIT_VALIDATION, // raised by legacyIssues in legacy.ts, before the schema stage, for a v1 document
   INVARIANT: EXIT_VALIDATION,
   PRIORITY_MISMATCH: EXIT_VALIDATION,
   TABLE_ID_MISMATCH: EXIT_VALIDATION,
@@ -24,6 +25,7 @@ export const CODES = {
   IO_EXISTS: EXIT_IO,
   IO_CHANGED: EXIT_IO, // raised by writeFileAtomic in io.ts when the file changed between a script's read and its write
   TABLE_MALFORMED: EXIT_IO,
+  VOCABULARY_READ: EXIT_IO, // raised by loadVocabulary in vocabulary.ts, for a data/element-vocabulary-v1.json that cannot be read or is malformed
   TRACKER_UNAVAILABLE: EXIT_IO,
   TRACKER_REJECTED: EXIT_IO,
   INTERNAL: EXIT_IO,

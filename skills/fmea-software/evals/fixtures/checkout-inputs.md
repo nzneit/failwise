@@ -10,19 +10,20 @@ Synthetic inputs for the fmea-software evals. Nothing here describes a real syst
 
 ## Component inventory
 
-| Element | Kind | Parent | What it is |
-|---|---|---|---|
-| checkout | service | none | The checkout service: orchestrates pricing, payment authorization, and order persistence. |
-| checkout.api | interface | checkout | The public HTTP interface the storefront calls to submit and confirm a cart. |
-| checkout.payment-gateway | external_dependency | checkout | A third-party card authorization gateway reached over HTTPS. |
-| checkout.order-store | datastore | checkout | The relational store holding orders and their state transitions. |
-| checkout.session-auth | security_component | checkout | The session token issuer and verifier that authenticates a shopper. |
-| pricing | service | none | The pricing service that returns a priced cart for a shopper and a locale. |
+| Element | Role | Boundary | Security-relevant | Parent | What it is |
+|---|---|---|---|---|---|
+| checkout | service | in_scope | no | none | The checkout service: orchestrates pricing, payment authorization, and order persistence. |
+| checkout.api | interface | in_scope | no | checkout | The public HTTP interface the storefront calls to submit and confirm a cart. |
+| checkout.payment-gateway | service | third_party | no | checkout | A third-party card authorization gateway reached over HTTPS. |
+| checkout.order-store | datastore | in_scope | no | checkout | The relational store holding orders and their state transitions. |
+| checkout.session-auth | component | in_scope | yes | checkout | The session token issuer and verifier that authenticates a shopper. |
+| pricing | service | owned_outside | no | none | The pricing service that returns a priced cart for a shopper and a locale. |
 
 ## Dependencies
 
 - checkout depends on checkout.payment-gateway. Strong: a failed authorization fails the checkout.
 - checkout depends on pricing. Weak: checkout falls back to the last quoted price held in the cart when pricing does not answer.
+- pricing is run by the platform team and is not under analysis here; checkout sees only its published contract.
 
 ## SLAs and limits
 

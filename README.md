@@ -2,7 +2,7 @@
 
 failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report.
 
-It is version 0.2.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions as GitHub issues, new in 0.2.0, has no evaluation. Read [Status and limitations](#status-and-limitations) before relying on it.
+It is version 0.3.0, a pre-release: the evaluations of the skill, run on 0.1.0, did not pass, and the tracking of actions as GitHub issues, new in 0.2.0, has no evaluation. Version 0.3.0 changes the analysis schema to v2: every element now carries a boundary and a security flag, and the former `external_dependency` and `security_component` kinds became those two attributes; an analysis written against 0.2.x is refused with one `KIND_LEGACY` line and is migrated through the skill's update mode, as `SKILL.md` describes under "Migrate a v1 document". Read [Status and limitations](#status-and-limitations) before relying on it.
 
 ## What an FMEA is
 
@@ -100,7 +100,7 @@ Known limitations:
 
 Not in this version:
 
-- Ready-made failure modes for every kind of element. The skill's catalog has them for services, external dependencies and components, with a short set for security components. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
+- Ready-made failure modes for every kind of element. The skill's catalog has them for services and components, with dependency rows for any element outside the analysis or carrying a dependency block and a short security set for security-relevant elements. For interfaces, event streams, datastores and ML or LLM components it asks guiding questions instead.
 - Threat modeling. A failure whose cause is an adversary is recorded as a handoff to threat modeling.
 - Process-side FMEA (PFMEA) of delivery, pipelines or operations. Such a request gets a short answer naming what is sourced and what is missing, and no analysis.
 
