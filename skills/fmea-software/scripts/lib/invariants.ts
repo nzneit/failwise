@@ -118,8 +118,8 @@ function sourceIssues(elements: Element[]): Issue[] {
 function dependencyIssues(elements: Element[]): Issue[] {
   const out: Issue[] = [];
   for (let i = 0; i < elements.length; i++) {
-    if (elements[i].kind === "external_dependency" && elements[i].dependency === undefined) {
-      out.push(invariant("element-dependency-required", `element ${elements[i].id} is an external_dependency and needs a dependency block`, ptr("elements", i, "dependency")));
+    if (elements[i].boundary !== "in_scope" && elements[i].dependency === undefined) {
+      out.push(invariant("element-dependency-required", `element ${elements[i].id} has boundary ${elements[i].boundary} and needs a dependency block`, ptr("elements", i, "dependency")));
     }
   }
   return out;

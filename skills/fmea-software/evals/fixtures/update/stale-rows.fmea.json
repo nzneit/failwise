@@ -53,14 +53,18 @@
       "name": "Checkout service",
       "description": "Orchestrates pricing, payment authorization, and order persistence for a submitted cart.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#component-inventory" }]
     },
     {
       "id": "checkout.payment-gateway",
-      "kind": "external_dependency",
+      "kind": "service",
       "name": "Payment gateway",
       "description": "A third-party card authorization gateway reached over HTTPS.",
       "parent": "checkout",
+      "boundary": "third_party",
+      "security_relevant": false,
       "dependency": {
         "strength": "strong",
         "sla": "99.95% monthly",
@@ -70,10 +74,13 @@
     },
     {
       "id": "checkout.session-auth",
-      "kind": "security_component",
+      "kind": "component",
       "name": "Session authentication",
       "description": "The session token verifier that authenticates a shopper; tokens are now issued by the shared identity service rather than by checkout.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": true,
+      "security_rationale": "Verifies the session token that authenticates a shopper; a wrong accept lets a stranger act as the shopper.",
       "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#component-inventory" }]
     },
     {
@@ -82,6 +89,8 @@
       "name": "Order store",
       "description": "The relational store holding orders and their state transitions.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#component-inventory" }]
     },
     {
@@ -90,6 +99,8 @@
       "name": "Pricing service",
       "description": "Returns a priced cart for a shopper and a locale.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "dependency": { "strength": "weak", "sla": "99.9% monthly" },
       "sources": [{ "kind": "document", "ref": "architecture-notes-2026-09.md#dependencies" }]
     }

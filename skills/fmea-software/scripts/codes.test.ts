@@ -348,7 +348,7 @@ test("runCli resolves its script under scripts/ and reports the child's status a
 });
 
 const TYPE_NAMES = [
-  "ElementKind", "SourceKind", "ControlKind", "ControlStatus", "ControlEvidenceKind",
+  "ElementKind", "ElementBoundary", "SourceKind", "ControlKind", "ControlStatus", "ControlEvidenceKind",
   "RatingEvidenceKind", "ReviewStatus", "ActionStatus", "CauseOrigin", "StaleReason",
   "AssumptionStatus", "Strength", "Factor", "Severity", "HistoryEntry", "Assumption",
   "Review", "Boundary", "Scales", "Meta", "Dependency", "Source", "Element", "Fn", "Cause",

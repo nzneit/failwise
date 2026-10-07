@@ -83,13 +83,13 @@ test("chain-function-resolves flags a chain pointing at no function", () => {
 
 test("element-parent-resolves flags a parent that does not exist", () => {
   const doc = minimalDoc();
-  doc.elements.push({ id: "ghost.child", kind: "component", name: "Child", description: "", parent: "ghost", sources: [{ kind: "document", ref: "arch.md" }] });
+  doc.elements.push({ id: "ghost.child", kind: "component", name: "Child", description: "", parent: "ghost", boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
   expectOne(checkInvariants(doc), "element-parent-resolves", "INVARIANT", "/elements/1/parent");
 });
 
 test("element-parent-matches-id flags a parent that is not the dotted prefix", () => {
   const doc = minimalDoc();
-  doc.elements.push({ id: "svc.api", kind: "interface", name: "API", description: "", parent: null, sources: [{ kind: "document", ref: "arch.md" }] });
+  doc.elements.push({ id: "svc.api", kind: "interface", name: "API", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
   expectOne(checkInvariants(doc), "element-parent-matches-id", "INVARIANT", "/elements/1/parent");
 });
 
@@ -99,9 +99,9 @@ test("element-source-non-catalog flags an element sourced only from the catalog"
   expectOne(checkInvariants(doc), "element-source-non-catalog", "INVARIANT", "/elements/0/sources");
 });
 
-test("element-dependency-required flags an external_dependency with no dependency block", () => {
+test("element-dependency-required flags a third_party element with no dependency block", () => {
   const doc = minimalDoc();
-  doc.elements.push({ id: "svc.gateway", kind: "external_dependency", name: "Gateway", description: "", parent: "svc", sources: [{ kind: "document", ref: "arch.md" }] });
+  doc.elements.push({ id: "svc.gateway", kind: "service", name: "Gateway", description: "", parent: "svc", boundary: "third_party", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
   expectOne(checkInvariants(doc), "element-dependency-required", "INVARIANT", "/elements/1/dependency");
   doc.elements[1].dependency = { strength: "strong" };
   assert.deepEqual(only(checkInvariants(doc), "element-dependency-required"), []);

@@ -185,7 +185,7 @@ test("SUPPORTED_KEYWORDS and SUPPORTED_FORMATS are the contract lists", () => {
 test("loadSchema reads the shipped schema file", () => {
   assert.match(SCHEMA_PATH, /schemas\/fmea\.schema\.json$/);
   const schema = loadSchema();
-  assert.equal(schema.$id, "urn:fmea-software:schema:fmea:v1");
+  assert.equal(schema.$id, "urn:fmea-software:schema:fmea:v2");
   assert.throws(() => loadSchema("/nonexistent.schema.json"), (err: unknown) => err instanceof ScriptError && err.code === "IO_READ");
 });
 
@@ -202,6 +202,51 @@ test("forEachSchemaNode visits the root and every node under $defs, properties, 
 
 test("minimalDoc() yields no schema issues", () => {
   assert.deepEqual(checkSchema(minimalDoc()), []);
+});
+
+// The schema issues for minimalDoc() with its one element changed by edit.
+function elementIssues(edit: (element: Record<string, unknown>) => void): Issue[] {
+  const doc = minimalDoc();
+  edit(doc.elements[0] as unknown as Record<string, unknown>);
+  return checkSchema(doc);
+}
+
+test("the kind enum is the five roles and rejects the two removed kinds", () => {
+  for (const kind of ["external_dependency", "security_component"]) {
+    const issues = elementIssues((e) => { e.kind = kind; });
+    assert.deepEqual(issues.map((i) => i.pointer), ["/elements/0/kind"], kind);
+    assert.match(issues[0].message, /is not one of/);
+  }
+  for (const kind of ["datastore", "event_stream", "interface", "component", "service"]) {
+    assert.deepEqual(elementIssues((e) => { e.kind = kind; }), [], kind);
+  }
+});
+
+test("boundary and security_relevant are required on every element and boundary is the three-value enum", () => {
+  assert.deepEqual(elementIssues((e) => { delete e.boundary; }).map((i) => i.pointer), ["/elements/0"]);
+  assert.deepEqual(elementIssues((e) => { delete e.security_relevant; }).map((i) => i.pointer), ["/elements/0"]);
+  for (const boundary of ["in_scope", "owned_outside", "third_party"]) {
+    assert.deepEqual(elementIssues((e) => { e.boundary = boundary; }), [], boundary);
+  }
+  assert.deepEqual(elementIssues((e) => { e.boundary = "external"; }).map((i) => i.pointer), ["/elements/0/boundary"]);
+});
+
+test("security_rationale is an optional non-empty string", () => {
+  assert.deepEqual(elementIssues((e) => { delete e.security_rationale; }), []);
+  assert.deepEqual(elementIssues((e) => { e.security_rationale = ""; }).map((i) => i.pointer), ["/elements/0/security_rationale"]);
+  assert.deepEqual(elementIssues((e) => { e.security_rationale = "trusted to verify the token"; }), []);
+});
+
+test("a catalog ref id takes the dependency and security prefixes and rejects the removed ones", () => {
+  const withRef = (id: string): string[] => {
+    const doc = minimalDoc();
+    doc.chains[0].catalog_refs = [{ id, provenance: "skill-authored" }];
+    return checkSchema(doc).map((i) => i.pointer);
+  };
+  assert.deepEqual(withRef("cat-dependency-01"), []);
+  assert.deepEqual(withRef("cat-security-01"), []);
+  assert.deepEqual(withRef("cat-external_dependency-01"), ["/chains/0/catalog_refs/0/id"]);
+  assert.deepEqual(withRef("cat-security_component-01"), ["/chains/0/catalog_refs/0/id"]);
 });
 
 test("a chain may carry post_priority beside post_ratings, in the shape of priority", () => {

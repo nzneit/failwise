@@ -642,9 +642,9 @@ test("the provenance appendix names the catalog row, its tag, and the record the
 
 test("a skill-authored tag carries no record, so the record cell is an em dash", () => {
   const doc = minimalDoc();
-  doc.chains[0].catalog_refs = [{ id: "cat-security_component-01", provenance: "skill-authored" }];
+  doc.chains[0].catalog_refs = [{ id: "cat-security-01", provenance: "skill-authored" }];
   const html = renderHtml(doc, table, template);
-  assert.ok(html.includes("<td><code>cat-security_component-01</code></td><td><code>skill-authored</code></td><td>&mdash;</td>"));
+  assert.ok(html.includes("<td><code>cat-security-01</code></td><td><code>skill-authored</code></td><td>&mdash;</td>"));
 });
 
 test("injection vectors are escaped everywhere they are printed", () => {
@@ -933,10 +933,10 @@ function structureDoc(): FmeaDocument {
   const doc = minimalDoc();
   const src = doc.elements[0].sources;
   doc.elements = [
-    { id: "svc", kind: "service", name: "Service", description: "", parent: null, sources: src },
-    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", dependency: { strength: "weak" }, sources: src },
-    { id: "svc.db.shard", kind: "external_dependency", name: "Shard", description: "One shard.", parent: "svc.db", dependency: { strength: "strong", limits: "10 rps" }, sources: src },
-    { id: "elsewhere", kind: "security_component", name: "Stray", description: "Named apart.", parent: "svc", sources: src },
+    { id: "svc", kind: "service", name: "Service", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: src },
+    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", boundary: "in_scope", security_relevant: false, dependency: { strength: "weak" }, sources: src },
+    { id: "svc.db.shard", kind: "datastore", name: "Shard", description: "One shard.", parent: "svc.db", boundary: "third_party", security_relevant: false, dependency: { strength: "strong", limits: "10 rps" }, sources: src },
+    { id: "elsewhere", kind: "component", name: "Stray", description: "Named apart.", parent: "svc", boundary: "in_scope", security_relevant: true, security_rationale: "holds the signing key", sources: src },
   ];
   return doc;
 }
@@ -968,9 +968,9 @@ test("an element's block holds its name, its kind in words and its description",
   const el = golden().elements.find((x) => x.id === "checkout.session-auth");
   assert.ok(el !== undefined);
   assert.ok(auth.includes(`<span class="el-name">${escapeHtml(el.name)}</span>`), "the name is not in el-name");
-  assert.ok(auth.includes('<span class="el-kind">security component</span>'), "the kind is not printed in words");
+  assert.ok(auth.includes('<span class="el-kind">component</span>'), "the kind is not printed in words");
   assert.ok(auth.includes(`<p class="el-desc">${escapeHtml(el.description)}</p>`), "the description is not in el-desc");
-  assert.ok(elBlock(structure, "checkout.payment-gateway").includes('<span class="el-kind">external dependency</span>'));
+  assert.ok(elBlock(structure, "checkout.payment-gateway").includes('<span class="el-kind">service</span>'));
 });
 
 test("an element with an empty description prints no el-desc paragraph", () => {

@@ -50,6 +50,8 @@
       "name": "Checkout service",
       "description": "Orchestrates pricing, payment authorization, and order persistence for a submitted cart.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -59,10 +61,12 @@
     },
     {
       "id": "checkout.payment-gateway",
-      "kind": "external_dependency",
+      "kind": "service",
       "name": "Payment gateway",
       "description": "A third-party card authorization gateway reached over HTTPS.",
       "parent": "checkout",
+      "boundary": "third_party",
+      "security_relevant": false,
       "dependency": {
         "strength": "strong",
         "sla": "99.95% monthly",
@@ -77,10 +81,13 @@
     },
     {
       "id": "checkout.session-auth",
-      "kind": "security_component",
+      "kind": "component",
       "name": "Session authentication",
       "description": "The session token issuer and verifier that authenticates a shopper.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": true,
+      "security_rationale": "Verifies the session token that authenticates a shopper; a wrong accept lets a stranger act as the shopper.",
       "sources": [
         {
           "kind": "document",
@@ -94,6 +101,8 @@
       "name": "Order store",
       "description": "The relational store holding orders and their state transitions.",
       "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": false,
       "sources": [
         {
           "kind": "document",
@@ -107,6 +116,8 @@
       "name": "Pricing service",
       "description": "Returns a priced cart for a shopper and a locale.",
       "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
       "dependency": {
         "strength": "weak",
         "sla": "99.9% monthly"

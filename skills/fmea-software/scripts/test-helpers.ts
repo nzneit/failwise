@@ -134,7 +134,7 @@ export function minimalDoc(): FmeaDocument {
       version: 1,
       branch: "DFMEA",
       scope: "one element",
-      boundary: { included: ["svc"], excluded: [], security: "no security component in scope" },
+      boundary: { included: ["svc"], excluded: [], security: "no security-relevant element in scope" },
       ground_rules: [],
       assumptions: [],
       reviews: [],
@@ -144,7 +144,7 @@ export function minimalDoc(): FmeaDocument {
       history: [],
     },
     elements: [
-      { id: "svc", kind: "service", name: "Service", description: "", parent: null, sources: [{ kind: "document", ref: "arch.md" }] },
+      { id: "svc", kind: "service", name: "Service", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] },
     ],
     functions: [
       { id: "fn-1", element: "svc", statement: "serve requests", conditions: [], for_whom: "clients" },
