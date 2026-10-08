@@ -267,6 +267,43 @@ test("a parent that view answers under another key, as an old key is after a re-
   assert.deepEqual(calls[2], ["jira", "workitem", "view", "KAN-4", "--fields=project,issuetype", "--json"]);
 });
 
+// tracker text in a message (L15)
+
+const isControl = (ch: string): boolean => {
+  const c = ch.codePointAt(0) ?? 0;
+  return c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029;
+};
+const isBidi = (ch: string): boolean => {
+  const c = ch.codePointAt(0) ?? 0;
+  return (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069);
+};
+
+test("a failure whose stderr line holds an escape sequence and 300 characters is TRACKER_REJECTED with no control character and a quoted part of at most 200 code points", async () => {
+  const message = await rejectsWith(setup([failed(`✗ Error: \u001b[2J${"x".repeat(300)}`)]).provider.listMarked(), "TRACKER_REJECTED");
+  assert.ok(!Array.from(message).some(isControl), JSON.stringify(message));
+  assert.ok(message.startsWith("acli failed: "), message);
+  const quoted = message.slice("acli failed: ".length);
+  assert.ok(Array.from(quoted).length <= 200, `${Array.from(quoted).length} code points`);
+  assert.ok(quoted.startsWith("✗ Error: \\u001b[2J"), quoted);
+});
+
+test("offered work type names that hold a bidi control and run long set a no_create with no bidi control and the offered list cut to 200 code points as one part", async () => {
+  const long = { name: `Evil\u202eType${"y".repeat(250)}`, hierarchyLevel: 0, subtask: false };
+  const isolate = { name: "Wide\u2066Type", hierarchyLevel: 0, subtask: false };
+  const target = await setup([authStatus(), project("FAILW", typesWith(isolate, long))], { ...jiraConfig, type: "Nope" }).provider.describe();
+  const reason = target.no_create ?? "";
+  assert.ok(!Array.from(reason).some(isBidi) && !Array.from(reason).some(isControl), JSON.stringify(reason));
+  const offered = reason.slice(reason.indexOf("it offers: ") + "it offers: ".length);
+  assert.ok(offered.startsWith("Epic, Subtask, Task, Story, Wide\\u2066Type, Evil\\u202eType"), offered);
+  assert.equal(Array.from(offered).length, 200);
+});
+
+test("a parent whose project key, as view answered it, holds a C1 control sets a no_create that holds the control escaped", async () => {
+  const issuetype = { name: "Epic", hierarchyLevel: 1, subtask: false };
+  const target = await setup([...DESCRIBED, parentView({ project: { key: "FL\u0085SCR" }, issuetype })], { ...jiraConfig, parent: "FAILW-4" }).provider.describe();
+  assert.equal(target.no_create, "the parent FAILW-4 sits in the project FL\\u0085SCR, not FAILW");
+});
+
 // listMarked
 
 test("listMarked runs the count, then the search with --fields=description,labels --paginate --json, and gives each entry its link and marker", async () => {

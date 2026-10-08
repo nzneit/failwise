@@ -49,20 +49,27 @@ export class ScriptError extends Error {
 }
 
 /**
+ * The text with every character that could break the line or steer the terminal escaped as
+ * `\uXXXX`, four lower-case hex digits: the controls of general category Cc (U+0000 to U+001F
+ * and U+007F to U+009F), U+2028 and U+2029, and the bidi controls U+202A to U+202E and U+2066
+ * to U+2069.
+ */
+export function escapeLine(text: string): string {
+  // oxlint-disable-next-line no-control-regex -- the control characters are what this escapes
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+}
+
+/**
  * The single stderr line shape: `error <CODE>: <message>` plus ` at <pointer>` when located.
  * One line whatever the message holds: V8's JSON.parse message quotes the source around the
- * error, newline included, so runs of whitespace collapse to a single space (§9). The pointer
- * cannot be collapsed the same way, a space being a legal pointer character, so every character
- * that would break the line is escaped instead: the C0 controls and DEL, and U+2028 and U+2029,
- * which `\s` counts as whitespace in the message half and which a JavaScript or JSON consumer of
- * the line reads as line terminators.
+ * error, newline included, so runs of whitespace collapse to a single space (§9); then every
+ * remaining control or bidi character is escaped (`escapeLine`), so no text a tracker or a file
+ * supplied reaches the terminal raw. The pointer cannot be collapsed the same way, a space being
+ * a legal pointer character, so it is only escaped, with the same helper.
  */
 export function formatError(code: Code, message: string, pointer?: string): string {
-  const located = pointer
-    // oxlint-disable-next-line no-control-regex -- the pointer's control characters are what this escapes
-    ? ` at ${pointer.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"))}`
-    : "";
-  return `error ${code}: ${message.replace(/\s+/g, " ").trim()}` + located;
+  const located = pointer ? ` at ${escapeLine(pointer)}` : "";
+  return `error ${code}: ${escapeLine(message.replace(/\s+/g, " ").trim())}` + located;
 }
 
 export function exitStatus(code: Code): 1 | 2 | 3 {

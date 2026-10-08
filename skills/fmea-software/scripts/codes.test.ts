@@ -86,6 +86,30 @@ test("formatError escapes a line separator in the pointer, the class the message
   assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u2028b\\u2029c");
 });
 
+test("formatError escapes an escape sequence in the message, so no terminal control reaches stderr raw", () => {
+  const line = formatError("TRACKER_REJECTED", "acli said \u001b[31mred");
+  assert.equal(line, "error TRACKER_REJECTED: acli said \\u001b[31mred");
+});
+
+test("formatError escapes C1 controls and DEL in the message, which the collapse leaves", () => {
+  const line = formatError("TRACKER_REJECTED", "a\u0085b\u007fc");
+  assert.equal(line, "error TRACKER_REJECTED: a\\u0085b\\u007fc");
+});
+
+test("formatError escapes a bidi control in the message", () => {
+  const line = formatError("TRACKER_REJECTED", "done\u202eevil");
+  assert.equal(line, "error TRACKER_REJECTED: done\\u202eevil");
+});
+
+test("formatError still collapses a newline in the message to one space before it escapes", () => {
+  assert.equal(formatError("TRACKER_REJECTED", " a\n\tb\r\n"), "error TRACKER_REJECTED: a b");
+});
+
+test("formatError escapes a bidi control and a C1 control in the pointer", () => {
+  const line = formatError("SCHEMA", "unexpected property", "/meta/a\u202eb\u0085c");
+  assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u202eb\\u0085c");
+});
+
 test("CODES holds exactly the twenty-two codes of the closed list", () => {
   assert.deepEqual(Object.keys(CODES), [
     "USAGE",
