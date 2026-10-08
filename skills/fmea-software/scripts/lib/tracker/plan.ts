@@ -102,8 +102,8 @@ const byKey = (a: { key: string }, b: { key: string }): number => (a.key < b.key
 function digestOf(target: Target, actions: PlannedAction[], items: Map<string, TrackedItem>): string {
   const creates = [...items.values()].sort(byKey).map(({ key, content }) => {
     const { origin } = content;
-    return [key, content.title, content.action, content.facts.map((f) => [f.label, f.value]),
-      [origin.analysis, origin.chain, origin.action, origin.url ?? null]];
+    return [key, content.title, content.action, JSON.stringify(content.sections),
+      [origin.analysis, origin.version, origin.chain, origin.action, origin.url ?? null]];
   });
   const adopts = actions
     .flatMap((a) => (a.outcome === "adopt" && a.link ? [{ key: a.key, id: a.link.id }] : []))

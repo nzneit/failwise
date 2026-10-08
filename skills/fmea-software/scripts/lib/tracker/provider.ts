@@ -2,12 +2,18 @@
 
 import type { ObservedState, TrackerProvider } from "../types.ts";
 
-/** The line every created item carries before its marker (§7). */
-export const CLOSING_LINE = "The status of this action is recorded in the analysis, and closing this item proposes a change there.";
-
-export interface Fact { label: string; value: string }
-interface Origin { analysis: string; chain: string; action: string; url?: string }
-export interface ItemContent { title: string; action: string; facts: Fact[]; origin: Origin }
+/**
+ * One block of a section. `value` and `items` hold text from the analysis, and the renderers make it
+ * literal. `heading`, `label` and `text` are the renderer's own words and are written as they are,
+ * so the builder never puts analysis text in a `text` block.
+ */
+export type Block =
+  | { kind: "fact"; label: string; value: string }
+  | { kind: "list"; label: string; items: string[] }
+  | { kind: "text"; text: string };
+export interface Section { heading: string; blocks: Block[] }
+interface Origin { analysis: string; version: number; chain: string; action: string; url?: string }
+export interface ItemContent { title: string; action: string; sections: Section[]; origin: Origin }
 export interface TrackedItem { key: string; text: string; label: string; due: string; content: ItemContent }
 
 export type Visibility = "public" | "internal" | "private" | "unknown";

@@ -2,9 +2,8 @@
 // marker read back from a description (§9). Pure data: no process, no network.
 
 import { splitKey } from "./items.ts";
-import { CLOSING_LINE } from "./provider.ts";
 import { plain } from "./text.ts";
-import type { Fact, ItemContent, Marker, TrackedItem } from "./provider.ts";
+import type { Block, ItemContent, Marker, Section, TrackedItem } from "./provider.ts";
 
 export interface AdfMark { type: string; attrs?: Record<string, unknown> }
 export interface AdfNode { type: string; text?: string; marks?: AdfMark[]; content?: AdfNode[]; attrs?: Record<string, unknown> }
@@ -34,18 +33,64 @@ function paragraph(...nodes: AdfNode[]): AdfNode {
   return { type: "paragraph", content: nodes.filter((node) => node.text !== "") };
 }
 
-function factItem(fact: Fact): AdfNode {
-  return { type: "listItem", content: [paragraph(textNode(fact.label, [{ type: "strong" }]), textNode(`: ${plain(fact.value)}`))] };
+const STRONG: AdfMark[] = [{ type: "strong" }];
+const CODE: AdfMark[] = [{ type: "code" }];
+
+function bulletList(items: AdfNode[]): AdfNode {
+  return { type: "bulletList", content: items.map((item) => ({ type: "listItem", content: [item] })) };
+}
+
+function factParagraph(block: { label: string; value: string }): AdfNode {
+  return paragraph(textNode(block.label, STRONG), textNode(`: ${plain(block.value)}`));
+}
+
+/** A section as ADF nodes: the heading as a strong paragraph, each run of facts as one bullet list,
+ *  a list block as a strong paragraph then a bullet list, a text block as a paragraph. No list is
+ *  nested in a list item, so only the nodes the spike verified appear. */
+function sectionNodes(section: Section): AdfNode[] {
+  const nodes = [paragraph(textNode(section.heading, STRONG))];
+  let facts: AdfNode[] = [];
+  const flush = (): void => {
+    if (facts.length > 0) nodes.push(bulletList(facts));
+    facts = [];
+  };
+  for (const block of section.blocks) {
+    if (block.kind === "fact") {
+      facts.push(factParagraph(block));
+      continue;
+    }
+    flush();
+    nodes.push(...otherNodes(block));
+  }
+  flush();
+  return nodes;
+}
+
+function otherNodes(block: Exclude<Block, { kind: "fact" }>): AdfNode[] {
+  if (block.kind === "text") return [paragraph(textNode(block.text))];
+  return [paragraph(textNode(block.label, STRONG)), bulletList(block.items.map((item) => paragraph(textNode(plain(item)))))];
 }
 
 function originParagraph(content: ItemContent): AdfNode {
-  const { analysis, chain, action, url } = content.origin;
-  const line = textNode(`From the FMEA "${plain(analysis)}", row ${plain(chain)}, action ${plain(action)}.`);
+  const { analysis, version, chain, action, url } = content.origin;
+  const line = textNode(`From the FMEA "${plain(analysis)}", version ${version}, chain ${plain(chain)}, action ${plain(action)}.`);
   if (url === undefined) return paragraph(line);
-  return paragraph(line, textNode(" "), textNode("Open the row in the report", [{ type: "link", attrs: { href: url } }]));
+  return paragraph(line, textNode(" "), textNode("Open the chain in the report", [{ type: "link", attrs: { href: url } }]));
 }
 
-/** The description: the action, the facts as a bullet list, the origin, the closing line and the marker. */
+/** The key with the code mark, and its three ids in words. */
+function keyParagraph(key: string): AdfNode {
+  const [metaId, chainId, actionId] = splitKey(key) ?? [key, "", ""];
+  return paragraph(
+    textNode("Key: "),
+    textNode(key, CODE),
+    textNode(". In the analysis whose "),
+    textNode("meta.id", CODE),
+    textNode(` is ${plain(metaId)}, the chain is ${plain(chainId)} and the action is its action ${plain(actionId)}.`),
+  );
+}
+
+/** The description: the action, the sections, the reference and the marker. */
 export function renderDescription(item: TrackedItem): AdfDoc {
   const { content } = item;
   return {
@@ -53,10 +98,11 @@ export function renderDescription(item: TrackedItem): AdfDoc {
     type: "doc",
     content: [
       paragraph(textNode(plain(content.action))),
-      { type: "bulletList", content: content.facts.map(factItem) },
+      ...content.sections.flatMap(sectionNodes),
+      paragraph(textNode("Reference", STRONG)),
       originParagraph(content),
-      paragraph(textNode(CLOSING_LINE)),
-      paragraph(textNode(`failwise:key=${item.key} text=${item.text}`, [{ type: "code" }])),
+      keyParagraph(item.key),
+      paragraph(textNode(`failwise:key=${item.key} text=${item.text}`, CODE)),
     ],
   };
 }
