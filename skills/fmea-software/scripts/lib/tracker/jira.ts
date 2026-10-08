@@ -177,8 +177,9 @@ function parentFields(stdout: string): { key: string; project: string; level: nu
 
 /** The parent's key as `view` answered it and why no item can be created under it, if so (UJ10).
  *  A parent answered under another key, as an old key is after a re-key, keeps the configured key
- *  and cannot take a new item, since create sends the configured key (R5). The level is checked
- *  only against a work type that was found. */
+ *  and cannot take a new item, since create sends the configured key (R5). The parent must sit
+ *  exactly one level above the work type, and the level is checked only against a work type that
+ *  was found (UJ10, plan D13). */
 async function parentOf(ctx: Ctx, parent: string, type: WorkType | string): Promise<{ key: string; reason?: string }> {
   const answer = await run(ctx, ["workitem", "view", parent, "--fields=project,issuetype", "--json"]);
   if (answer.status === 1 && answer.firstLine === NOT_FOUND) return { key: parent, reason: `the parent ${parent} was not found` };
@@ -186,8 +187,8 @@ async function parentOf(ctx: Ctx, parent: string, type: WorkType | string): Prom
   const found = parentFields(answer.stdout);
   if (found.key !== parent) return { key: parent, reason: `the parent ${parent} is now keyed ${said(found.key)} on ${ctx.host}: set the parent to ${said(found.key)}` };
   if (found.project !== ctx.project) return { key: found.key, reason: `the parent ${said(found.key)} sits in the project ${said(found.project)}, not ${ctx.project}` };
-  if (typeof type !== "string" && found.level <= type.hierarchyLevel) {
-    return { key: found.key, reason: `the parent ${said(found.key)} is not above the work type ${ctx.type} in the project's hierarchy` };
+  if (typeof type !== "string" && found.level !== type.hierarchyLevel + 1) {
+    return { key: found.key, reason: `the parent ${said(found.key)} is not one level above the work type ${ctx.type} in the project's hierarchy` };
   }
   return { key: found.key };
 }

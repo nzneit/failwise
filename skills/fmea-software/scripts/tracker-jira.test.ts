@@ -244,7 +244,7 @@ test("a work type the project does not offer, one it offers twice, and a sub-tas
   assert.equal(twice.no_create, "the project offers 2 work types named Task, so the name does not say which; it offers: Epic, Subtask, Task, Story, Task");
 });
 
-test("a parent that is not found, that sits in another project, or that is not above the type's level sets no_create without throwing; another failure of its view throws", async () => {
+test("a parent that is not found, that sits in another project, or that is not exactly one level above the type's level sets no_create without throwing; another failure of its view throws", async () => {
   const withParent = { ...jiraConfig, parent: "FAILW-4" };
   const describeWith = (answer: ProcessResult): Promise<unknown> => setup([...DESCRIBED, answer], withParent).provider.describe();
   const reasonOf = async (answer: ProcessResult): Promise<string | undefined> => ((await describeWith(answer)) as { no_create?: string }).no_create;
@@ -252,7 +252,10 @@ test("a parent that is not found, that sits in another project, or that is not a
   assert.ok((await reasonOf(failed(NOT_FOUND)))?.includes("the parent FAILW-4 was not found"));
   assert.ok((await reasonOf(crlf(failed(NOT_FOUND))))?.includes("the parent FAILW-4 was not found"));
   assert.ok((await reasonOf(parentView({ project: { key: "FLSCR" }, issuetype })))?.includes("FLSCR"));
-  assert.equal(await reasonOf(parentView({ project: { key: "FAILW" }, issuetype: { name: "Story", hierarchyLevel: 0, subtask: false } })), "the parent FAILW-4 is not above the work type Task in the project's hierarchy");
+  const notOneAbove = "the parent FAILW-4 is not one level above the work type Task in the project's hierarchy";
+  assert.equal(await reasonOf(parentView({ project: { key: "FAILW" }, issuetype: { name: "Story", hierarchyLevel: 0, subtask: false } })), notOneAbove);
+  assert.equal(await reasonOf(parentView({ project: { key: "FAILW" }, issuetype: { name: "Initiative", hierarchyLevel: 2, subtask: false } })), notOneAbove);
+  assert.equal(await reasonOf(parentView({ project: { key: "FAILW" }, issuetype })), undefined);
   holds(await rejectsWith(describeWith(failed("✗ Error: something else")), "TRACKER_REJECTED"), "acli failed: ✗ Error: something else");
   for (const shape of [ok("<html>"), parentView({ project: { key: "FAILW" } }), ok({ id: "10004", fields: { project: { key: "FAILW" }, issuetype } })]) {
     holds(await rejectsWith(describeWith(shape), "TRACKER_REJECTED"), "in a form the script cannot read");
