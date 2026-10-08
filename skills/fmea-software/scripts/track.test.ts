@@ -658,6 +658,13 @@ test("a detail longer than 80 code points, or holding a line break or a control 
   assert.equal(validateDocument(s.doc(), loadTable()).ok, true);
 });
 
+test("a detail holding a bidi control has each one made a space, in the printed result and in the stored detail", async (t) => {
+  const s = session(t, docWith(linked(act(1), 1)), { observations: [observation(1, "open", "done\u202eevil\u2066x")] });
+  const { result } = await s.track("refresh", "--write");
+  assert.deepEqual(result.items.map((i) => i.observed.detail), ["done evil x"]);
+  assert.deepEqual(linksIn(s.doc()).map((l) => l?.observed?.detail), ["done evil x"]);
+});
+
 test("an observation missing for a link fails the run with TRACKER_REJECTED and writes nothing", async (t) => {
   const s = session(t, docWith(linked(act(1), 1), linked(act(2), 2)), { observations: [observation(1, "open")] });
   const before = s.text();

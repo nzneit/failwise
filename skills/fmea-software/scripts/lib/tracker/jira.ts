@@ -8,7 +8,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ScriptError } from "../codes.ts";
+import { ScriptError, escapeLine } from "../codes.ts";
 import { isRfc3339DateTime } from "../dates.ts";
 import type { ObservedState, TrackerConfig } from "../types.ts";
 import { isAdfDocument, readMarker, renderDescription, renderSummary } from "./jira-body.ts";
@@ -69,10 +69,16 @@ function cut(text: string): string {
   return Array.from(text).slice(0, EXCERPT_LIMIT).join("");
 }
 
+/** Text acli answered, for a message: on one line, every control and bidi character escaped as
+ *  `escapeLine` does, and cut to 200 code points, so no tracker text reaches the terminal raw (§9). */
+function said(text: string): string {
+  return cut(escapeLine(text.replace(/\s+/g, " ").trim()));
+}
+
 /** A short piece of an answer for a message, on one line. */
 function excerpt(text: string): string {
-  const said = cut(text.replace(/\s+/g, " ").trim());
-  return said === "" ? "it said nothing" : said;
+  const piece = said(text);
+  return piece === "" ? "it said nothing" : piece;
 }
 
 /** The answer read, or acli's absence; a missing acli is the same failure for every request. */
@@ -85,8 +91,7 @@ async function run(ctx: Ctx, args: string[]): Promise<Answer> {
 
 /** A non-zero exit no rule above explains (UJ2). */
 function failure(answer: Answer): ScriptError {
-  const line = cut(answer.firstLine);
-  return refusal("TRACKER_REJECTED", `acli failed: ${line === "" ? "it said nothing" : line}`);
+  return refusal("TRACKER_REJECTED", `acli failed: ${excerpt(answer.firstLine)}`);
 }
 
 /** The stdout of a request that must succeed; any non-zero exit fails it. */
@@ -126,7 +131,7 @@ async function signedInSite(ctx: Ctx): Promise<string> {
 /** Fails unless acli is signed in to the document's host, compared without regard to case. */
 async function checkSite(ctx: Ctx): Promise<void> {
   const site = await signedInSite(ctx);
-  if (site.toLowerCase() !== ctx.host.toLowerCase()) throw refusal("TRACKER_UNAVAILABLE", `acli is signed in to ${site}, not ${ctx.host}: run ${switchTo(ctx.host)}`);
+  if (site.toLowerCase() !== ctx.host.toLowerCase()) throw refusal("TRACKER_UNAVAILABLE", `acli is signed in to ${said(site)}, not ${ctx.host}: run ${switchTo(ctx.host)}`);
 }
 
 function isWorkType(value: unknown): value is WorkType {
@@ -144,13 +149,13 @@ async function workTypes(ctx: Ctx): Promise<WorkType[]> {
   const project = parsed("the project", answer.stdout);
   const types = isRecord(project) ? project.issueTypes : undefined;
   if (!isRecord(project) || typeof project.key !== "string" || !Array.isArray(types) || !types.every(isWorkType)) throw unreadable("the project", answer.stdout);
-  if (project.key !== ctx.project) refuseConfig(`the project key ${ctx.project} now names the project ${project.key} on ${ctx.host}: set the project to ${project.key}`, "project");
+  if (project.key !== ctx.project) refuseConfig(`the project key ${ctx.project} now names the project ${said(project.key)} on ${ctx.host}: set the project to ${said(project.key)}`, "project");
   return types;
 }
 
 /** The one work type named `ctx.type`, or why no item can be created as it (J11, s6). */
 function workTypeOf(ctx: Ctx, types: WorkType[]): WorkType | string {
-  const offered = `it offers: ${types.map((t) => t.name).join(", ")}`;
+  const offered = `it offers: ${said(types.map((t) => t.name).join(", "))}`;
   const named = types.filter((t) => t.name === ctx.type);
   if (named.length === 0) return `the project offers no work type named ${ctx.type}; ${offered}`;
   if (named.length > 1) return `the project offers ${named.length} work types named ${ctx.type}, so the name does not say which; ${offered}`;
@@ -172,17 +177,18 @@ function parentFields(stdout: string): { key: string; project: string; level: nu
 
 /** The parent's key as `view` answered it and why no item can be created under it, if so (UJ10).
  *  A parent answered under another key, as an old key is after a re-key, keeps the configured key
- *  and cannot take a new item, since create sends the configured key (R5). The level is checked
- *  only against a work type that was found. */
+ *  and cannot take a new item, since create sends the configured key (R5). The parent must sit
+ *  exactly one level above the work type, and the level is checked only against a work type that
+ *  was found (UJ10, plan D13). */
 async function parentOf(ctx: Ctx, parent: string, type: WorkType | string): Promise<{ key: string; reason?: string }> {
   const answer = await run(ctx, ["workitem", "view", parent, "--fields=project,issuetype", "--json"]);
   if (answer.status === 1 && answer.firstLine === NOT_FOUND) return { key: parent, reason: `the parent ${parent} was not found` };
   if (answer.status !== 0) throw failure(answer);
   const found = parentFields(answer.stdout);
-  if (found.key !== parent) return { key: parent, reason: `the parent ${parent} is now keyed ${found.key} on ${ctx.host}: set the parent to ${found.key}` };
-  if (found.project !== ctx.project) return { key: found.key, reason: `the parent ${found.key} sits in the project ${found.project}, not ${ctx.project}` };
-  if (typeof type !== "string" && found.level <= type.hierarchyLevel) {
-    return { key: found.key, reason: `the parent ${found.key} is not above the work type ${ctx.type} in the project's hierarchy` };
+  if (found.key !== parent) return { key: parent, reason: `the parent ${parent} is now keyed ${said(found.key)} on ${ctx.host}: set the parent to ${said(found.key)}` };
+  if (found.project !== ctx.project) return { key: found.key, reason: `the parent ${said(found.key)} sits in the project ${said(found.project)}, not ${ctx.project}` };
+  if (typeof type !== "string" && found.level !== type.hierarchyLevel + 1) {
+    return { key: found.key, reason: `the parent ${said(found.key)} is not one level above the work type ${ctx.type} in the project's hierarchy` };
   }
   return { key: found.key };
 }
@@ -251,7 +257,7 @@ async function listMarked(ctx: Ctx): Promise<RemoteItem[]> {
   const items: RemoteItem[] = [];
   for (const entry of await entriesOf(ctx)) {
     const { id, key, description } = entryOf(entry);
-    if (seen.has(id)) throw refusal("TRACKER_UNAVAILABLE", `the listing names the id ${id} (${key}) twice, ${INCOMPLETE}`);
+    if (seen.has(id)) throw refusal("TRACKER_UNAVAILABLE", `the listing names the id ${said(id)} (${said(key)}) twice, ${INCOMPLETE}`);
     seen.add(id);
     items.push({ link: linkOf(ctx, id, key), marker: readMarker(description) });
   }
@@ -297,10 +303,10 @@ function createdItem(ctx: Ctx, stdout: string): { link: Link; fields: Json } {
 function createFault(ctx: Ctx, key: string, fields: Json): string | undefined {
   const label = ctx.label.toLowerCase();
   const labelled = Array.isArray(fields.labels) && fields.labels.some((l) => typeof l === "string" && l.toLowerCase() === label);
-  if (!labelled) return `${key} was created without the label ${ctx.label}, which finding it again depends on; add the label to it by hand`;
+  if (!labelled) return `${said(key)} was created without the label ${ctx.label}, which finding it again depends on; add the label to it by hand`;
   const parent: unknown = isRecord(fields.parent) ? fields.parent.key : undefined;
   if (ctx.parent !== undefined && parent !== ctx.parent) {
-    return `${key} was created without the parent ${ctx.parent}; add the parent to it by hand`;
+    return `${said(key)} was created without the parent ${ctx.parent}; add the parent to it by hand`;
   }
   return undefined;
 }

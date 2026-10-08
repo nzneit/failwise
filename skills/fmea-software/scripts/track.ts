@@ -299,12 +299,13 @@ async function applyCommand(path: string, flags: Flags, deps: Deps): Promise<num
 
 // refresh
 
-/** The tracker's words for a state as one line of at most 80 code points: every control
- *  character becomes a space, whitespace collapses, and an empty result gives way to the state. */
+/** The tracker's words for a state as one line of at most 80 code points: every control character and
+ *  bidi control becomes a space, whitespace collapses, and an empty result gives way to the state. */
 function cleanDetail(detail: string, fallback: string): string {
   const spaced = Array.from(detail, (ch) => {
     const c = ch.codePointAt(0) ?? 0;
-    return c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029 ? " " : ch;
+    const bidi = (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069);
+    return c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029 || bidi ? " " : ch;
   }).join("");
   const cut = Array.from(spaced.replace(/\s+/g, " ").trim()).slice(0, DETAIL_LIMIT).join("").trimEnd();
   return cut === "" ? fallback : cut;
