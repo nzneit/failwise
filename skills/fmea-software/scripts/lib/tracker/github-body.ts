@@ -22,7 +22,7 @@ function escapeCharacter(ch: string): string {
 
 /**
  * Text from the analysis, made literal on GitHub (§8.3, §19.1): every line break and every other
- * control character becomes one space and the ends are trimmed, so no text leaves its table cell or
+ * control character becomes one space and the ends are trimmed, so no text leaves its line or
  * opens a code block; long hexadecimal runs are broken so no commit reference forms; and every
  * ASCII punctuation character is escaped, with a word joiner after it so no autolink forms across the gap.
  */

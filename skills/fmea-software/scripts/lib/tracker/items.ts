@@ -93,8 +93,8 @@ function whereSection(doc: FmeaDocument, chain: Chain): Section {
   if (fn === undefined) return { heading: "Where", blocks: [fact("Function", chain.function)] };
   const element = doc.elements.find((e) => e.id === fn.element);
   const blocks = [fact("Element", element === undefined ? fn.element : elementFact(element)), fact("Function", fn.statement)];
-  if (fn.conditions.length > 0) blocks.push(list("Conditions", fn.conditions));
   blocks.push(fact("For whom", fn.for_whom));
+  if (fn.conditions.length > 0) blocks.push(list("Conditions", fn.conditions));
   return { heading: "Where", blocks };
 }
 
@@ -155,12 +155,12 @@ function staleValue(chain: Chain): string {
 
 function actionSection(chain: Chain, action: Action): Section {
   const blocks = [fact("Owner", action.owner), fact("Target date", action.target_date), fact("Status when created", action.status)];
-  const others = chain.actions.filter((a) => a !== action);
-  if (others.length > 0) blocks.push(list("Other actions on this chain", others.map((a) => `${a.id}: ${a.status}`)));
   if (chain.handoff !== undefined) blocks.push(fact("Threat-model handoff", chain.handoff.reason));
   if (chain.stale.flag) blocks.push(fact("Stale", staleValue(chain)));
   const incident = action.source_incident ?? chain.source_incident;
   if (incident !== undefined) blocks.push(fact("Source incident", incident));
+  const others = chain.actions.filter((a) => a !== action);
+  if (others.length > 0) blocks.push(list("Other actions on this chain", others.map((a) => `${a.id}: ${a.status}`)));
   return { heading: "This action", blocks };
 }
 

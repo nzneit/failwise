@@ -148,7 +148,7 @@ test("the builder's sections are the five before the reference, in order, with t
 
 test("Where on the fixture: the element with kind and boundary, the function, two conditions and for whom", () => {
   const item = fixtureItem();
-  assert.deepEqual(labelsOf(item, "Where"), ["Element", "Function", "Conditions", "For whom"]);
+  assert.deepEqual(labelsOf(item, "Where"), ["Element", "Function", "For whom", "Conditions"]);
   assert.equal(factOf(item, "Where", "Element"), "Checkout service (service, in scope)");
   assert.equal(factOf(item, "Where", "Function"), "Turn a submitted cart into a confirmed order exactly once");
   assert.deepEqual(listOf(item, "Where", "Conditions"), ["under promotion traffic", "while a dependency is degraded"]);
@@ -170,7 +170,7 @@ test("Where prints the id when the function or the element is missing, leaves ou
   noElement.functions[0].element = "gone";
   noElement.functions[0].conditions = ["c"];
   const a = itemOf(noElement);
-  assert.deepEqual(labelsOf(a, "Where"), ["Element", "Function", "Conditions", "For whom"]);
+  assert.deepEqual(labelsOf(a, "Where"), ["Element", "Function", "For whom", "Conditions"]);
   assert.equal(factOf(a, "Where", "Element"), "gone");
   const noFunction = docWith("do it");
   noFunction.chains[0].function = "fn-gone";
@@ -266,6 +266,7 @@ test("This action: the other actions on the chain, in document order, only when 
   doc.chains[0].actions.push({ ...action("act-2", "second"), status: "Decision pending" }, { ...action("act-3", "third"), status: "Completed" });
   const second = buildItem(doc, config, actionRefs(doc)[1]);
   assert.deepEqual(listOf(second, "This action", "Other actions on this chain"), ["act-1: Open", "act-3: Completed"]);
+  assert.deepEqual(labelsOf(second, "This action"), ["Owner", "Target date", "Status when created", "Other actions on this chain"]);
   assert.equal(listOf(itemOf(docWith("alone")), "This action", "Other actions on this chain"), undefined);
 });
 
@@ -276,8 +277,10 @@ test("This action: the handoff, the stale flag in its three forms, and the sourc
   chain.stale = { flag: true, reason: "element-changed", since_version: 3 };
   chain.source_incident = "INC-chain";
   chain.actions[0].source_incident = "INC-action";
+  assert.deepEqual(labelsOf(itemOf(doc), "This action"), ["Owner", "Target date", "Status when created", "Threat-model handoff", "Stale", "Source incident"]);
+  chain.actions.push(action("act-2", "second"));
   const full = itemOf(doc);
-  assert.deepEqual(labelsOf(full, "This action"), ["Owner", "Target date", "Status when created", "Threat-model handoff", "Stale", "Source incident"]);
+  assert.deepEqual(labelsOf(full, "This action"), ["Owner", "Target date", "Status when created", "Threat-model handoff", "Stale", "Source incident", "Other actions on this chain"]);
   assert.equal(factOf(full, "This action", "Threat-model handoff"), "an adversary can drive it");
   assert.equal(factOf(full, "This action", "Stale"), "element-changed since version 3");
   assert.equal(factOf(full, "This action", "Source incident"), "INC-action");
@@ -290,7 +293,7 @@ test("This action: the handoff, the stale flag in its three forms, and the sourc
   chain.stale = { flag: false, reason: "control-removed" };
   delete chain.source_incident;
   delete chain.handoff;
-  assert.deepEqual(labelsOf(itemOf(doc), "This action"), ["Owner", "Target date", "Status when created"]);
+  assert.deepEqual(labelsOf(itemOf(doc), "This action"), ["Owner", "Target date", "Status when created", "Other actions on this chain"]);
 });
 
 test("Done when: the decision passage on a Decision pending action, the other passage on an Open one, the close passage second", () => {

@@ -96,6 +96,7 @@ test("a run of facts is one bullet list of label-and-value items, and a list blo
   assert.deepEqual(facts.content?.map((i) => i.content?.[0].content), [
     [text("Element", STRONG), text(": Checkout service (service, in scope)")],
     [text("Function", STRONG), text(": Turn a submitted cart into a confirmed order exactly once")],
+    [text("For whom", STRONG), text(": signed-in shoppers")],
   ]);
   assert.deepEqual(content[where + 2], paragraph(text("Conditions", STRONG)));
   assert.deepEqual(content[where + 3], {
@@ -105,8 +106,7 @@ test("a run of facts is one bullet list of label-and-value items, and a list blo
       { type: "listItem", content: [paragraph(text("while a dependency is degraded"))] },
     ],
   });
-  assert.deepEqual(content[where + 4].content?.[0].content?.[0].content, [text("For whom", STRONG), text(": signed-in shoppers")]);
-  assert.deepEqual(content[where + 5], paragraph(text("The failure", STRONG)));
+  assert.deepEqual(content[where + 4], paragraph(text("The failure", STRONG)));
 });
 
 test("a text block is a plain paragraph, and the done passages are the two paragraphs after their heading", () => {

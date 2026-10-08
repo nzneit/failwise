@@ -32,11 +32,11 @@ An item starts with the text of its action. Six sections follow:
 - **Where** names the element and the function of the failure chain, with the conditions of the function and the people it serves.
 - **The failure** gives the failure mode, its trigger, its three effects, its causes and the existing controls.
 - **Priority** gives the priority of the chain and the rationale and evidence of each rating.
-- **This action** gives the owner, the target date and the status of the action. It also names the other actions on the chain.
+- **This action** gives the owner, the target date and the status of the action. It also names the other actions on the chain. When the chain carries a threat-model handoff, a stale flag or a source incident, it names them too.
 - **Done when** tells you how to finish the item and what a close proposes in the analysis.
 - **Reference** names the analysis, its version, the chain and the action. It shows the key of the item. When the report has a published address, it links to the chain in the report.
 
-`plan` prints all of this text before you agree. An item is written once. A later change in the analysis does not change the item. Items that an earlier version created keep their text, and `refresh` reads them as before.
+`plan` prints the content of every item before you agree. An item is written once. A later change in the analysis does not change the item. Items that an earlier version created keep their text, and `refresh` reads them as before.
 
 ## Caveats on GitHub
 
