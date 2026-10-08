@@ -112,6 +112,16 @@ test("renderSummary collapses whitespace and cuts at 255 code points, and a line
   assert.equal(renderSummary({ ...content, title: "😀".repeat(256) }), "😀".repeat(255));
 });
 
+test("renderSummary trims the end after the cut, so a space at the 255th code point never ends the summary", () => {
+  const content = itemOf().content;
+  assert.equal(renderSummary({ ...content, title: `${"a".repeat(254)} bbbbb` }), "a".repeat(254));
+  for (const head of ["x".repeat(254), "é".repeat(254), "😀".repeat(254)]) {
+    const summary = renderSummary({ ...content, title: `${head} more text after the cut` });
+    assert.ok(!summary.endsWith(" "), JSON.stringify(summary));
+    assert.ok(Array.from(summary).length <= 255);
+  }
+});
+
 test("renderSummary makes NUL, U+0001, ESC and DEL a space each, collapses the whitespace, and leaves no control character", () => {
   const [nul, one, esc, del] = [0x00, 0x01, 0x1b, 0x7f].map((code) => String.fromCharCode(code));
   const summary = renderSummary({ ...itemOf().content, title: `${del}a${nul}b${one}c${esc}${esc}d ${del} e${nul}` });
