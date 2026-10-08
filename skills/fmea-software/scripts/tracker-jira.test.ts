@@ -305,6 +305,12 @@ test("a parent whose project key, as view answered it, holds a C1 control sets a
   const issuetype = { name: "Epic", hierarchyLevel: 1, subtask: false };
   const target = await setup([...DESCRIBED, parentView({ project: { key: "FL\u0085SCR" }, issuetype })], { ...jiraConfig, parent: "FAILW-4" }).provider.describe();
   assert.equal(target.no_create, "the parent FAILW-4 sits in the project FL\\u0085SCR, not FAILW");
+  const long = await setup([...DESCRIBED, parentView({ project: { key: "P".repeat(300) }, issuetype })], { ...jiraConfig, parent: "FAILW-4" }).provider.describe();
+  const reason = long.no_create ?? "";
+  const [head, tail] = ["the parent FAILW-4 sits in the project ", ", not FAILW"];
+  assert.ok(reason.startsWith(head) && reason.endsWith(tail), reason);
+  const quoted = reason.slice(head.length, reason.length - tail.length);
+  assert.equal(quoted, "P".repeat(200));
 });
 
 // listMarked
