@@ -25,6 +25,19 @@ After Claude sets the target, the script `track.ts` does the work in three comma
   `apply` refuses a repository that is public, or whose visibility it cannot establish, unless you agree to that as well.
 - **`refresh`** reads the state of each linked issue. When someone closes an issue as completed, `refresh` proposes Completed. When someone closes an issue as not planned, `refresh` proposes Not Implemented. Claude changes a status only when you confirm it. When the analysis holds a finished action whose issue is still open, close the issue yourself.
 
+## What an item says
+
+An item starts with the text of its action. Six sections follow:
+
+- **Where** names the element and the function of the failure chain, with the conditions of the function and the people it serves.
+- **The failure** gives the failure mode, its trigger, its three effects, its causes and the existing controls.
+- **Priority** gives the priority of the chain and the rationale and evidence of each rating.
+- **This action** gives the owner, the target date and the status of the action. It also names the other actions on the chain.
+- **Done when** tells you how to finish the item and what a close proposes in the analysis.
+- **Reference** names the analysis, its version, the chain and the action. It shows the key of the item. When the report has a published address, it links to the chain in the report.
+
+`plan` prints all of this text before you agree. An item is written once. A later change in the analysis does not change the item. Items that an earlier version created keep their text, and `refresh` reads them as before.
+
 ## Caveats on GitHub
 
 `apply` escapes the text it takes from the analysis, so that GitHub interprets nothing in it. Then `apply` writes the text into the body of an issue. The escape puts invisible characters into the text. Text that you copy from an issue, or search for on GitHub, does not match the analysis exactly.
