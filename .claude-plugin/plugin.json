@@ -1,6 +1,6 @@
 {
   "name": "failwise",
-  "version": "0.4.1",
+  "version": "0.6.0",
   "description": "Failure Mode and Effects Analysis for enterprise software: design-side DFMEA with a JSON schema, validator, priority table, and HTML report. Every reference statement carries its provenance.",
   "author": { "name": "Nathan Neitman" },
   "homepage": "https://github.com/nzneit/failwise",

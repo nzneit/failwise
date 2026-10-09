@@ -2,7 +2,7 @@
 
 failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report. You can read an [example report](https://nzneit.github.io/failwise/) before you install it.
 
-It is version 0.4.1, a pre-release: the skill did not pass its own evaluations, and the tracking of actions has none. Read [Status and limitations](#status-and-limitations) before relying on it.
+It is version 0.6.0, a pre-release: the skill did not pass its own evaluations, and the tracking of actions has none. Read [Status and limitations](#status-and-limitations) before relying on it.
 
 ## Install
 
@@ -44,7 +44,7 @@ failwise holds one skill, `fmea-software`. The skill handles four kinds of reque
 - The skill converts a legacy spreadsheet that ranks by RPN to the JSON model. RPN is the risk priority number, the product of the three ratings. The skill keeps the original ratings and RPN for reference. Example: "Convert this legacy RPN spreadsheet to the JSON model."
 - The skill updates an analysis after an architecture change. It flags the affected failure chains as stale, and does not write the whole analysis again. Example: "Update the existing FMEA after this architecture change."
 
-The skill works from the inputs that [`design-inputs.md`](skills/fmea-software/references/design-inputs.md) lists. They are critical flows, a component inventory, the dependencies and their limits, incident history, and the controls already in place. [`checkout-inputs.md`](skills/fmea-software/evals/fixtures/checkout-inputs.md) is an example of such inputs. The skill tells Claude to ask for what is missing. It also tells Claude to write each gap into the analysis as an open assumption, and not to invent a value. In the tests, Claude did not always ask, as the limitations below say.
+The skill works from the inputs that [`design-inputs.md`](skills/fmea-software/references/design-inputs.md) lists. They are critical flows, a component inventory, the dependencies and their limits, the codebases and their repositories, incident history, and the controls already in place. [`checkout-inputs.md`](skills/fmea-software/evals/fixtures/checkout-inputs.md) is an example of such inputs. The skill tells Claude to ask for what is missing. It also tells Claude to write each gap into the analysis as an open assumption, and not to invent a value. In the tests, Claude did not always ask, as the limitations below say.
 
 Every rating that Claude suggests carries a rationale. Each rating is provisional at first. The skill asks a named person to re-score each rating against the [rating anchors](skills/fmea-software/references/scales-software.md). The skill treats no priority as final before that re-score.
 
@@ -66,9 +66,9 @@ At the end, Claude gives you the analysis and the rendered report. Claude then a
 - **An HTML report**, which `render.ts` renders from the analysis. The report is one self-contained file. It needs no JavaScript and no network access, and it prints in landscape. It holds these parts, in this order:
   - a summary strip and a "Needs attention" block, under the title and the scope
   - the ground rules, assumptions and review record
-  - the structure of the system
+  - the structure of the system, with a table of its top-level elements and a table of its dependencies
   - an index of the failure chains, sorted by priority
-  - one section per chain
+  - one section per chain, grouped by top-level element
   - the actions
   - the automated checks, with a quality score
   - a provenance appendix.
@@ -93,7 +93,7 @@ One failure mode, with its effects, causes and controls, is one failure chain, a
 
 ## Status and limitations
 
-0.4.1 is a pre-release. The evaluation of its skill ran on version 0.1.0, and that version did not pass its own acceptance gate. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation.
+0.6.0 is a pre-release. The evaluation of its skill ran on version 0.1.0, and that version did not pass its own acceptance gate. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation. 0.6.0 also changes the format of the analysis to schema v3, so an analysis written with 0.3.x to 0.5.x needs a one-time migration, as [Compatibility between versions](docs/scripts.md#compatibility-between-versions) describes.
 
 The evaluation tested the skill on four prompts. It ran each prompt at two model capabilities, high and medium. glm-5.3 filled the high capability, and glm-5.3-flash filled the medium capability. Three of the eight combinations passed:
 
@@ -115,9 +115,10 @@ Known limitations:
 
 Not in this version:
 
-- Ready-made failure modes for every kind of element. The catalog of the skill has them for services and components. It also has catalog rows for dependencies, for any element outside the analysis or with a dependency block. It has a short security set for security-relevant elements. For interfaces, event streams, datastores and ML or LLM components, the skill asks guiding questions instead.
+- Ready-made failure modes for every kind of element. The catalog of the skill has them for services and components. It also has catalog rows for dependencies, for any element outside the analysis or that is the provider of an edge. It has a short security set for security-relevant elements. For interfaces, event streams, datastores and ML or LLM components, the skill asks guiding questions instead.
 - Threat modeling. The skill writes a failure whose cause is an adversary as a handoff to threat modeling.
 - Process-side FMEA (PFMEA) of delivery, pipelines or operations. For such a request, the skill gives a short answer and no analysis. The answer names what has a source and what is missing.
+- One analysis has one owner and one tracker target, and an update re-reads the whole analysis; updating one codebase alone, and a tracker per team, are later work.
 
 Under [Compatibility between versions](docs/scripts.md#compatibility-between-versions), the scripts page says which versions of the plugin read which analyses.
 
@@ -127,7 +128,7 @@ Once an analysis has actions, Claude can create a GitHub issue or a Jira work it
 
 ## The scripts
 
-The skill has Claude run four scripts and take every priority from them. You can also run them directly with `node`. All four are in `skills/fmea-software/scripts/`.
+The skill has Claude run five scripts and take every priority from them. The fifth, `update-check.ts`, is the one the update mode runs. You can also run them directly with `node`. All five are in `skills/fmea-software/scripts/`.
 
 | Script | What it does |
 |---|---|
@@ -135,6 +136,7 @@ The skill has Claude run four scripts and take every priority from them. You can
 | `priority.ts <analysis.json> --write [--change-table]` | Writes each failure chain's priority from its ratings, and with `--change-table` moves the analysis to another priority table. |
 | `render.ts <analysis.json> --out <report.html> [--force]` | Renders a validated analysis to the HTML file that `--out` names, and with `--force` overwrites an existing file. |
 | `track.ts plan <analysis.json>`<br>`track.ts apply <analysis.json> --plan <digest> [--only <key>,<key>] [--public-ok]`<br>`track.ts refresh <analysis.json> [--write]` | Tracks the actions as GitHub issues or Jira work items, as [the tracking page](docs/tracking.md) describes, and `apply` takes the digest that `plan` prints. |
+| `update-check.ts <stored copy> <draft> [--check]` | Compares an update's draft with the analysis as it was stored, prints the dependency and element changes, the rows they mark stale and the order to re-rate them in, and with `--check` refuses a draft whose stale flags disagree. It writes nothing. |
 
 [The scripts page](docs/scripts.md) describes the flags, the refusals and how to use a priority table of your own.
 
