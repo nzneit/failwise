@@ -12,7 +12,7 @@ Synthetic input for the fmea-software update-mode eval. It describes the same sy
    was issued, and rejects a token presented from a different fingerprint. The component's
    function statement changed with it.
 3. A new in-process price cache, `checkout.pricing-cache`, holds priced carts for the length of
-   a shopper's session and is read before the pricing service is called.
+   a shopper's session; checkout reads it first and, on a miss, calls pricing itself.
 4. Two controls were retired in the same release (see the control inventory below).
 
 ## Component inventory

@@ -1,0 +1,401 @@
+{
+  "meta": {
+    "id": "fmea-v2-branches",
+    "name": "Order platform DFMEA, constructed v2 document",
+    "version": 1,
+    "branch": "DFMEA",
+    "scope": "The storefront, checkout and fulfilment services and the outside services they reach, constructed to exercise the v2 migration.",
+    "boundary": {
+      "included": [
+        "storefront, checkout and fulfilment and the interfaces they own"
+      ],
+      "excluded": [
+        "the internals of the hosting platform, its content delivery network and the fraud screening service"
+      ],
+      "security": "No element is security-relevant in this constructed document; a failure whose agent is an adversary would be handed off to threat modeling."
+    },
+    "ground_rules": [
+      "The analysis covers the design of the three in-scope services, not the internals of the services they depend on."
+    ],
+    "assumptions": [
+      {
+        "text": "The payment ledger's 99.95% monthly availability is the platform team's published figure; confirmed by the platform team.",
+        "owner": "A. Reviewer",
+        "status": "closed"
+      }
+    ],
+    "reviews": [
+      {
+        "date": "2026-10-08",
+        "reviewers": [
+          "A. Reviewer"
+        ],
+        "outcome": "The structure and the three chains were reviewed against the platform architecture document and accepted as written."
+      }
+    ],
+    "scales": {
+      "version": 1,
+      "priority_table": "priority-fmea-software-v1"
+    },
+    "created": "2026-10-08",
+    "updated": "2026-10-08",
+    "history": []
+  },
+  "elements": [
+    {
+      "id": "storefront",
+      "kind": "service",
+      "name": "Storefront",
+      "description": "The shopper-facing web application that browses the catalogue and submits carts.",
+      "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "storefront.platform",
+      "kind": "service",
+      "name": "Hosting platform",
+      "description": "The managed platform that hosts and serves the storefront.",
+      "parent": "storefront",
+      "boundary": "owned_outside",
+      "security_relevant": false,
+      "dependency": {
+        "strength": "strong",
+        "sla": "99.9% monthly",
+        "limits": "200 rps per tenant"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "storefront.platform.cdn",
+      "kind": "service",
+      "name": "Content delivery network",
+      "description": "The third-party network that caches and delivers the storefront's static assets.",
+      "parent": "storefront.platform",
+      "boundary": "third_party",
+      "security_relevant": false,
+      "dependency": {
+        "strength": "strong",
+        "sla": "99.99% monthly"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "checkout",
+      "kind": "service",
+      "name": "Checkout service",
+      "description": "Turns a submitted cart into a confirmed order once its payment is posted.",
+      "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "checkout.ledger",
+      "kind": "datastore",
+      "name": "Payment ledger",
+      "description": "The append-only store that records each acknowledged payment against its account.",
+      "parent": "checkout",
+      "boundary": "in_scope",
+      "security_relevant": false,
+      "dependency": {
+        "strength": "weak",
+        "sla": "99.95% monthly"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "fulfilment",
+      "kind": "service",
+      "name": "Fulfilment service",
+      "description": "Picks, packs and ships each confirmed order.",
+      "parent": null,
+      "boundary": "in_scope",
+      "security_relevant": false,
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    },
+    {
+      "id": "fraud-screen",
+      "kind": "service",
+      "name": "Fraud screening service",
+      "description": "A third-party service that scores each order for fraud before it is confirmed.",
+      "parent": null,
+      "boundary": "third_party",
+      "security_relevant": false,
+      "dependency": {
+        "strength": "strong",
+        "limits": "20 rps per merchant"
+      },
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "platform-architecture.md#component-inventory"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "id": "fn-ledger-post",
+      "element": "checkout.ledger",
+      "statement": "Post each acknowledged payment to the ledger durably and in order",
+      "conditions": [],
+      "for_whom": "the checkout service"
+    },
+    {
+      "id": "fn-checkout-order",
+      "element": "checkout",
+      "statement": "Confirm an order only after its payment is posted to the ledger",
+      "conditions": [],
+      "for_whom": "the shopper"
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "storefront",
+      "to": "storefront.platform",
+      "strength": "strong",
+      "sla": "99.9% monthly"
+    }
+  ],
+  "chains": [
+    {
+      "id": "ch-1",
+      "function": "fn-ledger-post",
+      "failure_mode": "A ledger write is acknowledged and not durably posted",
+      "effects": {
+        "local": "The ledger acknowledges a payment it has not stored.",
+        "next_level": "Checkout treats the payment as posted and confirms the order.",
+        "end": "An order ships with no ledger record of its payment, and finance must reconstruct it."
+      },
+      "causes": [
+        {
+          "text": "The ledger acknowledges a write before it is flushed to durable storage",
+          "origin": "design"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Nightly reconciliation of acknowledged ledger writes against stored ledger rows",
+          "status": "existing",
+          "evidence": {
+            "kind": "estimate"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 7,
+          "rationale": "A missing payment record leaves a shipped order unaccounted for until finance reconstructs it.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        },
+        "O": {
+          "value": 4,
+          "rationale": "The window between acknowledgement and flush is open on every write, and a crash inside it is occasional.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        },
+        "D": {
+          "value": 3,
+          "rationale": "The nightly reconciliation finds every missing row within a day, before the month's books close.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 84
+      }
+    },
+    {
+      "id": "ch-2",
+      "function": "fn-ledger-post",
+      "failure_mode": "Ledger posts are applied out of order and a balance is computed from a partial sequence",
+      "effects": {
+        "local": "The ledger applies a later post before an earlier one for the same account.",
+        "next_level": "An account balance is computed from a sequence with a gap in it.",
+        "end": "A shopper or merchant sees a wrong balance until the missing post is applied."
+      },
+      "causes": [
+        {
+          "text": "Posts for one account are written by concurrent workers with no per-account ordering",
+          "origin": "design"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Sequence-gap alert on ledger posts per account",
+          "status": "existing",
+          "evidence": {
+            "kind": "estimate"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 6,
+          "rationale": "A wrong balance is visible and corrects itself once the missing post lands, with no money lost.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        },
+        "O": {
+          "value": 3,
+          "rationale": "Concurrent posts to one account are uncommon outside bulk refunds.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        },
+        "D": {
+          "value": 4,
+          "rationale": "The alert fires on a gap only after a grace period, so a short-lived wrong balance can be read first.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 72
+      }
+    },
+    {
+      "id": "ch-3",
+      "function": "fn-checkout-order",
+      "failure_mode": "Checkout confirms an order whose ledger post failed",
+      "effects": {
+        "local": "Checkout reads a failed ledger post as a success.",
+        "next_level": "The order is confirmed and passed to fulfilment with no posted payment.",
+        "end": "Goods ship for an order that was never paid for."
+      },
+      "causes": [
+        {
+          "text": "Checkout treats a ledger timeout as a successful post",
+          "origin": "design"
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Daily comparison of confirmed orders against posted ledger entries",
+          "status": "existing",
+          "evidence": {
+            "kind": "estimate"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 8,
+          "rationale": "Shipping unpaid goods is a direct financial loss that is hard to recover once the order leaves the warehouse.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        },
+        "O": {
+          "value": 3,
+          "rationale": "Ledger timeouts are rare and most of them resolve as successful posts.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        },
+        "D": {
+          "value": 3,
+          "rationale": "The daily comparison names every confirmed order without a ledger entry the next morning.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "rescored",
+            "by": "A. Reviewer",
+            "date": "2026-10-08"
+          }
+        }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "M",
+        "table": "priority-fmea-software-v1",
+        "rpn": 72
+      }
+    }
+  ]
+}

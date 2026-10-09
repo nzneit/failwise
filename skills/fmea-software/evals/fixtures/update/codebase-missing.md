@@ -16,13 +16,12 @@ Synthetic inputs for the fmea-software evals. Nothing here describes a real syst
 | checkout.api | interface | in_scope | no | checkout | The public HTTP interface the storefront calls to submit and confirm a cart. |
 | checkout.payment-gateway | service | third_party | no | checkout | A third-party card authorization gateway reached over HTTPS. |
 | checkout.order-store | datastore | in_scope | no | checkout | The relational store holding orders and their state transitions. |
-| checkout.session-auth | component | in_scope | yes | checkout | The session token issuer and verifier that authenticates a shopper. |
 | pricing | service | owned_outside | no | none | The pricing service that returns a priced cart for a shopper and a locale. |
 
 ## Codebases
 
 - `acme/checkout`, the checkout service's repository, named "Checkout service": checkout, checkout.api and checkout.order-store live here.
-- `acme/session-auth`, the session authentication library's repository, named "Session authentication library": checkout.session-auth lives here.
+- `acme/session-auth`, the session authentication library's repository, named "Session authentication library".
 - pricing's repository is not named in these inputs and is not part of this run; pricing stays in the analysis as an element owned outside it.
 - The checkout team owns this analysis and both repositories.
 

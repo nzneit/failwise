@@ -28,7 +28,6 @@ Synthetic inputs for the fmea-software evals. Nothing here describes a real syst
 
 ## Dependencies
 
-- checkout depends on checkout.payment-gateway. Strong: a failed authorization fails the checkout.
 - checkout depends on pricing. Weak: checkout falls back to the last quoted price held in the cart when pricing does not answer.
 - pricing is run by the platform team and is not under analysis here; checkout sees only its published contract.
 - checkout depends on checkout.order-store. Strong: checkout cannot confirm an order it cannot write.
