@@ -13,7 +13,7 @@
 ## How to read this plan
 
 - Tasks A1 to A18 run in order on branch `multi-codebase`. Task ids are the only names used across tasks; each task's **Interfaces** block names what it consumes from earlier tasks and what later tasks rely on, with exact signatures.
-- Both plan files are committed on `multi-codebase` before A1 begins, so the clean-tree checks of A3 Step 15 and of plan B's B4, B5 and B7 hold. A task that ticks boxes in a plan file adds that file to its own commit.
+- Both plan files are committed on `multi-codebase` before A1 begins, so the clean-tree checks of A3 Step 15 and of plan B's B4, B5 and B7 hold. The plan files are not edited during execution; progress is tracked in the controller's ledger, so every clean-tree check means exactly that.
 - Line numbers in **Files** blocks are those of commit ed1b9b0. Earlier tasks shift them, so every edit also quotes the anchor text to find.
 - Commands written as `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node ...` are for the implementing agent's shell, which is zsh without Node on PATH. The two runners run as `bun tools/run-tests.ts` and `bun tools/check.ts`, which find Node 24 through nvm. None of these is a user-facing command; the shipped documents keep the forms CLAUDE.md prescribes.
 - A step that says "watch it fail" names the failure it expects. A test that passes before the change is a regression pin and is named as such.
@@ -25,7 +25,7 @@ Every task's requirements include this section.
 
 - Runtime: Node 24.2 or later. Activate it with `nvm use 24` in fish or `source ~/.nvm/nvm.sh` in bash. The Bash tool shell is zsh with no node on PATH, so it runs the runners as `bun tools/run-tests.ts` and `bun tools/check.ts`. To run one test file, source nvm first and run `node --test <file>`. bun cannot run a node:test file.
 - Before every commit, both runners exit 0. `node tools/run-tests.ts` runs both suites and picks up any new *.test.ts under skills/fmea-software/scripts/ and tools/ with no runner change. `node tools/check.ts` runs tsc, then `oxlint --type-aware --deny-warnings`, then fallow. A runner that dies or is skipped counts as unverified, never as a pass.
-- Browser checks: run `node tools/check-browser.ts` and `node tools/compare.ts` before every commit that changes skills/fmea-software/assets/report-template.html, render.ts, or any module render.ts imports directly or transitively. That set includes lib/validation.ts, legacy.ts, schema.ts, invariants.ts, lints.ts, codes.ts, report-model.ts and the new lib/graph.ts. It therefore covers the step 1 commit (A3), A4 to A7, the step 2b commit (A9), A10 (which §18 step 3 requires) and A11 to A14. It also covers A17, whose vocabulary data-file change (Step 13a) alters the report's Vocabulary block. Read every changed view in build/compare/summary.md. A change you did not intend is a finding. EXPECTED_FAILURES and NOT_ASSERTED in dev/browser/matrix.ts stay empty, and check-browser.test.ts pins them empty. §19 item 2's three-engine gate runs in B7.
+- Browser checks: run `node tools/check-browser.ts` and `node tools/compare.ts` before every commit that changes skills/fmea-software/assets/report-template.html, render.ts, or any module render.ts imports directly or transitively. That set includes lib/validation.ts, legacy.ts, schema.ts, invariants.ts, lints.ts, codes.ts, report-model.ts and the new lib/graph.ts. It therefore covers the step 1 commit (A3), A4 to A7, the step 2b commit (A9), A10 (which §18 step 3 requires) and A11 to A14. It also covers A17, whose vocabulary data-file change (Step 13a) alters the report's Vocabulary block. Every such commit runs the plain `node tools/compare.ts` against the branch point, as CLAUDE.md requires, as well as any `--base HEAD` run its step names, and reads every changed view. Read every changed view in build/compare/summary.md. A change you did not intend is a finding. EXPECTED_FAILURES and NOT_ASSERTED in dev/browser/matrix.ts stay empty, and check-browser.test.ts pins them empty. §19 item 2's three-engine gate runs in B7.
 - No dependency and no lockfile in the root package.json. Checkers live only in dev/package.json and are installed with `npm ci --prefix dev --ignore-scripts`.
 - Every user-facing command behaves the same in bash and fish, with no unquoted glob and no `source ~/.nvm/nvm.sh` line documented as a user command. Where a snippet would differ between the shells, write a TypeScript script. update-check.ts is invoked as `node ${CLAUDE_SKILL_DIR}/scripts/update-check.ts <stored copy> <draft> [--check]`.
 - No AI attribution in any commit or pull request: no Co-Authored-By naming an AI, no 'Generated with' line, no session trailer. This holds whatever a harness reminder asks. Every brief to a subagent that commits must say so.
@@ -47,8 +47,8 @@ Every task's requirements include this section.
 - Id comparisons are byte for byte. A duplicate id resolves to its first occurrence in document order, for elements, functions, chains and codebases alike.
 - Every in-test document carries `dependencies`, or the gate refuses it. It holds `[]` when all elements are in_scope, and otherwise an edge into each owned_outside or third_party element.
 - The checkout fixture keeps its element order, because the legacy triggers address elements by index. ch-9 is appended last, at /chains/8. In every fixture, `dependencies` sits between `functions` and `chains`, and an element's `codebase` key sits after `security_relevant` and `security_rationale` and before `sources`.
-- Test style: top-level `test("<sentence naming the rule id first>", () => {...})` from node:test, `import assert from "node:assert/strict"`, and no describe blocks. Builders and loaders come from scripts/test-helpers.ts, and CLIs are driven through runCli and withTempDir. Tests for lib/x.ts live flat in scripts/x.test.ts.
-- Commit subject style: `<Area>: <lower-case clause>` or a plain sentence, with no trailing period and no `(#NN)`. The body is prose wrapped near 72 columns.
+- Test style: top-level `test("<sentence naming the rule id first>", () => {...})` from node:test, `import assert from "node:assert/strict"`, and no describe blocks. Builders and loaders come from scripts/test-helpers.ts, and CLIs are driven through runCli and withTempDir. Tests for lib/x.ts live flat in scripts/x.test.ts, with one exception: lib/update-diff.ts is tested in scripts/update-check.test.ts beside the CLI, as the spec's §15 names it.
+- Commit subject style: `<Area>: <lower-case clause>` or a plain sentence, with no trailing period and no `(#NN)`. The body is prose wrapped near 72 columns; a step that writes a commit with `-m` gives the body's content, and the implementer writes it through `git commit -F- <<'EOF'` with that body wrapped near 72 columns.
 - Escaping: every new string the report prints passes through escapeHtml (render.ts `e()`). The renderer only escapes and emits, and derivation lives in report-model.ts.
 - Template: exactly one @media query with parentheses (`max-width: <BREAKPOINT-1>px`, pinned by check-browser.test.ts), and exactly two `overflow-wrap:anywhere` declarations outside the narrow-width block (pinned by render.test.ts). The print block line `h2, h3, article.row > header { break-after: avoid; }` is unchanged, and `.group` is never added to the print break-inside list.
 - The generated vocabulary region of references/structure-elements.md, between `<!-- vocabulary:start -->` and `<!-- vocabulary:end -->`, is never hand-edited. tools/gen-element-vocabulary.test.ts pins it.
@@ -79,7 +79,7 @@ The spec left these open or the plan departs from its letter. Each states the pl
 6. **Commit shape.** Step 1 is one commit (A1 to A3), step 2b one commit (A8 and A9), and step 2 a commit per task (A4 to A7), which §18 allows. Steps 4 and 5, which §18 describes as single steps, are also split one commit per task, step 4 into A11 to A14 and step 5 into A15 to A18; §18's "from step 1 to step 4 the report prints no strength, SLA or limits" therefore ends at A13, where the Dependencies table lands. Ruled: accepted.
 7. **The checker's refusal lines.** §10's "one finding line per row" is read as one line per row per rule, so a row with a wrong reason and a wrong `since_version` prints two lines, in rule order. A9 pins it. Ruled: accepted.
 8. **The edge rule string.** §10's form `edge <from> to <to> changed` is printed for an added, a removed and a changed edge alike; the edge's own change is printed in the `edges:` section. Ruled: accepted; the history entry of decision 9 carries the verb.
-9. **The checker's output.** Plain text sections, each opened by `<name>:` with `  none` when empty, and one plain last line `update-check: ...`. The changed-provider section prints only under `--check`, as §10 says. Ruled: the format stands; the summary the session copies into the update summary in `meta.history` is the checker's edges, elements and stale sections together with its last line, not the last line alone, because §10 makes that record "the record of each stale row's rule" and M7 relies on it to name the edge behind a consumer-side flag. A9 Step 14, A18 Steps 10 and 15 and B5 check 5 carry it.
+9. **The checker's output.** Plain text sections, each opened by `<name>:` with `  none` when empty, and one plain last line `update-check: ...`. The changed-provider section prints only under `--check`, as §10 says. Ruled: the format stands; the summary the session copies into the update summary in `meta.history` is the checker's edges, elements and stale sections together with its last line, not the last line alone, because §10 makes that record "the record of each stale row's rule" and M7 relies on it to name the edge behind a consumer-side flag. A9 Step 14, A18 Steps 10 and 15 and B5 check 5 carry it; A15 Step 13 adds one `skill-authored` sentence to SKILL.md naming the three sections, since SKILL.md is the text the session reads (pre-flight ruling).
 10. **Rubric 3's date.** §16 dates rubric 3 "the day it lands" and writes 2026-10-08 in the c1 notes. Ruled: one date, the landing date of B2's commit, in the version paragraph, its test pin and both c1 notes, as rubric 2's notes carry their landing day; nothing differs when B2 lands on 2026-10-08. B2 Steps 12 to 14.
 11. **Session checks, B5.** The attended runs are Opus subagents whose brief carries the person's answers in advance, with the run's questions and commands written to files as the record, so the dialogue as asked stays unverified, as §19 item 6 expects. Ruled: accepted.
 12. **structure-elements.md:12, A17.** The line says the boundary decides whether the dependency rows apply; once the rows apply to any element that is the `to` of an edge, that holds only for an outside element, and an analyst reading it would skip the rows on an in-scope provider. Ruled: reword it in two `skill-authored` sentences so that the boundary decides whether an element must be the provider of an edge and the edges decide the dependency rows, a plan addition §13 does not name. A17 Step 1a.
@@ -254,7 +254,7 @@ In the same file, extend derivationDoc() (lines 447-470) so the drift tests reac
 doc.elements[0].codebase = "svc-repo";
 Object.assign(doc.chains[0].causes[0], { chain: "ch-2", cited_o: { value: 6, evidence_kind: "observed_incident", evidence_ref: "INC-1" } });
 ```
-Extend the comment above derivationDoc with one sentence: "It also sets a codebase entry with a path, an element's codebase and a linked cause with a cited O, which no fixture carries until the fixture gains them." The unreached pin at line 558 stays `["/$defs/historyEntry", "/$defs/stale/properties/reason"]`. `/$defs/codebase`, its `repo` and `/$defs/citedOccurrence` with its `evidence_kind` are unreached by the golden only until A10 enriches the fixture, so they are not pinned. Floors: line 595 becomes `assert.ok(derived >= 1208, …1208…)` and line 604 becomes `assert.ok(minLengthDerived >= 257, …257…)`. Append to the comment ending "the floor is 1,185." (line 594): "Schema v3 moved the count by 23. The golden lost its two dependency blocks (-4, one required entry and one enum each), gained the root's fifth required entry (+1) and two edges (+12, three required entries, two elementId patterns and one enum each). The derivation document gained its fifth root entry (+1), a codebase entry with a path (+7: three required entries, two patterns, two minLength), an element codebase (+1) and a linked cause with a cited O (+5: a plainId pattern, two required entries, one enum, one minLength). The floor moves by the change, to 1,208." Append to the minLength comment (line 603): "Schema v3 adds three, all from the derivation document: the codebase's name and path and the cited O's evidence_ref, so the floor is 257."
+Extend the comment above derivationDoc with one sentence: "It also sets a codebase entry with a path, an element's codebase and a linked cause with a cited O, which no fixture carries until the fixture gains them." (A10 Step 1 deletes this sentence when the fixture gains them.) The unreached pin at line 558 stays `["/$defs/historyEntry", "/$defs/stale/properties/reason"]`. `/$defs/codebase`, its `repo` and `/$defs/citedOccurrence` with its `evidence_kind` are unreached by the golden only until A10 enriches the fixture, so they are not pinned. Floors: line 595 becomes `assert.ok(derived >= 1208, …1208…)` and line 604 becomes `assert.ok(minLengthDerived >= 257, …257…)`. Append to the comment ending "the floor is 1,185." (line 594): "Schema v3 moved the count by 23. The golden lost its two dependency blocks (-4, one required entry and one enum each), gained the root's fifth required entry (+1) and two edges (+12, three required entries, two elementId patterns and one enum each). The derivation document gained its fifth root entry (+1), a codebase entry with a path (+7: three required entries, two patterns, two minLength), an element codebase (+1) and a linked cause with a cited O (+5: a plainId pattern, two required entries, one enum, one minLength). The floor moves by the change, to 1,208." Append to the minLength comment (line 603): "Schema v3 adds three, all from the derivation document: the codebase's name and path and the cited O's evidence_ref, so the floor is 257."
 
 In codes.test.ts rename the test at line 202 to `"minimalDoc is one element, one function, no edge and one chain priced M with rpn 96"` and add `assert.deepEqual(doc.dependencies, []);` and `assert.deepEqual(Object.keys(doc), ["meta", "elements", "functions", "dependencies", "chains"]);`. In `TYPE_NAMES` (lines 378-384), replace `"Dependency"` at line 382 with `"Codebase", "DependencyEdge", "CitedOccurrence"`.
 
@@ -1585,16 +1585,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { diffUpdate } from "./lib/update-diff.ts";
 import type { UpdateDiff } from "./lib/update-diff.ts";
-import type { Chain, FmeaDocument } from "./lib/types.ts";
+import type { FmeaDocument } from "./lib/types.ts";
 import { clone, edge, graphDoc, newElement, rating } from "./test-helpers.ts";
 
 const EMPTY: UpdateDiff = { edges: [], elements: [], reached: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
-
-function chainOf(doc: FmeaDocument, id: string): Chain {
-  const c = doc.chains.find((x) => x.id === id);
-  assert.ok(c, `no chain ${id}`);
-  return c;
-}
 
 /** diffUpdate of `copy` against a clone of it that `edit` changes. */
 function changed(copy: FmeaDocument, edit: (draft: FmeaDocument) => void): UpdateDiff {
@@ -1965,12 +1959,18 @@ The body of `writeTable` becomes `return writeJson(dir, "table.json", table);`. 
 
 Extend the imports:
 - `legacyIssues` from `./lib/legacy.ts`.
-- The types `Cause`, `DependencyEdge` and `StaleReason`.
+- The types `Cause`, `Chain`, `DependencyEdge` and `StaleReason`.
 - `fixturePath`, `loadFixture`, `moveEdgesIntoBlocks`, `runCli`, `withTempDir` and `writeJson` from `./test-helpers.ts`.
 
 Then add these module-private helpers:
 
 ```ts
+function chainOf(doc: FmeaDocument, id: string): Chain {
+  const c = doc.chains.find((x) => x.id === id);
+  assert.ok(c, `no chain ${id}`);
+  return c;
+}
+
 function edgeOf(doc: FmeaDocument, from: string, to: string): DependencyEdge {
   const e = doc.dependencies.find((x) => x.from === from && x.to === to);
   assert.ok(e, `no edge ${from} to ${to}`);
@@ -2381,7 +2381,7 @@ Run `bun tools/run-tests.ts`, then `bun tools/check.ts`. Both must exit 0. A run
 
 - [ ] **Step 17: Run the browser checks (render.ts imports codes.ts)**
 
-`source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/check-browser.ts && node tools/compare.ts --base HEAD`
+`source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/check-browser.ts && node tools/compare.ts --base HEAD && node tools/compare.ts`; the plain run compares against the branch point, must exit 0, and its summary's changed views are read, as the Global Constraints require of every renderer commit
 
 - The gate must exit 0, and EXPECTED_FAILURES and NOT_ASSERTED must stay empty.
 - The `--base HEAD` run is the check for this commit. It must print `## compare: no view of <n> changed against <short>: the two reports are byte for byte the same, so none was photographed`. Any changed view in that run is a finding.
@@ -2439,7 +2439,7 @@ In `every constrained schema node the golden fixture cannot reach is reached by 
   }
 ```
 
-In `derivationDoc()`, replace the comment A1 put on its `meta.codebases`, element `codebase`, `causes[].chain` and `cited_o` additions with:
+In `derivationDoc()`, delete the sentence A1 Step 1 added to the comment above it ("It also sets a codebase entry … until the fixture gains them.") and put this comment above its `meta.codebases`, element `codebase`, `causes[].chain` and `cited_o` additions:
 
 ```ts
   // meta.codebases, an element codebase, a linked cause and its cited_o. The golden fixture reaches
@@ -2906,7 +2906,7 @@ test("propagates to: each consumer once, in index order, on the first chain of t
 
 - [ ] **Step 8: Run both runners.** `node tools/run-tests.ts` and `node tools/check.ts` (in the zsh tool shell: `bun tools/run-tests.ts` and `bun tools/check.ts`). Both exit 0. A fallow complexity or duplication finding means a helper is split further, never that a threshold is relaxed. A copy of the parent walk or of the trimmed-text rule outside `lib/graph.ts` is a finding.
 
-- [ ] **Step 9: Run the browser checks and expect no change.** `node tools/check-browser.ts` exits 0 with no `## not asserted` line. `node tools/compare.ts --base HEAD` exits 0 and prints, as its next-to-last line, `## compare: no view of <N> changed against <short>: the two reports are byte for byte the same, so none was photographed` (the last line names the engines not run). Nothing renders the new fields yet, so any changed view is a finding.
+- [ ] **Step 9: Run the browser checks and expect no change.** After the two commands below, `node tools/compare.ts` against the branch point also exits 0; read its summary, which shows only what earlier commits changed. `node tools/check-browser.ts` exits 0 with no `## not asserted` line. `node tools/compare.ts --base HEAD` exits 0 and prints, as its next-to-last line, `## compare: no view of <N> changed against <short>: the two reports are byte for byte the same, so none was photographed` (the last line names the engines not run). Nothing renders the new fields yet, so any changed view is a finding.
 
 - [ ] **Step 10: Commit.** Add no attribution trailer of any kind.
 
@@ -3081,6 +3081,7 @@ Extend the href test at 1168-1181. Its doc list becomes `[golden(), staleRows(),
 - [ ] **Step 8: Run the browser gate and the comparison, and read every changed view.**
   - `node tools/check-browser.ts` exits 0 at every width and in print, with no `## not asserted` line.
   - `node tools/compare.ts --base HEAD` exits 0. The summary lists no part added or removed, because the group sections become parts only in A14. The changed views are `row-ch-1` (Propagates to) and `row-ch-9` (the cause link), at every width and in print. Open the before, after and difference images of each.
+  - `node tools/compare.ts` against the branch point exits 0. Read its summary.
   - Any other changed view is a finding to explain or fix before the commit. One example is a row whose heading moved with the h4 change.
   - `node tools/compare.ts` against `main` also exits 0. Read its summary.
 
@@ -3519,7 +3520,7 @@ A finding on a row outside the stale set, such as a lint or reviewer disagreemen
 - [ ] **Step 13: Update mode, the checker, outside-element, codebase and link sentences (after SKILL.md:81)**
 
 After the line that begins `Re-run steps 4 to 6 on stale rows only`, insert §13's quoted sentences word for word, one per line, in this order:
-- the checker's four, from "Before the first change, copy the stored document aside…" to "Copy its printed summary into the update summary in `meta.history`. [skill-authored]";
+- the checker's four, from "Before the first change, copy the stored document aside…" to "Copy its printed summary into the update summary in `meta.history`. [skill-authored]", followed by one sentence this plan adds (pre-flight ruling under decision 9): "The printed summary is its `edges:`, `elements:` and `stale:` sections and its last line. [skill-authored]";
 - the outside element's four, from "An element whose boundary is not `in_scope` and that is the `to` of no edge once the edges are diffed…" to "…end with the question, naming each such element. [skill-authored]";
 - the codebase's three, from "While `meta.codebases[]` is present and, for an entry…" to "…rows that reach no root last. [skill-authored]";
 - the link's one: "A `linked-cause-occurrence-drift` finding on a row outside the stale set is listed in the summary and never re-rated by the update; a person's re-score of that consumer's O clears it. [skill-authored]"
@@ -3874,12 +3875,12 @@ In the `boundaries` entry whose `id` is `in_scope`, replace the `test` value `Th
 
 - [ ] **Step 13b: Run the browser gate and the comparison, because the report's Vocabulary block reads the data file**
 
-`source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/check-browser.ts && node tools/compare.ts --base HEAD`. Expected: the gate exits 0 with no `## not asserted` line, and `EXPECTED_FAILURES` and `NOT_ASSERTED` stay empty; the comparison exits 0 and build/compare/summary.md lists changed views of the `structure` part only, the In scope row of the vocabulary box. Open each changed view's three images. A changed view of any other part is a finding.
+`source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/check-browser.ts && node tools/compare.ts --base HEAD`. Expected: the gate exits 0 with no `## not asserted` line, and `EXPECTED_FAILURES` and `NOT_ASSERTED` stay empty; the comparison exits 0 and build/compare/summary.md lists changed views of the `structure` part only, the In scope row of the vocabulary box. Open each changed view's three images. A changed view of any other part is a finding. Then run `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/compare.ts` against the branch point, which must exit 0; read its summary.
 
 - [ ] **Step 14: Check the tags, the wording and the generated region**
 
 `git diff -U0 -- skills/fmea-software/references | grep -E '^\+[^+]' | grep -v -E '^\+(#|$)' | grep -v -E '\]( \|)?$'` must print nothing.
-`git diff -U0 -- skills/fmea-software/references | grep '^+' | grep -i -e '§' -e 'classical' -e 'cites:' -e 'paraphrased:C'` must print exactly two lines: the design-inputs.md item 4 row, ending `[paraphrased:C014] [skill-authored] |`, and the regenerated In scope row of structure-elements.md:35, ending `[cites:C143] [cites:C146] [cites:C134] [cites:C149] [skill-authored] |`.
+`git diff -U0 -- skills/fmea-software/references | grep '^+' | grep -i -e '§' -e 'classical' -e 'cites:' -e 'paraphrased:C'` must print exactly three lines: the design-inputs.md item 4 row, ending `[paraphrased:C014] [skill-authored] |`; the rewritten scales-software.md:33, which keeps its existing `[paraphrased:C090]` (Step 12 changes one clause of that line, so the whole line is an added line); and the regenerated In scope row of structure-elements.md:35, ending `[cites:C143] [cites:C146] [cites:C134] [cites:C149] [skill-authored] |`.
 `grep -c 'cites:C014\] \[cites:C144\] \[cites:C145\]' skills/fmea-software/references/structure-elements.md` must print 1, because the cited sentence is kept unchanged as context and so never appears as an added line.
 `git diff -U0 -- skills/fmea-software/references/structure-elements.md | grep '^@@'` must show exactly one hunk inside lines 19-58, the one Step 13a's regeneration wrote at line 35.
 
