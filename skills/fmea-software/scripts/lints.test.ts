@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MACHINE_RULES, formatLintLine, runLints, tablePropertyLints } from "./lib/lints.ts";
+import { CASCADING_ROWS, MACHINE_RULES, formatLintLine, runLints, tablePropertyLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
 import { validateDocument } from "./lib/validation.ts";
-import { bandTable, edge, graphDoc, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
-import type { Codebase, Control, FmeaDocument, Lint, Source, TrackerLink } from "./lib/types.ts";
+import { bandTable, citeO, edge, graphDoc, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
+import type { Chain, Codebase, Control, FmeaDocument, Lint, Source, TrackerLink } from "./lib/types.ts";
 
 function ruleById(id: string) {
   const rule = MACHINE_RULES.find((r) => r.id === id);
@@ -44,6 +44,8 @@ test("MACHINE_RULES lists every rule with its severity, in order", () => {
     ["repo-ref-form", "warning"],
     ["repo-ref-codebase", "warning"],
     ["cause-chain-unlinked", "warning"],
+    ["cause-chain-severity", "warning"],
+    ["linked-cause-occurrence-drift", "warning"],
   ]);
 });
 
@@ -396,6 +398,179 @@ test("cause-chain-unlinked skips a link that does not resolve, and a function or
     breakDoc(doc);
     assert.deepEqual(fired(doc, "cause-chain-unlinked"), [], what);
   }
+});
+
+const DRIFT = "linked-cause-occurrence-drift";
+
+// ch-1 on svc (fn-svc, functions[0]) links its one cause to ch-2 on db (fn-db, functions[1]) across an edge;
+// graphDoc writes ch-2's O as the cause's cited_o.
+function linkedPair(): FmeaDocument {
+  return graphDoc({ elements: ["svc", "db"], edges: [edge("svc", "db")], chains: [["ch-1", "svc"], ["ch-2", "db"]], links: [["ch-1", "ch-2"]] });
+}
+function severityPair(consumerS: number, providerS: number): FmeaDocument {
+  const doc = linkedPair();
+  doc.chains[0].ratings.S = rating(consumerS);
+  doc.chains[1].ratings.S = rating(providerS);
+  return doc;
+}
+const BELOW = "chain ch-2 rates S 7, below S 9 of chain ch-1, whose only cause is its failure mode";
+// Each breaks one end of linkedPair's link without touching the link itself.
+const UNRESOLVED_ENDS: [string, (doc: FmeaDocument) => void][] = [
+  ["the consumer's function", (d) => { d.chains[0].function = "fn-missing"; }],
+  ["the consumer's element", (d) => { d.functions[0].element = "ghost"; }],
+  ["the provider's function", (d) => { d.chains[1].function = "fn-missing"; }],
+  ["the provider's element", (d) => { d.functions[1].element = "ghost"; }],
+];
+
+test("CASCADING_ROWS is exactly the six positive-feedback catalog rows", () => {
+  assert.deepEqual([...CASCADING_ROWS], ["cat-service-01", "cat-service-02", "cat-service-03", "cat-service-05", "cat-dependency-03", "cat-dependency-04"]);
+});
+
+test("cause-chain-severity flags a provider rated below its single-cause consumer, at the provider's S", () => {
+  assert.deepEqual(fired(severityPair(9, 7), "cause-chain-severity"), [{ rule: "cause-chain-severity", severity: "warning", pointer: "/chains/1/ratings/S", message: BELOW }]);
+});
+
+test("cause-chain-severity reads ratings and never post_ratings", () => {
+  const equal = severityPair(8, 8);
+  equal.chains[1].post_ratings = { S: rating(2), O: rating(3), D: rating(4) };
+  equal.chains[0].post_ratings = { S: rating(10), O: rating(3), D: rating(4) };
+  assert.deepEqual(fired(equal, "cause-chain-severity"), []);
+  const below = severityPair(9, 7);
+  below.chains[1].post_ratings = { S: rating(9), O: rating(3), D: rating(4) };
+  assert.deepEqual(fired(below, "cause-chain-severity").map((l) => l.message), [BELOW]);
+});
+
+test("cause-chain-severity is silent on a two-cause consumer, on an equal S, on a trigger that restates the linked cause, and on an unresolved link", () => {
+  const twoCauses = severityPair(9, 7);
+  twoCauses.chains[0].causes.push({ text: "a deploy fails" });
+  assert.deepEqual(fired(twoCauses, "cause-chain-severity"), []);
+  assert.deepEqual(fired(severityPair(8, 8), "cause-chain-severity"), []);
+  const restated = severityPair(9, 7);
+  restated.chains[0].trigger = ` ${restated.chains[0].causes[0].text} `;
+  assert.deepEqual(fired(restated, "cause-chain-severity"), []);
+  const unresolved = severityPair(9, 7);
+  unresolved.chains[0].causes[0].chain = "ch-missing";
+  assert.deepEqual(fired(unresolved, "cause-chain-severity"), []);
+});
+
+for (const id of ["cat-service-01", "cat-service-02", "cat-service-03", "cat-service-05", "cat-dependency-03", "cat-dependency-04"]) {
+  test(`cause-chain-severity is silent on a single-cause linked consumer citing ${id}`, () => {
+    const doc = severityPair(9, 7);
+    doc.chains[0].catalog_refs = [{ id, provenance: "skill-authored" }];
+    assert.deepEqual(fired(doc, "cause-chain-severity"), []);
+  });
+}
+
+test("cause-chain-severity fires on a consumer citing cat-service-04 or cat-dependency-01, so no prefix or range matches", () => {
+  for (const id of ["cat-service-04", "cat-dependency-01"]) {
+    const doc = severityPair(9, 7);
+    doc.chains[0].catalog_refs = [{ id, provenance: "skill-authored" }];
+    assert.deepEqual(fired(doc, "cause-chain-severity").map((l) => l.message), [BELOW]);
+  }
+});
+
+test("cause-chain-severity gives one finding per pair, by provider chain index then consumer chain index", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: [["ch-1", "svc"], ["ch-2", "svc"], ["ch-3", "svc"], ["ch-4", "svc"], ["ch-5", "svc"]],
+    links: [["ch-1", "ch-5"], ["ch-2", "ch-4"], ["ch-3", "ch-4"]] });
+  for (const i of [0, 1, 2]) doc.chains[i].ratings.S = rating(9);
+  for (const i of [3, 4]) doc.chains[i].ratings.S = rating(5);
+  assert.deepEqual(fired(doc, "cause-chain-severity").map((l) => [l.pointer, l.message]), [
+    ["/chains/3/ratings/S", "chain ch-4 rates S 5, below S 9 of chain ch-2, whose only cause is its failure mode"],
+    ["/chains/3/ratings/S", "chain ch-4 rates S 5, below S 9 of chain ch-3, whose only cause is its failure mode"],
+    ["/chains/4/ratings/S", "chain ch-5 rates S 5, below S 9 of chain ch-1, whose only cause is its failure mode"],
+  ]);
+});
+
+test("linked-cause-occurrence-drift is silent on a citation that matches, with and without evidence_ref", () => {
+  const doc = linkedPair();
+  assert.deepEqual(fired(doc, DRIFT), []);
+  doc.chains[1].ratings.O = { ...rating(6, "rescored", "observed_incident"), evidence_ref: "INC-2026-0314" };
+  doc.chains[0].causes[0].cited_o = citeO(doc.chains[1]);
+  assert.deepEqual(fired(doc, DRIFT), []);
+});
+
+test("linked-cause-occurrence-drift is silent with no link, on an unresolved link and a self-link that carry no cited_o, and on a provider or a consumer without ratings", () => {
+  assert.deepEqual(fired(minimalDoc(), DRIFT), []);
+  for (const chain of ["ch-missing", "ch-1"]) {
+    const doc = linkedPair();
+    doc.chains[0].causes[0] = { text: "process crash", chain };
+    assert.deepEqual(fired(doc, DRIFT), []);
+  }
+  for (const i of [0, 1]) {
+    const doc = linkedPair();
+    doc.chains[1].ratings.O = rating(5);
+    delete (doc.chains[i] as Partial<Chain>).ratings;
+    assert.deepEqual(fired(doc, DRIFT), []);
+  }
+});
+
+test("cause-chain-severity and linked-cause-occurrence-drift are silent when a function or an element of either end does not resolve", () => {
+  for (const [what, breakEnd] of UNRESOLVED_ENDS) {
+    const severe = severityPair(9, 7);
+    breakEnd(severe);
+    assert.deepEqual(fired(severe, "cause-chain-severity"), [], what);
+    const drifting = linkedPair();
+    drifting.chains[1].ratings.O = rating(5);
+    breakEnd(drifting);
+    assert.deepEqual(fired(drifting, DRIFT), [], what);
+  }
+});
+
+test("linked-cause-occurrence-drift fires at the consumer's O on a different value, evidence_kind, or evidence_ref present on one side only", () => {
+  const cases: [(doc: FmeaDocument) => void, string][] = [
+    [(d) => { d.chains[1].ratings.O = rating(5); }, "cause 0 cites ch-2 at O 3 (estimate); ch-2 now rates O 5 (estimate)"],
+    [(d) => { d.chains[1].ratings.O = rating(3, "rescored", "test_result"); }, "cause 0 cites ch-2 at O 3 (estimate); ch-2 now rates O 3 (test_result)"],
+    [(d) => { d.chains[1].ratings.O.evidence_ref = "load-test-7"; }, "cause 0 cites ch-2 at O 3 (estimate); ch-2 now rates O 3 (estimate, load-test-7)"],
+    [(d) => { d.chains[0].causes[0].cited_o!.evidence_ref = "load-test-7"; }, "cause 0 cites ch-2 at O 3 (estimate, load-test-7); ch-2 now rates O 3 (estimate)"],
+  ];
+  for (const [change, message] of cases) {
+    const doc = linkedPair();
+    change(doc);
+    assert.deepEqual(fired(doc, DRIFT), [{ rule: DRIFT, severity: "warning", pointer: "/chains/0/ratings/O", message }]);
+  }
+});
+
+test("linked-cause-occurrence-drift reports a provider rating whose evidence_ref is empty as drift, since no valid citation records it", () => {
+  const doc = linkedPair();
+  doc.chains[1].ratings.O.evidence_ref = "";
+  assert.deepEqual(fired(doc, DRIFT).map((l) => l.message), ["cause 0 cites ch-2 at O 3 (estimate); ch-2 now rates O 3 (estimate, )"]);
+});
+
+test("linked-cause-occurrence-drift reports the absent citation once graphDoc's cited_o is deleted", () => {
+  const doc = linkedPair();
+  delete doc.chains[0].causes[0].cited_o;
+  assert.deepEqual(fired(doc, DRIFT), [{ rule: DRIFT, severity: "warning", pointer: "/chains/0/ratings/O",
+    message: "cause 0 links to ch-2 but records no cited O; re-score O and record the provider's O" }]);
+});
+
+test("linked-cause-occurrence-drift flags a stray cited_o at the cause's cited_o: no chain, an unresolved link, a self-link", () => {
+  const stray = [{ rule: DRIFT, severity: "warning", pointer: "/chains/0/causes/0/cited_o", message: "cited O recorded on a cause with no linked chain" }];
+  const bare = minimalDoc();
+  bare.chains[0].causes[0].cited_o = { value: 3, evidence_kind: "estimate" };
+  assert.deepEqual(fired(bare, DRIFT), stray);
+  for (const chain of ["ch-missing", "ch-1"]) {
+    const doc = linkedPair();
+    doc.chains[0].causes[0].chain = chain;
+    assert.deepEqual(fired(doc, DRIFT), stray);
+  }
+});
+
+test("linked-cause-occurrence-drift ignores post_ratings", () => {
+  const doc = linkedPair();
+  doc.chains[1].post_ratings = { S: rating(8), O: rating(1), D: rating(4) };
+  assert.deepEqual(fired(doc, DRIFT), []);
+});
+
+test("linked-cause-occurrence-drift reports two drifting causes in chain then cause order", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: [["ch-1", "svc"], ["ch-2", "svc"], ["ch-3", "svc"]], links: [["ch-1", "ch-2"], ["ch-2", "ch-3"]] });
+  doc.chains[0].causes.push({ text: "a second failure", chain: "ch-3", cited_o: citeO(doc.chains[2]) });
+  doc.chains[1].ratings.O = rating(4);
+  doc.chains[2].ratings.O = rating(5);
+  assert.deepEqual(fired(doc, DRIFT).map((l) => [l.pointer, l.message]), [
+    ["/chains/0/ratings/O", "cause 0 cites ch-2 at O 3 (estimate); ch-2 now rates O 4 (estimate)"],
+    ["/chains/0/ratings/O", "cause 1 cites ch-3 at O 3 (estimate); ch-3 now rates O 5 (estimate)"],
+    ["/chains/1/ratings/O", "cause 0 cites ch-3 at O 3 (estimate); ch-3 now rates O 5 (estimate)"],
+  ]);
 });
 
 test("runLints takes a rule subset", () => {

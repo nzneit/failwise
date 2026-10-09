@@ -256,7 +256,7 @@ export function edge(from: string, to: string, strength: Strength = "strong", ex
 }
 
 /** The provider's O as a linked cause cites it. */
-function citeO(chain: Chain): CitedOccurrence {
+export function citeO(chain: Chain): CitedOccurrence {
   const o = chain.ratings.O;
   const cited: CitedOccurrence = { value: o.value, evidence_kind: o.evidence_kind };
   if (o.evidence_ref !== undefined) cited.evidence_ref = o.evidence_ref;

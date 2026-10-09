@@ -1,8 +1,8 @@
-import type { Codebase, Element, FmeaDocument, Lint, Ratings, Factor, Severity } from "./types.ts";
+import type { Cause, Chain, CitedOccurrence, Codebase, Element, FmeaDocument, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
 import { ptr } from "./pointer.ts";
 import type { PriorityTable } from "./table.ts";
 import { checkTableProperties } from "./table.ts";
-import { chainElement, edgeJoins, effectiveCodebases, indexDocument, isDescendantOf, providerIds, resolvedLinks } from "./graph.ts";
+import { chainElement, edgeJoins, effectiveCodebases, indexDocument, isDescendantOf, providerIds, resolvedLinks, triggerRestates } from "./graph.ts";
 import type { DocIndex, ResolvedLink } from "./graph.ts";
 
 export interface MachineRule { id: string; severity: Severity; check: (doc: FmeaDocument) => Lint[] }
@@ -89,6 +89,65 @@ function unlinkedLint(doc: FmeaDocument, index: DocIndex, link: ResolvedLink): L
   if (doc.dependencies.some((e) => edgeJoins(index, e, c, p))) return [];
   return [lint("cause-chain-unlinked", "warning", ptr("chains", link.chain, "causes", link.cause, "chain"),
     `cause ${link.cause} links to chain ${doc.chains[link.provider].id} on element ${doc.elements[p].id}, which is neither element ${doc.elements[c].id} nor below it, and no edge joins them`)];
+}
+
+// The catalog's positive-feedback rows: a consumer citing one is cascading or metastable, so its
+// provider may rate a lower S. Each id is compared whole with `includes`, never as a prefix or a range.
+export const CASCADING_ROWS: readonly string[] = ["cat-service-01", "cat-service-02", "cat-service-03", "cat-service-05", "cat-dependency-03", "cat-dependency-04"];
+
+// The two rating lints skip a link whose function or element does not resolve at either end, as §6 requires.
+function endsResolve(doc: FmeaDocument, index: DocIndex, link: ResolvedLink): boolean {
+  return chainElement(doc, index, link.chain) !== undefined && chainElement(doc, index, link.provider) !== undefined;
+}
+
+function isCascading(chain: Chain, cause: Cause): boolean {
+  return triggerRestates(chain, cause.text) || chain.catalog_refs.some((r) => CASCADING_ROWS.includes(r.id));
+}
+
+function severityLint(doc: FmeaDocument, index: DocIndex, link: ResolvedLink): Lint[] {
+  const consumer = doc.chains[link.chain];
+  const provider = doc.chains[link.provider];
+  if (!endsResolve(doc, index, link) || consumer.causes.length !== 1 || isCascading(consumer, consumer.causes[link.cause])) return [];
+  const ps = provider.ratings.S.value;
+  const cs = consumer.ratings.S.value;
+  if (ps >= cs) return [];
+  return [lint("cause-chain-severity", "warning", ptr("chains", link.provider, "ratings", "S"),
+    `chain ${provider.id} rates S ${ps}, below S ${cs} of chain ${consumer.id}, whose only cause is its failure mode`)];
+}
+
+function ratingO(chain: Chain): Rating | undefined {
+  return (chain as Partial<Chain>).ratings?.O;
+}
+
+function citedText(o: { value: number; evidence_kind: RatingEvidenceKind; evidence_ref?: string }): string {
+  return o.evidence_ref === undefined ? `O ${o.value} (${o.evidence_kind})` : `O ${o.value} (${o.evidence_kind}, ${o.evidence_ref})`;
+}
+
+function sameCitation(cited: CitedOccurrence, o: Rating): boolean {
+  return cited.value === o.value && cited.evidence_kind === o.evidence_kind && cited.evidence_ref === o.evidence_ref;
+}
+
+function strayLint(cause: Cause, i: number, j: number): Lint[] {
+  if (cause.cited_o === undefined) return [];
+  return [lint("linked-cause-occurrence-drift", "warning", ptr("chains", i, "causes", j, "cited_o"), "cited O recorded on a cause with no linked chain")];
+}
+
+// Cause j of chain i: a cited O on a cause with no resolved link is stray; a resolved link records
+// the provider's current O, or the consumer's O is flagged.
+function driftLint(doc: FmeaDocument, index: DocIndex, i: number, j: number): Lint[] {
+  const cause = doc.chains[i].causes[j];
+  const p = cause.chain === undefined ? undefined : index.chain.get(cause.chain);
+  if (p === undefined || p === i) return strayLint(cause, i, j);
+  const providerO = ratingO(doc.chains[p]);
+  if (!endsResolve(doc, index, { chain: i, cause: j, provider: p }) || ratingO(doc.chains[i]) === undefined || providerO === undefined) return [];
+  const pid = doc.chains[p].id;
+  const at = ptr("chains", i, "ratings", "O");
+  const cited = cause.cited_o;
+  if (cited === undefined) {
+    return [lint("linked-cause-occurrence-drift", "warning", at, `cause ${j} links to ${pid} but records no cited O; re-score O and record the provider's O`)];
+  }
+  if (sameCitation(cited, providerO)) return [];
+  return [lint("linked-cause-occurrence-drift", "warning", at, `cause ${j} cites ${pid} at ${citedText(cited)}; ${pid} now rates ${citedText(providerO)}`)];
 }
 
 export const MACHINE_RULES: MachineRule[] = [
@@ -279,6 +338,26 @@ export const MACHINE_RULES: MachineRule[] = [
     check(doc) {
       const index = indexDocument(doc);
       return resolvedLinks(doc, index).flatMap((l) => unlinkedLint(doc, index, l));
+    },
+  },
+  {
+    // A consumer whose only cause is the provider's failure inherits that failure's effect, so the
+    // provider should not rate a lower S unless the consumer is cascading or metastable.
+    id: "cause-chain-severity",
+    severity: "warning",
+    check(doc) {
+      const index = indexDocument(doc);
+      return resolvedLinks(doc, index).toSorted((a, b) => a.provider - b.provider || a.chain - b.chain).flatMap((l) => severityLint(doc, index, l));
+    },
+  },
+  {
+    // A linked cause records the provider's O it was rated against; once the provider's O moves,
+    // the consumer's O needs re-scoring.
+    id: "linked-cause-occurrence-drift",
+    severity: "warning",
+    check(doc) {
+      const index = indexDocument(doc);
+      return doc.chains.flatMap((c, i) => c.causes.flatMap((_, j) => driftLint(doc, index, i, j)));
     },
   },
 ];
