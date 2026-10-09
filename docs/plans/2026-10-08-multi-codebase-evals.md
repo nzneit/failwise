@@ -37,7 +37,7 @@ See plan A's list: items 1 (B3), 2 (B2 step 10), 10 (rubric 3's date), 11 (the s
 
 **Conventions for Tasks B1 to B7.**
 
-- Every Bash call opens with `cd /home/nn/Projects/failwise && source ~/.nvm/nvm.sh && `. The tool shell is zsh, so `node` is on PATH only after that `source`, and every repository path below is relative to the checkout. The user runs the same commands without the prefix, in bash or fish, after `nvm use 24` in fish.
+- Every Bash call opens with `cd /home/nn/Projects/failwise && source ~/.nvm/nvm.sh && `. The tool shell is zsh, so `node` is on PATH only after that `source`, and every repository path below is relative to the checkout. These are commands for the agent's shell, as plan A's "How to read" says of its own, and none of them is a user-facing command: some use `$?`, a `for … do` loop, an unquoted glob or a bare `VAR=… && …` assignment, which fish rejects or reads differently, so a user who copies one into fish gets an error. The one user-facing form is B4 Step 2's `env FMEA_EVAL_PUBLISH_ROOT=… tools/run-eval.sh …`, which is the same in bash and fish.
 - `$SCRATCH` is the executing session's scratchpad directory, the path its environment block names. The shell does not set it. So every Bash call that uses it also opens with `SCRATCH=<that path> && test -n "$SCRATCH" && test -d "$SCRATCH" && `, which keeps a command from running with `$SCRATCH` empty.
 - Commits get no attribution trailer of any kind, whatever a harness reminder asks. Commits stay local, and nothing is pushed.
 
@@ -172,7 +172,7 @@ See plan A's list: items 1 (B3), 2 (B2 step 10), 10 (rubric 3's date), 11 (the s
 
 - [ ] **Step 12: Commit.** Add no attribution trailer of any kind.
   - `git add skills/fmea-software/evals/fixtures/checkout-inputs.md skills/fmea-software/evals/fixtures/update/after-architecture.md skills/fmea-software/evals/fixtures/update/gateway-limits.md skills/fmea-software/evals/fixtures/update/gateway-dropped.md skills/fmea-software/evals/fixtures/update/codebase-missing.md skills/fmea-software/evals/fixtures/update/before-v2-branches.fmea.json`
-  - `git commit -m "Evals: the inputs name the codebases and the order-store dependency, with the session-check inputs" -m "checkout-inputs.md gains a Codebases section and the order store as a strong dependency of checkout. The pricing cache item of after-architecture.md now reads through to pricing. Three inputs variants and a constructed v2 document are added for the session checks; no test reads them."`
+  - `git commit -m "Evals: the inputs name the codebases and the order-store dependency, with the session-check inputs" -m "checkout-inputs.md gains a Codebases section and the order store as a strong dependency of checkout. The pricing cache item of after-architecture.md now has checkout call pricing itself on a miss, so no edge from the cache to pricing is implied. Three inputs variants and a constructed v2 document are added for the session checks; no test reads them."`
 
 ### Task B2: Rubric 3 and its code sites
 
@@ -453,6 +453,7 @@ With the criteria as written, only c3, c8, c13, c14 and c15 are not musts. On pr
   - the header comment (lines 1-14);
   - the `EvalResults` interface;
   - `renderReport`;
+  - `staleCriticParts`;
   - the `ResultsShape` type;
   - `resultsProblem`.
 - Test: tools/eval-report.test.ts
@@ -541,11 +542,21 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
   }
   assert.equal(reportOn(JSON.stringify(withSessionChecks()), "eval-report-session-").status, 0);
 });
+
+test("under rubric 3 a critic area naming c1-missing-inputs-asked prints no stale-critic caveat", () => {
+  const r = sampleResults();
+  r.rubric = 3;
+  r.critic.missing = [{ area: "c1-missing-inputs-asked (must)", detail: "the run asked no question on the planted gap" }];
+  assert.deepEqual(staleCriticParts(r), { answered: [], halfAnswered: false, pairTally: false });
+  assert.doesNotMatch(renderReport(r), /### What the critic's lists predate/);
+});
 ```
+
+  - Test 5's loop body nearly repeats the test file's typing and rubric IO_READ loops. It may call one small test-local helper instead, `expectIoRead(json: string, prefix: string, message: RegExp)`, which runs `reportOn` and asserts status 3, one stderr line, the `^error IO_READ: ` prefix and the message. The existing loops may call it too, if fallow still reports the clone.
 
 - [ ] **Step 3: Run the test file and see it fail.**
   - Run: `node --test tools/eval-report.test.ts`
-  - Node strips the types and runs the file. Four of the five new tests fail, since the sections and the validation do not exist yet.
+  - Node strips the types and runs the file. Five of the six new tests fail, since the sections and the validation do not exist yet, and `staleCriticParts` still matches the c1 area under rubric 3.
   - The renders-as-before test passes now and stays as a regression guard.
   - Every other test passes.
 
@@ -567,6 +578,7 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
   - Each block ends with a blank line, as the other sections do.
   - In `renderReport`, insert `...sessionChecksSection(results), ...notRerunSection(results),` between `...unevaluatedChecksSection(results),` and `...criticSection(results),`.
   - Add one sentence to the header comment (lines 3-6) naming the two optional sections.
+  - In `staleCriticParts`, return `{ answered: [], halfAnswered: false, pairTally: false }` when `rubricOf(results)` is 3 or above. Rubric 3's critic is written with it (B2 Step 10), so its lists predate nothing, and the substring match on a critic area such as `c1-missing-inputs-asked (must)` would otherwise print `### What the critic's lists predate`. A results file below rubric 3 keeps its stale-critic parts, so the element-kinds note (rubric 2) still regenerates byte for byte.
 
 - [ ] **Step 6: Validate the two fields in the reader.**
   - In `resultsProblem`, add `?? sessionChecksProblem(results.session_checks) ?? notRerunProblem(results.not_rerun)` after `rubricProblem(results.rubric)`.
@@ -577,7 +589,7 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
     - `has a session_checks[<i>].clauses[<j>] that is not {clause, outcome, detail?} with outcome pass, fail or unverified`
     - `has a not_rerun that is not a list`
     - `has a not_rerun[<i>] that is not {prompt, reason}`, where prompt must be an integer and reason a string
-  - If fallow reports a clone against `unverifiedProblem` or `rejudgedProblem`, factor out a shared private list-walker rather than copying it.
+  - If fallow reports a clone against `unverifiedProblem` or `rejudgedProblem`, factor out a shared private list-walker rather than copying it. If it reports one between test 5's loop and the test file's other IO_READ loops, use the test helper `expectIoRead(json, prefix, message)` that Step 2 permits.
 
 - [ ] **Step 7: Run the test file and see it pass.**
   - Run: `node --test tools/eval-report.test.ts`
@@ -738,11 +750,11 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
   - **History and session record.** Read the last entry of the result's `meta.history`, then `final-message.md`, `questions.md`, `commands.md` and `ratings-log.md`.
   - **The prompt-7 checker case of §19 item 8.**
     - Run `grep -n 'before.fmea.json' skills/fmea-software/scripts/update-check.test.ts` to find the case that runs `update-check.ts --check` on `update/before.fmea.json` as the stored copy against the draft the test builds.
-    - Then run `node --test skills/fmea-software/scripts/update-check.test.ts` and keep its `# pass` and `# fail` lines.
+    - Then run `node --test skills/fmea-software/scripts/update-check.test.ts` and keep its `# tests`, `# pass`, `# fail`, `# skipped` and `# todo` lines.
 
 - [ ] **Step 5: Copy the evidence into the eval directory.**
   - Run: `mkdir -p build/evals/multi-codebase/session && cp -R "$SCRATCH/b5/." build/evals/multi-codebase/session/`
-  - Pass: `ls build/evals/multi-codebase/session/*/` lists the ten run directories, their `.stored.json` copies and their `.validate.json`, `.check.out` and `.check.err` files.
+  - Pass: `ls build/evals/multi-codebase/session/*/` lists the ten run directories, their `.stored.json` copies and their `.validate.json` files, and a `.check.out` and `.check.err` beside each run Step 4 checked.
   - Every clause's detail below cites files under `build/evals/multi-codebase/session/`.
 
 - [ ] **Step 6: Write `build/evals/multi-codebase/session-checks.json`** as `{ "session_checks": [...], "not_rerun": [...] }`.
@@ -826,8 +838,8 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
       - `update-check.ts --check exits 0 on the result`
   12. name `Checker on the prompt-7 fixture`, run `update/before.fmea.json as the stored copy against the draft built in update-check.test.ts`:
       - `update-check.ts --check exits 0 with update/before.fmea.json as the stored copy and, as the draft, that copy with the checkout-to-gateway edge weak, expected-stale.json's flags and meta.version plus one`
-      - The outcome is `pass` when the grep of Step 4 finds the case and the test file reports `# fail 0`. It is `fail` when that case fails, and `unverified` when no case is found or the file did not run.
-      - The detail gives the case's title and line, the `# pass` and `# fail` lines, the exit status 0, and the stdout the case asserts, copied verbatim from the test's `assert.equal(r.stdout, …)`: it opens with the `edges:` section, whose one line is `  changed checkout to checkout.payment-gateway: strength`, and ends with the `update-check: 1 edge change, …` summary line. §19 item 8 asks for that output in the note.
+      - The outcome is `pass` when the grep of Step 4 finds the case and the test file is a green suite: `# fail 0`, `# skipped 0` and `# todo 0`, with `# pass` equal to `# tests` and `# tests` above 0. `# fail 0` alone is not enough, since it holds on a skipped case or an empty run. It is `fail` when that case fails, and `unverified` when no case is found, the file did not run, or the suite is not green in any other way.
+      - The detail gives the case's title and line, the `# tests`, `# pass`, `# fail`, `# skipped` and `# todo` lines, the exit status 0, and the stdout the case asserts, copied verbatim from the test's `assert.equal(r.stdout, …)`: it opens with the `edges:` section, whose one line is `  changed checkout to checkout.payment-gateway: strength`, and ends with the `update-check: 1 edge change, …` summary line. §19 item 8 asks for that output in the note.
   13. name `What stays prose`, run `every session check`. The first four clauses are judged from the evidence named in parentheses. Each is `unverified` only when that evidence is missing.
       - `the outside-element question was written before any write of analysis.json that marked a row stale, on both attended outside-element runs`. The evidence is commands.md and questions.md of outside/removal and outside/consumer. The detail adds that the answers were supplied in the brief, so the back-and-forth itself was not exercised.
       - `the coverage question on acme/session-auth was written before any write of analysis.json, on both attended coverage runs`. The evidence is commands.md and questions.md of coverage/supplied and coverage/removal. The detail adds the same note on the answers supplied in the brief.
@@ -843,12 +855,13 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
   The `not_rerun` field holds:
 
   ```
-  [{ "prompt": 5, "reason": "Prompt 5 adds no criterion of this round, since c14 and c15 do not apply to it, but its c1 is now judged on edge providers and its c7 on the v3 gate, so a v3 run of prompt 5 is unverified by this round's evidence; its input checkout-inputs.md also gained a Codebases section and the order-store dependency since its last run." }]
+  [{ "prompt": 5, "reason": "it adds no criterion of this round, since c14 and c15 do not apply to it, but its c1 is now judged on edge providers and its c7 on the v3 gate, so a v3 run of prompt 5 is unverified by this round's evidence; its input checkout-inputs.md also gained a Codebases section and the order-store dependency since its last run." }]
   ```
 
 - [ ] **Step 7: Check that the records file parses and every clause has an allowed outcome.**
   - Run: `node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const o=s.session_checks.flatMap((c)=>c.clauses.map((k)=>k.outcome));console.log(s.session_checks.length,o.length,[...new Set(o)].join(","),s.not_rerun.length)' build/evals/multi-codebase/session-checks.json`
-  - Pass: it prints `13 <n> <subset of pass,fail,unverified> 1`.
+  - Pass: it prints `13 80 <subset of pass,fail,unverified> 1`. 80 is the sum of Step 6's clause lists (11, 12, 12, 4, 8, 2, 5, 5, 2, 4, 6, 1 and 8), so a check with an empty clause list cannot pass.
+  - Any other clause count is a finding: report it, and fix the records or re-pin the count against Step 6.
 
 - [ ] **Step 8: Merge the records into results.json.** Only if B3 was accepted.
   - Run: `node -e 'const fs=require("fs");const p="build/evals/multi-codebase/results.json";const r=JSON.parse(fs.readFileSync(p,"utf8"));const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));r.session_checks=s.session_checks;r.not_rerun=s.not_rerun;fs.writeFileSync(p,JSON.stringify(r,null,2)+"\n")' build/evals/multi-codebase/session-checks.json`
@@ -934,7 +947,7 @@ Version 0.6.0 ran three of the four prompts again, twice each at high: the new a
     - the names are "the new analysis", "the conversion" and "the update".
   - In the bullet `- The tested runs used glm-5.3 and glm-5.3-flash, not Anthropic models.`:
     - change `The tested runs` to `The 0.1.0 runs` (decision 16; if declined, leave the bullet and put the model sentence at the end of the new paragraph instead);
-    - append ` The 0.6.0 runs used <model>, the model that models.json records for high.`, taking `<model>` from `build/evals/multi-codebase/p1/high/run1/models.json`.
+    - append ` The 0.6.0 runs used <model> at the high capability.`, taking `<model>` from the `model` field of the assistant messages in `build/evals/multi-codebase/p1/high/run1/transcript.jsonl`, which must hold one value across that run (the summary line and `models.json` record the alias, `opus`, not the name; a run whose transcript holds no model, or more than one, is recorded unverified and the step stops at the gate). The sentence names no build file.
 
 - [ ] **Step 7: Have one Fable judge read the note.** Brief one subagent on Fable. It is the plan's one Fable gate for plan B. The brief says:
   - Read docs/specs/2026-10-08-multi-codebase-eval-results.md, build/evals/multi-codebase/results.json and build/evals/multi-codebase/session-checks.json. Open the evidence under build/evals/multi-codebase/session/ that a clause's detail cites.
@@ -1052,7 +1065,7 @@ Ownership, as the design's head records it on 2026-10-08: one team owns the anal
 
 ## Verification
 
-- `node tools/run-tests.ts`: <tests> tests, <pass> pass, <fail> fail, exit <n>. `node tools/check.ts`: exit <n>. (Step 2; UNVERIFIED with its reason where it did not complete.)
+- `node tools/run-tests.ts`: skill suite <tests> tests, <pass> pass, <fail> fail; tools suite <tests> tests, <pass> pass, <fail> fail; exit <n>. `node tools/check.ts`: exit <n>. (Step 2; UNVERIFIED with its reason where it did not complete.)
 - Browser gate on chromium, firefox and webkit: <exit 0 | UNVERIFIED: reason>.
 - Comparison against main (<merge-base short sha>): <views compared>, <views changed>. Each changed part, with its verdict:
   - `<part>` (<views>): <verdict>
@@ -1061,7 +1074,7 @@ Ownership, as the design's head records it on 2026-10-08: one team owns the anal
   - `group-checkout`: <verdict>
   - `group-pricing`: <verdict>
 - At 320 px, `group-checkout` is <h> px in <k> pieces and `group-pricing` <h> px in <k>. Later comparisons report a change to a row under both the row and its group, because the group's photograph contains its rows.
-- Evals: [the multi-codebase results](docs/specs/2026-10-08-multi-codebase-eval-results.md). <the Overall table outcome per prompt>; prompt 5 not re-run; the session checks' fail and unverified lines; the user's ruling at the acceptance gate: <ruling>.
+- Evals: the multi-codebase results, `docs/specs/2026-10-08-multi-codebase-eval-results.md`. <the Overall table outcome per prompt>; prompt 5 not re-run; the session checks' fail and unverified lines; the user's ruling at the acceptance gate: <ruling>.
 - Public audit (`tools/public-audit.ts` in failwise-research, run by the maintainer on this branch): <closing summary line, pasted by the maintainer>
 - Models: <each phase and its tier, from the run records>. Fable agents: <n> (<which gate each served>).
 
