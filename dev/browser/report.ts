@@ -102,7 +102,8 @@ export function recordNotAsserted(check: CheckId, width: number, measured: unkno
 
 /** The element the part `stem` is photographed from: `#<stem>` for a name of SECTION_PARTS; `.key` for "key";
  *  for "index", the index's frame `.frame:has(> table.index)` when it matches, else `table.index`; for a stem that
- *  starts "row-", the `article.row` whose rowStem(id) equals it, and an Error when none does. */
+ *  starts "group-", the `section.group` whose id attribute equals it, unreduced; for a stem that starts "row-",
+ *  the `article.row` whose rowStem(id) equals it, and an Error when none does. */
 export async function partLocator(page: Page, stem: string): Promise<Locator> {
   if ((SECTION_PARTS as readonly string[]).includes(stem)) return page.locator(`#${stem}`);
   if (stem === "key") return page.locator(".key");
@@ -110,6 +111,7 @@ export async function partLocator(page: Page, stem: string): Promise<Locator> {
     const frame = page.locator(".frame:has(> table.index)");
     return (await frame.count()) > 0 ? frame : page.locator("table.index");
   }
+  if (stem.startsWith("group-")) return page.locator(`section.group[id="${stem}"]`);
   if (stem.startsWith("row-")) {
     const rows = page.locator("article.row");
     const ids = await rows.evaluateAll((elements) => elements.map((element) => element.id));

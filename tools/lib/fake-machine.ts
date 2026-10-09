@@ -11,7 +11,7 @@
 // for any path, because the browser runners do not use it. It holds no test and no entry point.
 
 import { isAbsolute, join } from "node:path";
-import { VIEWS } from "../../dev/browser/matrix.ts";
+import { SECTION_PARTS, VIEWS } from "../../dev/browser/matrix.ts";
 import type { Spawn } from "./host.ts";
 import type { Machine, Run } from "./browser.ts";
 
@@ -20,6 +20,14 @@ const DRY_RUN = "browser: chromium version 1\n  Install location:    /cache/chro
 /** Where viewReport's attachments sit: the compare run's folder under the root the tests use, /repo. */
 const COMPARE = "/repo/build/compare";
 const BEFORE_TREE = "build/compare/before-tree/";
+
+/** The report the browser-runner tests start from: every section part, the key and the index, and one
+ *  group section holding two rows. */
+export const FAKE_REPORT =
+  SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join("") +
+  '<section id="chains"><div class="key"></div><table class="index"></table>' +
+  '<section class="group" id="group-checkout"><h3>Checkout service <code>checkout</code></h3>' +
+  '<article class="row" id="row-ch-1"></article><article class="row" id="row-ch-2"></article></section></section>';
 
 /** The SHA the fake `git merge-base` prints unless a test names another. */
 export const MERGE_BASE = "309e081b53da16c037beeae73a3ccebce8db1bd8";
