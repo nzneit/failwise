@@ -11,7 +11,7 @@ import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import { loadVocabulary } from "./lib/vocabulary.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
-import { SKILL_ROOT, bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
+import { SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
 import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
@@ -119,6 +119,20 @@ const indexTable = (html: string): string => between(html, '<table class="index"
 const rowSection = (html: string, id: string): string => between(html, `<article class="row" id="row-${id}">`, "</article>");
 const lint = (severity: Severity, rule: string, pointer: string, message: string): Lint => ({ rule, severity, pointer, message });
 const stripTags = (html: string): string => html.replace(/<[^>]+>/g, "");
+
+const CH1_MODE = "The authorization call exceeds its timeout budget and returns no decision";
+const LINK_TO_CH1 = '<span class="cause-link">the failure mode of <a href="#row-ch-1"><code>ch-1</code> on <code>checkout.payment-gateway</code></a>';
+
+// Two top-level elements sharing one id: one group section, for the first.
+const twinRoots = (): FmeaDocument => graphDoc({ elements: ["svc", { id: "svc", name: "Twin" }], chains: [["ch-1", "svc"]] });
+
+// minimalDoc with a second top-level element that has no chain.
+function idleRoot(): FmeaDocument {
+  const doc = minimalDoc();
+  doc.elements.push({ ...doc.elements[0], id: "idle", name: "Idle" });
+  return doc;
+}
+
 /** The sections whose row ids are links (§4.3, §4.4, §4.5), each with the id of the section after it. */
 const LINKED_SECTIONS: [string, string][] = [["actions", "lints"], ["lints", "provenance"], ["provenance", "fmea-data"]];
 
@@ -519,7 +533,7 @@ test("a row section carries its parts in order on a row that has every part", ()
   const article = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   const post = doc.chains[0].post_priority!;
   const parts = [
-    `<header><span class="pri pri-mid">M</span><h3><code>ch-1</code>&nbsp; stops serving</h3><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
+    `<header><span class="pri pri-mid">M</span><h4><code>ch-1</code>&nbsp; stops serving</h4><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
     `<p class="finding">${mark("blocker")} &nbsp;D &mdash; Detection is 1 with no existing detection control carrying evidence <span class="muted"><code>detection-1-without-evidenced-control</code></span></p>`,
     `<p class="finding warn">${mark("warning")} &nbsp;post-action O &mdash; post-action finding <span class="muted"><code>occurrence-estimate-without-trigger</code></span></p>`,
     '<p class="stale-notice">Stale since version 2: its element changed.</p>',
@@ -592,7 +606,7 @@ test("renderHtml still renders a chain with no function and two chains with one 
   twins.chains.push({ ...twins.chains[0], failure_mode: "second" });
   const both = renderHtml(twins, table, template, vocabulary);
   assert.equal(occurrences(both, '<article class="row" id="row-ch-1">'), 2);
-  assert.ok(both.includes("second</h3>"));
+  assert.ok(both.includes("second</h4>"));
 });
 
 test("a three-value and a one-value supplied table get the rank styles of section 4.7", () => {
@@ -602,12 +616,12 @@ test("a three-value and a one-value supplied table get the rank styles of sectio
   const index = indexTable(html);
   for (const [style, value, id] of [["top", "L", "ch-1"], ["low", "H", "ch-2"], ["mid", "M", "ch-3"]]) {
     assert.ok(index.includes(`<tr><td><span class="pri pri-${style}">${value}</span></td><td class="nw"><a href="#row-${id}">`), `index row ${id}`);
-    assert.ok(rowSection(html, id).includes(`<header><span class="pri pri-${style}">${value}</span><h3>`), `row header ${id}`);
+    assert.ok(rowSection(html, id).includes(`<header><span class="pri pri-${style}">${value}</span><h4>`), `row header ${id}`);
   }
   const one = renderHtml(priced(minimalDoc(), 0, "P"), suppliedTable(["P"]), template, vocabulary);
   assert.ok(one.includes('<dt><span class="pri pri-top">P</span></dt>'));
   assert.ok(indexTable(one).includes('<tr><td><span class="pri pri-top">P</span></td>'));
-  assert.ok(rowSection(one, "ch-1").includes('<header><span class="pri pri-top">P</span><h3>'));
+  assert.ok(rowSection(one, "ch-1").includes('<header><span class="pri pri-top">P</span><h4>'));
 });
 
 test("a supplied table's vocabulary values are escaped in every badge", () => {
@@ -699,6 +713,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
   ]) {
     assert.ok(print.includes(rule), `the print block is missing: ${rule}`);
   }
+  assert.ok(!print.includes(".group"), "no group rule in the print block");
 });
 
 test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the structure's name column", () => {
@@ -1163,7 +1178,7 @@ test("the provenance appendix has a head row, and a chain named like a section k
 });
 
 test("every href in the report resolves to exactly one id, and the actions, checks and provenance sections link every row id", () => {
-  for (const doc of [golden(), staleRows()]) {
+  for (const doc of [golden(), staleRows(), twinRoots()]) {
     const html = renderHtml(doc, table, template, vocabulary);
     const targets = new Set([...html.matchAll(/href="#([^"]*)"/g)].map((m) => m[1]));
     assert.ok(targets.size > 0);
@@ -1175,6 +1190,7 @@ test("every href in the report resolves to exactly one id, and the actions, chec
       }
     }
   }
+  assert.equal(occurrences(renderHtml(twinRoots(), table, template, vocabulary), 'id="group-svc"'), 1);
 });
 
 test("a chain id holding an injection vector is escaped in the row's id and in every href that targets it", () => {
@@ -1270,4 +1286,97 @@ test("a document validated under a --table-file that breaks a priority property 
     const checks = sectionOf(readFileSync(out, "utf8"), "lints", "provenance");
     assert.ok(checks.includes(escapeHtml('table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)')), checks);
   });
+});
+
+test("group sections: one per top-level element with chains, each an h3 with name and id, then its rows in index order", () => {
+  const chains = sectionOf(renderHtml(golden(), table, template, vocabulary), "chains", "actions");
+  assert.equal(occurrences(chains, '<section class="group"'), 2);
+  assert.ok(chains.includes('<section class="group" id="group-checkout"><h3>Checkout service <code>checkout</code></h3><article class="row" id="row-ch-2">'));
+  assert.ok(chains.includes('</article></section><section class="group" id="group-pricing"><h3>Pricing service <code>pricing</code></h3><article class="row" id="row-ch-3">'));
+  const at = ["group-checkout", "row-ch-2", "row-ch-1", "row-ch-5", "row-ch-7", "row-ch-9", "row-ch-4", "row-ch-8", "row-ch-6", "group-pricing", "row-ch-3"]
+    .map((id) => chains.indexOf(`id="${id}"`));
+  assert.ok(at.every((i) => i !== -1), JSON.stringify(at));
+  assert.deepEqual(at, [...at].sort((a, b) => a - b));
+  assert.equal(occurrences(chains, "<h4>"), golden().chains.length);
+});
+
+test("a top-level element with no chains gets no group section, and chains that reach no root follow the last group with no heading", () => {
+  const doc = idleRoot();
+  doc.chains.push({ ...doc.chains[0], id: "ch-2", function: "fn-missing" });
+  const chains = sectionOf(renderHtml(doc, table, template, vocabulary), "chains", "actions");
+  assert.equal(occurrences(chains, 'id="group-idle"'), 0);
+  assert.equal(occurrences(chains, '<section class="group"'), 1);
+  assert.ok(chains.includes('</article></section><article class="row" id="row-ch-2">'), "the tail row follows the group, unwrapped");
+});
+
+test("the row anchors are unchanged: one article per chain, each the target of its index link", () => {
+  const doc = golden();
+  const html = renderHtml(doc, table, template, vocabulary);
+  for (const chain of doc.chains) {
+    assert.equal(occurrences(html, `<article class="row" id="row-${chain.id}">`), 1, chain.id);
+    assert.ok(indexTable(html).includes(`<a href="#row-${chain.id}"><code>${chain.id}</code></a>`), chain.id);
+  }
+});
+
+test("the template sets the row heading in h4 with no margin and spaces the group heading", () => {
+  for (const rule of [
+    "article.row > header h4 { flex:1; font-size:1.05rem; margin:0; }",
+    "  article.row > header h4 { flex-basis:calc(100% - 2.5rem); }",
+    "section.group > h3 { margin:2rem 0 .5rem; }",
+  ]) assert.ok(template.includes(rule), rule);
+  assert.ok(!template.includes("article.row > header h3"), "a rule still targets the old row heading");
+});
+
+test("a linked cause names the provider's row and element, and adds the provider's mode only when it differs", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  assert.ok(rowSection(html, "ch-9").includes(`<li>${CH1_MODE}, ${LINK_TO_CH1}</span></li>`));
+  const doc = golden();
+  doc.chains[8].causes[0].text = "The gateway call times out";
+  doc.chains[8].causes[0].origin = "design";
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-9").includes(
+    `<li>The gateway call times out, ${LINK_TO_CH1}: ${CH1_MODE}</span> <span class="muted">[design]</span></li>`));
+});
+
+test("a link whose chain does not resolve prints the cause text alone, and a provider without a function is named by its chain id", () => {
+  const lost = golden();
+  lost.chains[8].causes[0].chain = "ch-missing";
+  const row = rowSection(renderHtml(lost, table, template, vocabulary), "ch-9");
+  assert.ok(row.includes(`<li>${CH1_MODE}</li>`));
+  assert.ok(!row.includes("cause-link"));
+  const bare = golden();
+  bare.chains[0].function = "fn-missing";
+  assert.ok(rowSection(renderHtml(bare, table, template, vocabulary), "ch-9").includes('<a href="#row-ch-1"><code>ch-1</code></a></span></li>'));
+});
+
+test("a row that other chains link into prints Propagates to after its effects, each consumer once in index order", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const ch1 = rowSection(html, "ch-1");
+  const line = '<div><span class="lbl">Propagates to</span><a href="#row-ch-9"><code>ch-9</code> on <code>checkout</code></a></div>';
+  assert.ok(ch1.includes(line));
+  assert.ok(ch1.indexOf('<span class="lbl">Effects</span>') < ch1.indexOf(line) && ch1.indexOf(line) < ch1.indexOf('<span class="lbl">Trigger</span>'));
+  assert.ok(!rowSection(html, "ch-9").includes("Propagates to"));
+  const doc = golden();
+  doc.chains.push({ ...doc.chains[8], id: "ch-10" });
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-1").includes(
+    '<span class="lbl">Propagates to</span><a href="#row-ch-10"><code>ch-10</code> on <code>checkout</code></a>, <a href="#row-ch-9"><code>ch-9</code> on <code>checkout</code></a></div>'));
+});
+
+test("free text and a chain id holding markup are escaped in the cause link and in Propagates to", () => {
+  const [text, mode, id] = vectors;
+  assert.equal(new Set([text, mode, id]).size, 3);
+  const doc = golden();
+  doc.chains[8].causes[0].text = text;
+  doc.chains[0].failure_mode = mode;
+  doc.chains[8].id = id;
+  const html = renderHtml(doc, table, template, vocabulary);
+  for (const vector of [text, mode, id]) assert.ok(!html.includes(vector), `raw vector present: ${JSON.stringify(vector)}`);
+  assert.ok(rowSection(html, "ch-1").includes(`<a href="#row-${escapeHtml(id)}"><code>${escapeHtml(id)}</code> on <code>checkout</code></a>`));
+  assert.ok(rowSection(html, escapeHtml(id)).includes(`${escapeHtml(text)}, ${LINK_TO_CH1}: ${escapeHtml(mode)}</span>`));
+});
+
+test("a linked-cause-occurrence-drift finding on ch-9 renders on its row labelled O", () => {
+  const message = "cause 0 cites ch-1 at O 6 (observed_incident, INC-2026-0314); ch-1 now rates O 7 (observed_incident, INC-2026-0314)";
+  const doc = withComputed(golden(), [lint("warning", "linked-cause-occurrence-drift", "/chains/8/ratings/O", message)], 89);
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-9").includes(
+    `<p class="finding warn">${mark("warning")} &nbsp;O &mdash; ${escapeHtml(message)} <span class="muted"><code>linked-cause-occurrence-drift</code></span></p>`));
 });

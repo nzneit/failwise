@@ -11,7 +11,7 @@ import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { buildReportModel } from "./lib/report-model.ts";
-import type { ActionRow, Attention, CheckGroup, GroupLocation, PlacedFinding, RankStyle, ReportModel, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
+import type { ActionRow, Attention, CheckGroup, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
@@ -75,8 +75,12 @@ function markHtml(name: RowMark | "warning" | "trigger" | "adversarial"): string
   return `<span class="mark mark-${name}" title="${e(KEY_TEXT[name])}">${name}</span>`;
 }
 
+function chainRefHtml(chainId: string, element: string): string {
+  return `<a href="#row-${e(chainId)}"><code>${e(chainId)}</code>${element === "" ? "" : ` on <code>${e(element)}</code>`}</a>`;
+}
+
 function rowLinkHtml(chainId: string): string {
-  return `<a href="#row-${e(chainId)}"><code>${e(chainId)}</code></a>`;
+  return chainRefHtml(chainId, "");
 }
 
 function labelHtml(label: string, raw: boolean): string {
@@ -244,7 +248,7 @@ function rowHeaderHtml(row: RowModel): string {
   const post = c.post_priority && row.postStyle !== null
     ? `<br><span class="muted">after actions:</span> ${badgeHtml(c.post_priority.value, row.postStyle)} <span class="muted">RPN ${c.post_priority.rpn}</span>`
     : "";
-  return `<header>${badgeHtml(c.priority.value, row.style)}<h3><code>${e(c.id)}</code>&nbsp; ${e(c.failure_mode)}</h3><div class="meta"><code>${e(row.element)}</code><br>` +
+  return `<header>${badgeHtml(c.priority.value, row.style)}<h4><code>${e(c.id)}</code>&nbsp; ${e(c.failure_mode)}</h4><div class="meta"><code>${e(row.element)}</code><br>` +
     `S <b>${c.ratings.S.value}</b> &middot; O <b>${c.ratings.O.value}</b> &middot; D <b>${c.ratings.D.value}</b> &middot; <span class="muted">RPN ${c.priority.rpn}</span>${marks}${post}</div></header>`;
 }
 
@@ -266,7 +270,10 @@ function causesHtml(row: RowModel): string {
     const origin = c.origin ? ` <span class="muted">[${e(c.origin)}]</span>` : "";
     const adversarial = c.adversarial ? ` ${markHtml("adversarial")}` : "";
     const trigger = row.triggerCauses.includes(i) ? ` ${markHtml("trigger")}` : "";
-    return `${e(c.text)}${origin}${adversarial}${trigger}`;
+    const link = row.causeLinks.find((l) => l.cause === i);
+    const linked = link === undefined ? ""
+      : `, <span class="cause-link">the failure mode of ${chainRefHtml(link.chainId, link.element)}${link.differs ? `: ${e(link.failureMode)}` : ""}</span>`;
+    return `${e(c.text)}${linked}${origin}${adversarial}${trigger}`;
   });
   return part("Causes", list(items, "No causes recorded."));
 }
@@ -320,6 +327,7 @@ function gridHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): s
     part("Function", e(row.statement)),
     c.source_incident ? part("Seeded from incident", `<code>${e(c.source_incident)}</code>`) : "",
     part("Effects", effectsHtml(c)),
+    row.propagatesTo.length === 0 ? "" : part("Propagates to", row.propagatesTo.map((p) => chainRefHtml(p.chainId, p.element)).join(", ")),
     row.trigger === null ? "" : part("Trigger", e(row.trigger)),
     `<div class="two">${causesHtml(row)}${controlsHtml(c)}</div>`,
     part("Ratings", ratingsTableHtml(`Ratings of ${c.id}`, c.ratings)),
@@ -335,10 +343,16 @@ function rowSectionHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"
     `<div class="grid">${gridHtml(row, trackers)}</div><p class="back"><a href="#chains">&uarr; index</a></p></article>`;
 }
 
+function groupHtml(section: GroupSection, trackers: Map<Action, ActionRow["tracker"]>): string {
+  const rows = section.rows.map((row) => rowSectionHtml(row, trackers)).join("");
+  const root = section.root;
+  return root === null ? rows : `<section class="group" id="group-${e(root.id)}"><h3>${e(root.name)} <code>${e(root.id)}</code></h3>${rows}</section>`;
+}
+
 function chainsHtml(model: ReportModel): string {
   if (model.rows.length === 0) return `<p class="empty">No chains.</p>`;
   const trackers = new Map(model.actions.map((a) => [a.action, a.tracker]));
-  return keyHtml(model.vocabulary) + indexHtml(model.rows) + model.rows.map((row) => rowSectionHtml(row, trackers)).join("");
+  return keyHtml(model.vocabulary) + indexHtml(model.rows) + model.sections.map((s) => groupHtml(s, trackers)).join("");
 }
 
 const ACTIONS_CAPTION = "Open actions first, by target date; closed actions last.";
