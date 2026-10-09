@@ -25,7 +25,7 @@ Every task's requirements include this section.
 
 - Runtime: Node 24.2 or later. Activate it with `nvm use 24` in fish or `source ~/.nvm/nvm.sh` in bash. The Bash tool shell is zsh with no node on PATH, so it runs the runners as `bun tools/run-tests.ts` and `bun tools/check.ts`. To run one test file, source nvm first and run `node --test <file>`. bun cannot run a node:test file.
 - Before every commit, both runners exit 0. `node tools/run-tests.ts` runs both suites and picks up any new *.test.ts under skills/fmea-software/scripts/ and tools/ with no runner change. `node tools/check.ts` runs tsc, then `oxlint --type-aware --deny-warnings`, then fallow. A runner that dies or is skipped counts as unverified, never as a pass.
-- Browser checks: run `node tools/check-browser.ts` and `node tools/compare.ts` before every commit that changes skills/fmea-software/assets/report-template.html, render.ts, or any module render.ts imports directly or transitively. That set includes lib/validation.ts, legacy.ts, schema.ts, invariants.ts, lints.ts, codes.ts, report-model.ts and the new lib/graph.ts. It therefore covers the step 1 commit (A3), A4 to A7, the step 2b commit (A9), A10 (which §18 step 3 requires) and A11 to A14. Read every changed view in build/compare/summary.md. A change you did not intend is a finding. EXPECTED_FAILURES and NOT_ASSERTED in dev/browser/matrix.ts stay empty, and check-browser.test.ts pins them empty. §19 item 2's three-engine gate runs in B7.
+- Browser checks: run `node tools/check-browser.ts` and `node tools/compare.ts` before every commit that changes skills/fmea-software/assets/report-template.html, render.ts, or any module render.ts imports directly or transitively. That set includes lib/validation.ts, legacy.ts, schema.ts, invariants.ts, lints.ts, codes.ts, report-model.ts and the new lib/graph.ts. It therefore covers the step 1 commit (A3), A4 to A7, the step 2b commit (A9), A10 (which §18 step 3 requires) and A11 to A14. It also covers A17, whose vocabulary data-file change (Step 13a) alters the report's Vocabulary block. Read every changed view in build/compare/summary.md. A change you did not intend is a finding. EXPECTED_FAILURES and NOT_ASSERTED in dev/browser/matrix.ts stay empty, and check-browser.test.ts pins them empty. §19 item 2's three-engine gate runs in B7.
 - No dependency and no lockfile in the root package.json. Checkers live only in dev/package.json and are installed with `npm ci --prefix dev --ignore-scripts`.
 - Every user-facing command behaves the same in bash and fish, with no unquoted glob and no `source ~/.nvm/nvm.sh` line documented as a user command. Where a snippet would differ between the shells, write a TypeScript script. update-check.ts is invoked as `node ${CLAUDE_SKILL_DIR}/scripts/update-check.ts <stored copy> <draft> [--check]`.
 - No AI attribution in any commit or pull request: no Co-Authored-By naming an AI, no 'Generated with' line, no session trailer. This holds whatever a harness reminder asks. Every brief to a subagent that commits must say so.
@@ -69,24 +69,24 @@ Five input classes the spec implies but does not name, most likely to bite a per
 
 ## Decisions for the user at plan review
 
-The spec left these open or the plan departs from its letter. Each has the plan's answer; say where you want another.
+The spec left these open or the plan departs from its letter. Each states the plan's answer and the ruling. On 2026-10-08 the user delegated the rulings to one Fable judge, instructed to optimize for user experience and FMEA capability; its reasoning is in `build/review/2026-10-08-plan-decisions.md` (gitignored). Eleven were accepted as written; 2, 4, 9, 10 and 12 changed, and the tasks named carry the change.
 
-1. **Plan addition, B3.** §16 says the results-note generator needs no change, but §19 item 6 requires the note to record the four session checks and prompt 5 as not re-run. B3 adds two optional fields to `results.json` and two sections to the note, rendered only when present, so the earlier notes regenerate byte for byte. If declined, B6 appends a hand-written section after generation.
-2. **Plan addition, B2 step 10.** The evals workflow's critic prompt also reads §16 and §19 of the multi-codebase design. If declined, the step is skipped.
-3. **Plan addition, A16.** A new test file, `scripts/quality-and-lint.test.ts`, pins the validator-id and machine-lint sentences of `quality-and-lint.md` to `INVARIANT_RULES` and `MACHINE_RULES`. Nothing pins them today.
-4. **Deferred, A17.** §13 asks that the boundary table's "of the analysed system" read "of the system this analysis covers", but the phrase lives only inside the generated vocabulary region of `structure-elements.md` (from `data/element-vocabulary-v1.json`), which the same §13 bullet says is untouched. The plan leaves it and tells the acceptance judge so. The alternative is to edit the data file, run `tools/gen-element-vocabulary.ts`, and run the browser checks, since the report's vocabulary box changes.
-5. **Note form, A18.** The main design's §5 amendment note carries the file name `2026-10-08-multi-codebase-design.md`, as the element-kinds notes do, where §14 quotes the note without it.
-6. **Commit shape.** Step 1 is one commit (A1 to A3), step 2b one commit (A8 and A9), and step 2 a commit per task (A4 to A7), which §18 allows. Steps 4 and 5, which §18 describes as single steps, are also split one commit per task, step 4 into A11 to A14 and step 5 into A15 to A18; §18's "from step 1 to step 4 the report prints no strength, SLA or limits" therefore ends at A13, where the Dependencies table lands.
-7. **The checker's refusal lines.** §10's "one finding line per row" is read as one line per row per rule, so a row with a wrong reason and a wrong `since_version` prints two lines, in rule order. A9 pins it.
-8. **The edge rule string.** §10's form `edge <from> to <to> changed` is printed for an added, a removed and a changed edge alike; the edge's own change is printed in the `edges:` section.
-9. **The checker's output.** Plain text sections, each opened by `<name>:` with `  none` when empty, and one plain last line `update-check: ...`, which is the summary the session copies into `meta.history`. The changed-provider section prints only under `--check`, as §10 says.
-10. **Rubric 3's date.** The version paragraph and its test pin carry the landing date of B2's commit, since §16 dates rubric 3 "the day it lands"; the c1 notes keep 2026-10-08, as §16 writes them.
-11. **Session checks, B5.** The attended runs are Opus subagents whose brief carries the person's answers in advance, with the run's questions and commands written to files as the record, so the dialogue as asked stays unverified, as §19 item 6 expects.
-12. **Left as is, A17.** structure-elements.md:12 says the boundary decides whether the dependency rows apply; once the rows apply to any element that is the `to` of an edge, that holds only for an outside element. §13 does not name the sentence, so the plan leaves it and tells the acceptance judge so.
-13. **Self-links in the report, A11.** A cause whose `chain` names its own chain resolves by the letter of §4.4, but the plan prints it as an unresolved link, the cause text alone with no Propagates-to entry, because `cause-chain-self` refuses it and a row linking to itself would only point back at its own row.
-14. **A chainless root's name, A13.** §12 links each root row's name to its group section and gives a root with no chains no section, so the plan leaves such a root's name in the top-level table as plain text.
-15. **A v2 draft under the checker, A9.** §10's `UPDATE_BASELINE` covers "a document the legacy gate refuses"; the plan reads that as the stored copy only. A v2 draft keeps its own code, `DEPENDENCY_LEGACY`, prefixed `the draft: `, because it is the document being written, not the baseline.
-16. **The README's 0.1.0 account, B6.** §14 keeps the account of the 0.1.0 evaluation unchanged beside the new sentences. B6 Step 6 also changes two of its sentences, "The evaluation" to "The full evaluation" and "The tested runs" to "The 0.1.0 runs" with a clause naming the model of the 0.6.0 runs, because the 0.6.0 runs used an Anthropic model and the glm sentence would otherwise read as covering them. If declined, the model clause goes at the end of the new paragraph instead.
+1. **Plan addition, B3.** §16 says the results-note generator needs no change, but §19 item 6 requires the note to record the four session checks and prompt 5 as not re-run. B3 adds two optional fields to `results.json` and two sections to the note, rendered only when present, so the earlier notes regenerate byte for byte. If declined, B6 appends a hand-written section after generation. Ruled: accepted.
+2. **Plan addition, B2 step 10.** The evals workflow's critic prompt also reads the multi-codebase design. Ruled: the critic reads §16 only, with a sentence that §16's four session checks are made in a session after the results file is written and are recorded in the results note, so it does not report them as missing; it does not read §19. B2 Step 10 carries the text.
+3. **Plan addition, A16.** A new test file, `scripts/quality-and-lint.test.ts`, pins the validator-id and machine-lint sentences of `quality-and-lint.md` to `INVARIANT_RULES` and `MACHINE_RULES`. Nothing pins them today. Ruled: accepted.
+4. **The vocabulary's "of the analysed system", A17.** §13 asks that the boundary table's phrase read "of the system this analysis covers" and that the generated vocabulary region of `structure-elements.md` stay untouched; the phrase lives inside that region, generated from `data/element-vocabulary-v1.json`. Ruled: edit the data file, regenerate the region with `tools/gen-element-vocabulary.ts`, and run the browser checks, because the report's Vocabulary block reads the same file; "untouched" means never hand-edited, and M5 removes "the analysed system" from the vocabulary. A17 Steps 13a and 13b.
+5. **Note form, A18.** The main design's §5 amendment note carries the file name `2026-10-08-multi-codebase-design.md`, as the element-kinds notes do, where §14 quotes the note without it. Ruled: accepted.
+6. **Commit shape.** Step 1 is one commit (A1 to A3), step 2b one commit (A8 and A9), and step 2 a commit per task (A4 to A7), which §18 allows. Steps 4 and 5, which §18 describes as single steps, are also split one commit per task, step 4 into A11 to A14 and step 5 into A15 to A18; §18's "from step 1 to step 4 the report prints no strength, SLA or limits" therefore ends at A13, where the Dependencies table lands. Ruled: accepted.
+7. **The checker's refusal lines.** §10's "one finding line per row" is read as one line per row per rule, so a row with a wrong reason and a wrong `since_version` prints two lines, in rule order. A9 pins it. Ruled: accepted.
+8. **The edge rule string.** §10's form `edge <from> to <to> changed` is printed for an added, a removed and a changed edge alike; the edge's own change is printed in the `edges:` section. Ruled: accepted; the history entry of decision 9 carries the verb.
+9. **The checker's output.** Plain text sections, each opened by `<name>:` with `  none` when empty, and one plain last line `update-check: ...`. The changed-provider section prints only under `--check`, as §10 says. Ruled: the format stands; the summary the session copies into the update summary in `meta.history` is the checker's edges, elements and stale sections together with its last line, not the last line alone, because §10 makes that record "the record of each stale row's rule" and M7 relies on it to name the edge behind a consumer-side flag. A9 Step 14, A18 Steps 10 and 15 and B5 check 5 carry it.
+10. **Rubric 3's date.** §16 dates rubric 3 "the day it lands" and writes 2026-10-08 in the c1 notes. Ruled: one date, the landing date of B2's commit, in the version paragraph, its test pin and both c1 notes, as rubric 2's notes carry their landing day; nothing differs when B2 lands on 2026-10-08. B2 Steps 12 to 14.
+11. **Session checks, B5.** The attended runs are Opus subagents whose brief carries the person's answers in advance, with the run's questions and commands written to files as the record, so the dialogue as asked stays unverified, as §19 item 6 expects. Ruled: accepted.
+12. **structure-elements.md:12, A17.** The line says the boundary decides whether the dependency rows apply; once the rows apply to any element that is the `to` of an edge, that holds only for an outside element, and an analyst reading it would skip the rows on an in-scope provider. Ruled: reword it in two `skill-authored` sentences so that the boundary decides whether an element must be the provider of an edge and the edges decide the dependency rows, a plan addition §13 does not name. A17 Step 1a.
+13. **Self-links in the report, A11.** A cause whose `chain` names its own chain resolves by the letter of §4.4, but the plan prints it as an unresolved link, the cause text alone with no Propagates-to entry, because `cause-chain-self` refuses it and a row linking to itself would only point back at its own row. Ruled: accepted.
+14. **A chainless root's name, A13.** §12 links each root row's name to its group section and gives a root with no chains no section, so the plan leaves such a root's name in the top-level table as plain text. Ruled: accepted.
+15. **A v2 draft under the checker, A9.** §10's `UPDATE_BASELINE` covers "a document the legacy gate refuses"; the plan reads that as the stored copy only. A v2 draft keeps its own code, `DEPENDENCY_LEGACY`, prefixed `the draft: `, because it is the document being written, not the baseline. Ruled: accepted.
+16. **The README's 0.1.0 account, B6.** §14 keeps the account of the 0.1.0 evaluation unchanged beside the new sentences. B6 Step 6 also changes two of its sentences, "The evaluation" to "The full evaluation" and "The tested runs" to "The 0.1.0 runs" with a clause naming the model of the 0.6.0 runs, because the 0.6.0 runs used an Anthropic model and the glm sentence would otherwise read as covering them. If declined, the model clause goes at the end of the new paragraph instead. Ruled: accepted.
 
 ## Assumptions the plan rests on
 
@@ -2348,6 +2348,7 @@ Approach: use two private helpers, `section(name: string, items: string[]): stri
 // stale flags, ratings outside the stale set or links into removed chains disagree. A copy that is
 // not the draft's baseline is UPDATE_BASELINE on either run. It runs the legacy gate and the schema on
 // both documents, never the invariants or the priorities, and writes nothing.
+// Its edges, elements and stale sections and its last line are the summary the update copies into meta.history.
 ```
 
 - The file has no `USAGE_LINE` constant. The header comment carries the usage, and parseArgs and assertExtension write their own USAGE messages.
@@ -3723,26 +3724,33 @@ EOF
 ### Task A17: structure-elements, design-inputs, scales-software and the catalog
 
 **Files:**
-- Modify: skills/fmea-software/references/structure-elements.md:64-65, 70-72, 96, 108, 114, 117, 119-121, 128-129
+- Modify: skills/fmea-software/references/structure-elements.md:12, 64-65, 70-72, 96, 108, 114, 117, 119-121, 128-129
 - Modify: skills/fmea-software/references/design-inputs.md:14, 23, 25, 33, 35-36, 67, 71, 81
 - Modify: skills/fmea-software/references/scales-software.md:33, 35
 - Modify: skills/fmea-software/references/design-failure-catalog.md:61
+- Modify: skills/fmea-software/data/element-vocabulary-v1.json:44
+- Regenerate: skills/fmea-software/references/structure-elements.md:19-58, by `node tools/gen-element-vocabulary.ts`, never by hand
 - Test: tools/gen-element-vocabulary.test.ts (unchanged; must stay green)
 
 **Interfaces:**
 - Consumes: A15's `### Migrate a v2 document` heading in SKILL.md, which the `## Migrating a v2 document` section this task creates in structure-elements.md (Step 7) matches by name; no earlier task fixes that heading. The `reviewer row ids` (`weak-edges-loss-of-access`). The first of A15's seven update-mode sentences (A15 Step 12), which Step 6 restates in full for structure-elements.md:119.
 - Produces: none.
 
-This task is prose only, so it has no new test. The generated vocabulary region, lines 19-58 of structure-elements.md, is not touched.
+This task adds no test. The generated vocabulary region, lines 19-58 of structure-elements.md, is rewritten only by `tools/gen-element-vocabulary.ts`, in Step 13a.
 
-**Deferred, not dropped: "of the analysed system".** §13 asks that "the boundary table's 'of the analysed system' read 'of the system this analysis covers'". The same bullet ends "The generated vocabulary region is untouched". The phrase occurs only at structure-elements.md:35, inside that generated region, and comes from skills/fmea-software/data/element-vocabulary-v1.json:44. The hand-written Boundary table at lines 62-66 does not contain it. The two instructions conflict, so this task leaves the phrase as it is. The conflict is decision 4 for the user to rule on. One answer is to edit element-vocabulary-v1.json:44, run `node tools/gen-element-vocabulary.ts`, and then run the browser gate and `node tools/compare.ts`, because the report's vocabulary box changes. The acceptance judge is told that this is the one §13 sentence left unchanged, and why (see the judge paragraph at the end of A18).
+**"of the analysed system" (decision 4, ruled: change the data file).** §13 asks that the boundary table's "of the analysed system" read "of the system this analysis covers", and that the generated vocabulary region be untouched by hand. The phrase lives at structure-elements.md:35, inside that region, and comes from skills/fmea-software/data/element-vocabulary-v1.json:44, the file the report's Vocabulary block also reads. Step 13a edits the data file and regenerates the region, which satisfies both clauses and M5, under which "the analysed system" leaves the vocabulary; Step 13b runs the browser checks, because the report changes.
 
-**Not changed: structure-elements.md:12.** Line 12 says that "the boundary [decides] whether the dependency rows apply on top of them". Once Step 13 places the dependency rows on any element that is the `to` of an edge, that is only true for an outside element. v2 already had the same imprecision for an in-scope element that carried a block. §13 does not name the sentence, so it is left as it is, as decision 12 records, and the acceptance judge is told (A18).
+**Reworded: structure-elements.md:12 (decision 12).** Line 12 said the boundary decides whether the dependency rows apply; once Step 13 places them on any element that is the `to` of an edge, that holds only for an outside element. Step 1a rewords it, a plan addition §13 does not name.
 
 - [ ] **Step 1: Boundary table (structure-elements.md:64-65)**
 
 Line 64 Consequence cell: `Catalog rows by role; the element may be the `to` of an edge when other elements depend on it, and is then an internal dependency`.
 Line 65 Consequence cell: `An external dependency: at least one inbound edge is required, and the dependency rows apply on top of the role's rows`.
+
+- [ ] **Step 1a: The three-answers sentence (structure-elements.md:12)**
+
+Replace the line with:
+`The three answers are independent of one another: the role says which catalog rows apply, the boundary whether the element must be the provider of an edge, and the flag whether the security rows apply as well. [skill-authored] The dependency rows apply on top of the role's rows to any element that is the provider of an edge, whatever its boundary: an element outside the boundary is always the provider of at least one edge, and an in-scope element gets the rows once another element depends on it. [skill-authored]`
 
 - [ ] **Step 2: Dependencies section (structure-elements.md:70-72)**
 
@@ -3860,12 +3868,20 @@ The line `scales version: 1` is unchanged.
 
 Replace `any element outside the analysis boundary — boundary `owned_outside` or `third_party` — and to any in-scope element that carries a `dependency` block` with `any element that is the `to` of an edge`. The line then reads `Placement: these rows apply to any element that is the `to` of an edge, on top of its role's rows; that is exactly … [skill-authored]`.
 
+- [ ] **Step 13a: The in-scope test in the vocabulary data file (element-vocabulary-v1.json:44)**
+
+In the `boundaries` entry whose `id` is `in_scope`, replace the `test` value `This analysis covers it: its sources are the repository, documents, incidents or people of the analysed system` with `This analysis covers it: its sources are the repository, documents, incidents or people of the system this analysis covers`. The entry's `basis` and `tags` are unchanged. Then run `source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/gen-element-vocabulary.ts`. Expected: exit 0, and `git diff -U0 -- skills/fmea-software/references/structure-elements.md | grep '^@@'` shows exactly one hunk inside lines 19-58, at line 35, whose only change is that cell (decision 4).
+
+- [ ] **Step 13b: Run the browser gate and the comparison, because the report's Vocabulary block reads the data file**
+
+`source ~/.nvm/nvm.sh && nvm use 24 >/dev/null && node tools/check-browser.ts && node tools/compare.ts --base HEAD`. Expected: the gate exits 0 with no `## not asserted` line, and `EXPECTED_FAILURES` and `NOT_ASSERTED` stay empty; the comparison exits 0 and build/compare/summary.md lists changed views of the `structure` part only, the In scope row of the vocabulary box. Open each changed view's three images. A changed view of any other part is a finding.
+
 - [ ] **Step 14: Check the tags, the wording and the generated region**
 
 `git diff -U0 -- skills/fmea-software/references | grep -E '^\+[^+]' | grep -v -E '^\+(#|$)' | grep -v -E '\]( \|)?$'` must print nothing.
-`git diff -U0 -- skills/fmea-software/references | grep '^+' | grep -i -e '§' -e 'classical' -e 'cites:' -e 'paraphrased:C'` must print exactly one line: the design-inputs.md item 4 row, ending `[paraphrased:C014] [skill-authored] |`.
+`git diff -U0 -- skills/fmea-software/references | grep '^+' | grep -i -e '§' -e 'classical' -e 'cites:' -e 'paraphrased:C'` must print exactly two lines: the design-inputs.md item 4 row, ending `[paraphrased:C014] [skill-authored] |`, and the regenerated In scope row of structure-elements.md:35, ending `[cites:C143] [cites:C146] [cites:C134] [cites:C149] [skill-authored] |`.
 `grep -c 'cites:C014\] \[cites:C144\] \[cites:C145\]' skills/fmea-software/references/structure-elements.md` must print 1, because the cited sentence is kept unchanged as context and so never appears as an added line.
-`git diff -U0 -- skills/fmea-software/references/structure-elements.md | grep '^@@'` must show no hunk inside lines 19-58.
+`git diff -U0 -- skills/fmea-software/references/structure-elements.md | grep '^@@'` must show exactly one hunk inside lines 19-58, the one Step 13a's regeneration wrote at line 35.
 
 - [ ] **Step 15: Run the vocabulary test**
 
@@ -3879,7 +3895,7 @@ Expected: `# fail 0`.
 - [ ] **Step 17: Commit (no attribution trailer of any kind)**
 
 ```bash
-git add skills/fmea-software/references/structure-elements.md skills/fmea-software/references/design-inputs.md skills/fmea-software/references/scales-software.md skills/fmea-software/references/design-failure-catalog.md
+git add skills/fmea-software/references/structure-elements.md skills/fmea-software/references/design-inputs.md skills/fmea-software/references/scales-software.md skills/fmea-software/references/design-failure-catalog.md skills/fmea-software/data/element-vocabulary-v1.json
 git commit -F- <<'EOF'
 References: dependencies as edges, codebases and linked chains in the structure, inputs, scales and catalog
 
@@ -3888,6 +3904,9 @@ the update mode, a section on migrating a v2 document and the
 effective-codebase rule; design-inputs.md asks for edge providers and
 codebases; the scales drop the weak-dependency exclusion; the catalog
 places the dependency rows on any element that is the to of an edge.
+The in-scope boundary test no longer names 'the analysed system'; it is
+regenerated from the vocabulary data file, and line 12 says that the edges,
+not the boundary, decide the dependency rows.
 EOF
 ```
 
@@ -3955,7 +3974,7 @@ Lines 23 and 25 keep `all four scripts`.
 - [ ] **Step 10: docs/scripts.md update-check.ts paragraph (after line 22, before the table-file paragraph)**
 
 ```text
-`update-check.ts` runs in the update mode of the skill, before `priority.ts`. It reads two files: the stored copy, which is the analysis as it was before the update, and the draft, which is the analysis the update is writing. It writes nothing. It prints the changes to the dependencies and the elements, the failure chains those changes make stale with the rule that reaches each one, the chains the rules leave unmarked, each link into a removed chain, each element outside the analysis that is left with no consumer, and the order to re-rate the stale chains in. Its last line is a summary that Claude copies into the history of the analysis. It refuses a stored copy that is not the draft's baseline with `UPDATE_BASELINE`: a copy with another id, a copy written against an earlier schema, or a version that does not fit. With `--check`, it also refuses a draft whose stale flags, ratings or links disagree with the rules, with one `UPDATE_MISMATCH` line for each finding. Both refusals exit with status 2.
+`update-check.ts` runs in the update mode of the skill, before `priority.ts`. It reads two files: the stored copy, which is the analysis as it was before the update, and the draft, which is the analysis the update is writing. It writes nothing. It prints the changes to the dependencies and the elements, the failure chains those changes make stale with the rule that reaches each one, the chains the rules leave unmarked, each link into a removed chain, each element outside the analysis that is left with no consumer, and the order to re-rate the stale chains in. Claude copies its edges, elements and stale sections and its last line, the summary line, into the history of the analysis, so the history records what changed, each chain marked stale with the rule that reached it, and that the checker ran. It refuses a stored copy that is not the draft's baseline with `UPDATE_BASELINE`: a copy with another id, a copy written against an earlier schema, or a version that does not fit. With `--check`, it also refuses a draft whose stale flags, ratings or links disagree with the rules, with one `UPDATE_MISMATCH` line for each finding. Both refusals exit with status 2.
 ```
 
 - [ ] **Step 11: docs/scripts.md compatibility paragraph (after line 31)**
@@ -3989,7 +4008,7 @@ Line 227 (validate.ts), append: ` (amended 2026-10-08 by the multi-codebase desi
 After line 233 (track.ts), add the paragraph:
 ```text
 
-**`update-check.ts <stored copy> <draft> [--check]`.** (amended 2026-10-08 by the multi-codebase design, `2026-10-08-multi-codebase-design.md` §10: added.) Reads the analysis as it was stored before an update and the update's draft, runs the legacy gate and the schema stage on both, and writes nothing. It prints the edge and element diff, the `element-changed` rows with the rule that reaches each, the rows the rules leave unmarked, each link into a removed chain, each outside element left with no consumer and the re-rating order, then a summary line the update copies into `meta.history`; with `--check` it also prints the consumer causes whose linked chain changed and refuses a draft whose stale flags, ratings outside the stale set or links into removed chains disagree with the rules (`UPDATE_MISMATCH`). On either run it refuses a copy that is not the draft's baseline (`UPDATE_BASELINE`); both codes exit 2.
+**`update-check.ts <stored copy> <draft> [--check]`.** (amended 2026-10-08 by the multi-codebase design, `2026-10-08-multi-codebase-design.md` §10: added.) Reads the analysis as it was stored before an update and the update's draft, runs the legacy gate and the schema stage on both, and writes nothing. It prints the edge and element diff, the `element-changed` rows with the rule that reaches each, the rows the rules leave unmarked, each link into a removed chain, each outside element left with no consumer and the re-rating order, then a summary line; the update copies the edges, elements and stale sections and that line into `meta.history`; with `--check` it also prints the consumer causes whose linked chain changed and refuses a draft whose stale flags, ratings outside the stale set or links into removed chains disagree with the rules (`UPDATE_MISMATCH`). On either run it refuses a copy that is not the draft's baseline (`UPDATE_BASELINE`); both codes exit 2.
 ```
 Line 237 (report contents), append: ` (amended 2026-10-08 by the multi-codebase design, `2026-10-08-multi-codebase-design.md` §12: the header gains a Codebases row after the security boundary when `meta.codebases[]` is present; the structure section reads, in order, a table of the top-level elements with their codebase and counts, the vocabulary box, the tree, whose lines name each element's effective codebase when the document has codebases, and a Dependencies table of the edges, and the element facts lose their dependency line; the chain rows are grouped in one section per top-level element under an `h3` heading, each row heading an `h4`; a linked cause names the provider's row, and a row other chains link into carries a "Propagates to" line.)`
 
@@ -4025,7 +4044,7 @@ Plan A ends with this commit. One Fable acceptance judge then checks the branch 
 - item 1;
 - item 3;
 - item 4;
-- item 5, except the maintainer's `tools/public-audit.ts` run, which happens before the pull request is opened and stays unverified until then. The judge is told that §13's "of the analysed system" sentence is the one sentence left unchanged, deferred as decision 4 because only the generated vocabulary region holds it (A17). It is reported as deferred, not as a pass and not as a failure. The judge is also told that structure-elements.md:12's boundary sentence is left as it is (decision 12), reported the same way;
+- item 5, except the maintainer's `tools/public-audit.ts` run, which happens before the pull request is opened and stays unverified until then. The judge is told that §13's "of the analysed system" change was made in the vocabulary data file and regenerated into structure-elements.md:35 (A17 Step 13a, decision 4), and that structure-elements.md:12 was reworded for the edges (A17 Step 1a, decision 12) as a plan addition §13 does not name;
 - item 7, limited to the README (less its run-result sentences, which belong to plan B), `docs/scripts.md`, the main design's amendment notes and the two version files. The rubric and its code sites belong to plan B;
 - item 8, limited to its first clause: `update-check.ts --check` exits 0 with `update/before.fmea.json` as the stored copy against the draft the test builds, as `update-check.test.ts` pins it. The session-check runs and the results note belong to plan B;
 - item 9, limited to the head recording the ownership answer, dated, with §17's first two items standing as later work. The pull request body belongs to plan B.

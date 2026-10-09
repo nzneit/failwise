@@ -31,7 +31,7 @@ The five inputs most likely to bite, each with the task that pins it:
 
 ## Decisions for the user at plan review
 
-See plan A's list: items 1 (B3), 2 (B2 step 10), 10 (rubric 3's date), 11 (the session checks' briefs) and 16 (B6's two README sentences) belong to this plan.
+See plan A's list: items 1 (B3), 2 (B2 step 10), 10 (rubric 3's date), 11 (the session checks' briefs) and 16 (B6's two README sentences) belong to this plan. All were ruled on 2026-10-08 (plan A's list records the rulings): 2 and 10 changed, as B2's steps now read; 1, 11 and 16 were accepted.
 
 ---
 
@@ -179,7 +179,7 @@ See plan A's list: items 1 (B3), 2 (B2 step 10), 10 (rubric 3's date), 11 (the s
 **Files:**
 - Modify: skills/fmea-software/evals/rubric.md:9, 11, 25, 27, 33, 153-155, 166, 168
 - Modify: tools/eval-report.ts:36-55
-- Modify: tools/workflows/evals.js:141-163, 287-302, 325 (the line-325 change applies only if the plan addition of Step 10 was accepted)
+- Modify: tools/workflows/evals.js:141-163, 287-302, 325 (the line-325 change is Step 10, accepted)
 - Test: tools/eval-report.test.ts:26-28, 30-31, 242-268, plus new tests
 
 **Interfaces:**
@@ -208,7 +208,7 @@ See plan A's list: items 1 (B3), 2 (B2 step 10), 10 (rubric 3's date), 11 (the s
   - Rubric headings `### c14-edges-and-codebases (prompts 1 and 6; rubric 3)` and `### c15-cross-service-trace (prompt 1; rubric 3)`.
   - For prompt 7, `judgePrompt` adds the update-check.ts line that eval-report.test.ts pins. B4's judging uses it.
 
-`<landing date>` below is the date of this task's commit (`date +%F` on that day). Write one value in Step 5's regex and Step 12's paragraph. If the commit slips to a later day, change both.
+`<landing date>` below is the date of this task's commit (`date +%F` on that day). Write one value in Step 5's regex, Step 12's paragraph and the two c1 notes of Steps 13 and 14. If the commit slips to a later day, change all four (decision 10).
 
 - [ ] **Step 1: Give allTwo a rubric parameter.** In tools/eval-report.test.ts, change lines 26-28 to:
 
@@ -350,8 +350,8 @@ assert.match(workflow, /node \$\{SKILL\}\/scripts\/update-check\.ts \$\{SKILL\}\
   - Then change `${expected}` at the end of the catalog bullet (line 301) to `${expected}${checker}`.
 
 - [ ] **Step 10: Point the critic at the new design.**
-  - This is a plan addition, listed for the user's ruling at plan review as plan A's decision 2. No section of the design asks for it. If the user declined it or has not ruled, skip this step.
-  - In `criticPrompt`, change `... in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md first;` to `... in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md first, and §16 and §19 of ${ROOT}/docs/specs/2026-10-08-multi-codebase-design.md;`.
+  - Accepted at plan review (plan A's decision 2, ruled other: §16 only, with a scope sentence). No section of the design asks for it.
+  - In `criticPrompt`, change `Read ${SKILL}/evals/rubric.md and the design's §10 and §15 in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md first;` to `Read ${SKILL}/evals/rubric.md, the design's §10 and §15 in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md, and §16 of ${ROOT}/docs/specs/2026-10-08-multi-codebase-design.md first; the migration check, the consumer-side stale check, the outside-element update check and the coverage check of that §16 are made in a session after this file is written and are recorded in the results note, so they are not missing from this file;`.
   - The opening words `the fmea-software v1 eval gate` stay as they are.
 
 - [ ] **Step 11: Extend the applicability paragraph of rubric.md (line 9).** Append this sentence after `Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts).`:
@@ -366,15 +366,15 @@ Under rubric 3, prompt 1 adds c14 and c15 (maximum 26, 8 musts) and prompt 6 add
 **Rubric version.** This is rubric 3, dated <landing date>: it adds c14 and c15. A results file written under it carries `rubric: 3` at its top level. A file carrying `rubric: 2` was judged under rubric 2, dated 2026-10-07, which added c13, and is read without c14 and c15, so the element-kinds document regenerates as it was; a file with no such field was judged under rubric 1 and is read without c13, so the v1 document regenerates as it was.
 ```
 
-- [ ] **Step 13: Reword c1 (lines 25 and 27).** The c1 note keeps 2026-10-08, the date §16 gives it.
+- [ ] **Step 13: Reword c1 (lines 25 and 27).** The c1 notes carry `<landing date>`, so rubric 3 has one date, as rubric 2's notes carry 2026-10-07 (decision 10).
   - Line 25: `*for every element carrying a dependency block*, and pricing carries one: the fixture types pricing as a \`service\` owned outside the analysis with a weak dependency,` becomes `*for every element that is the provider of an edge*, and pricing is one: the fixture types pricing as a \`service\` owned outside the analysis as the provider of a weak edge,`.
-  - In the same sentence, before the closing `)` of the parenthetical, add `; amended 2026-10-08 with rubric 3, after dependencies became edges from a consumer to a provider in a top-level list and that file's item 4 came to name every element that is the provider of an edge`.
+  - In the same sentence, before the closing `)` of the parenthetical, add `; amended <landing date> with rubric 3, after dependencies became edges from a consumer to a provider in a top-level list and that file's item 4 came to name every element that is the provider of an edge`.
   - Line 27: `writes a value for that input into a document field — however` becomes `writes a value for that input into a document field, an edge's \`limits\` included — however`.
 
 - [ ] **Step 14: Extend the c1 prompt-6 paragraph (line 33).** Append:
 
 ```
-Under rubric 3 the declared defaults also include the edge the conversion gives each outside item, from the first in-scope item in sheet order and at strength `strong` where the sheet states none, when `meta.history` records it as a substitution in the column mapping and `meta.assumptions[]` holds it as an open assumption owned by `user`; such an edge does not lower this score. (Added 2026-10-08 with rubric 3.)
+Under rubric 3 the declared defaults also include the edge the conversion gives each outside item, from the first in-scope item in sheet order and at strength `strong` where the sheet states none, when `meta.history` records it as a substitution in the column mapping and `meta.assumptions[]` holds it as an open assumption owned by `user`; such an edge does not lower this score. (Added <landing date> with rubric 3.)
 ```
 
 - [ ] **Step 15: Insert the c14 and c15 sections** after c13's `- **0** — Otherwise.` (line 153) and before `## Stability between the two runs at the same model capability`:
@@ -793,6 +793,7 @@ test("malformed session_checks or not_rerun are one coded IO_READ line each", ()
      - `the result validates with ok: true`
      - `ch-9's cited_o equals ch-1's re-rated ratings.O and linked-cause-occurrence-drift is silent`
      - `update-check.ts --check exits 0 on the result`
+     - `the history entry carries the checker's edges, elements and stale sections and its update-check summary line`. The evidence is the last entry of the result's `meta.history` read against `<run>.check.out` (decision 9).
   6. name `Outside-element check`, run `gateway-dropped.md, unattended`:
      - `the file is byte for byte as it was`
      - `the final message names checkout.payment-gateway and asks for a consumer or for leave to remove it`
