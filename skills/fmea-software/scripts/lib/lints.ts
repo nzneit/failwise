@@ -2,6 +2,7 @@ import type { Chain, Element, FmeaDocument, Lint, Ratings, Factor, Severity } fr
 import { ptr } from "./pointer.ts";
 import type { PriorityTable } from "./table.ts";
 import { checkTableProperties } from "./table.ts";
+import { providerIds } from "./graph.ts";
 
 export interface MachineRule { id: string; severity: Severity; check: (doc: FmeaDocument) => Lint[] }
 
@@ -211,11 +212,12 @@ export const MACHINE_RULES: MachineRule[] = [
   },
   {
     // A dependency catalog row describes a failure at the edge to something the system relies on;
-    // applied to an element with no dependency block, its strength, SLA and limits are unrecorded.
+    // applied to an element that is the provider of no edge, its strength, SLA and limits are unrecorded.
     id: "dependency-row-without-dependency",
     severity: "warning",
     check(doc) {
-      return rowLints(doc, "dependency", (el) => el.dependency !== undefined, () => "which carries no dependency block");
+      const providers = providerIds(doc);
+      return rowLints(doc, "dependency", (el) => providers.has(el.id), () => "which is the provider of no edge");
     },
   },
   {

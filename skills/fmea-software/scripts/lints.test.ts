@@ -238,24 +238,23 @@ function elementById(doc: FmeaDocument, id: string): FmeaDocument["elements"][nu
   return el;
 }
 
-test("dependency-row-without-dependency fires on a cat-dependency- ref whose element carries no dependency block and stays silent on an in_scope element that carries one", () => {
+test("dependency-row-without-dependency fires on a cat-dependency- ref whose element is the provider of no edge and stays silent on an in_scope provider", () => {
   const doc = golden();
   assert.equal(doc.chains[0].catalog_refs[0].id, "cat-dependency-01");
   assert.deepEqual(fired(doc, "dependency-row-without-dependency"), []);
-
-  const pricing = elementById(doc, "pricing");
-  pricing.boundary = "in_scope";
-  assert.ok(pricing.dependency);
+  elementById(doc, "pricing").boundary = "in_scope";
+  assert.ok(doc.dependencies.some((e) => e.to === "pricing"));
   doc.chains[2].catalog_refs = [{ id: "cat-dependency-02", provenance: "skill-authored" }];
   assert.deepEqual(fired(doc, "dependency-row-without-dependency"), []);
-
-  const gateway = elementById(doc, "checkout.payment-gateway");
-  delete gateway.dependency;
-  gateway.boundary = "in_scope";
-  assert.deepEqual(fired(doc, "dependency-row-without-dependency"), [{
+  doc.dependencies = doc.dependencies.filter((e) => e.to !== "checkout.payment-gateway");
+  elementById(doc, "checkout.payment-gateway").boundary = "in_scope";
+  const finding: Lint = {
     rule: "dependency-row-without-dependency", severity: "warning", pointer: "/chains/0/catalog_refs/0/id",
-    message: "chain ch-1 applies dependency row cat-dependency-01 to element checkout.payment-gateway, which carries no dependency block",
-  }]);
+    message: "chain ch-1 applies dependency row cat-dependency-01 to element checkout.payment-gateway, which is the provider of no edge",
+  };
+  assert.deepEqual(fired(doc, "dependency-row-without-dependency"), [finding]);
+  doc.dependencies.push({ from: "checkout.payment-gateway", to: "pricing", strength: "weak" });
+  assert.deepEqual(fired(doc, "dependency-row-without-dependency"), [finding], "an edge out of the element does not make it a provider");
 });
 
 test("security-row-without-flag fires on a cat-security- ref whose element is not security-relevant", () => {

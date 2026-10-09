@@ -28,16 +28,18 @@ export type ObservedState = "open" | "done" | "dropped" | "closed" | "unreachabl
 export interface TrackerConfig { provider: TrackerProvider; project: string; label: string; host?: string; record_url?: string; type?: string; parent?: string; states?: TrackerStates }
 export interface Observed { state: ObservedState; detail: string; date: string; closed_date?: string }
 export interface TrackerLink { provider: TrackerProvider; id: string; key: string; url: string; linked: string; observed?: Observed }
+export interface Codebase { id: string; name: string; repo: string; path?: string }
 export interface Meta {
   id: string; name: string; version: number; branch: "DFMEA"; scope: string; boundary: Boundary;
   ground_rules: string[]; assumptions: Assumption[]; reviews: Review[]; scales: Scales;
-  created: string; updated: string; history: HistoryEntry[]; tracker?: TrackerConfig;
+  created: string; updated: string; history: HistoryEntry[]; tracker?: TrackerConfig; codebases?: Codebase[];
 }
-export interface Dependency { strength: Strength; sla?: string; limits?: string }
 export interface Source { kind: SourceKind; ref: string }
-export interface Element { id: string; kind: ElementKind; name: string; description: string; parent: string | null; boundary: ElementBoundary; security_relevant: boolean; security_rationale?: string; dependency?: Dependency; sources: Source[] }
+export interface DependencyEdge { from: string; to: string; strength: Strength; sla?: string; limits?: string }
+export interface Element { id: string; kind: ElementKind; name: string; description: string; parent: string | null; boundary: ElementBoundary; security_relevant: boolean; security_rationale?: string; codebase?: string; sources: Source[] }
 export interface Fn { id: string; element: string; statement: string; conditions: string[]; for_whom: string }
-export interface Cause { text: string; origin?: CauseOrigin; adversarial?: boolean }
+export interface CitedOccurrence { value: number; evidence_kind: RatingEvidenceKind; evidence_ref?: string }
+export interface Cause { text: string; origin?: CauseOrigin; adversarial?: boolean; chain?: string; cited_o?: CitedOccurrence }
 export interface ControlEvidence { kind: ControlEvidenceKind; ref?: string }
 export interface Control { kind: ControlKind; description: string; status: ControlStatus; evidence: ControlEvidence }
 export interface RatingReview { status: ReviewStatus; by?: string; date?: string }
@@ -56,4 +58,4 @@ export interface Chain {
 }
 export interface Lint { rule: string; severity: Severity; pointer: string; message: string }
 export interface Computed { quality_score: number; lints: Lint[]; validated_at: string; validator_version: string }
-export interface FmeaDocument { meta: Meta; elements: Element[]; functions: Fn[]; chains: Chain[]; computed?: Computed }
+export interface FmeaDocument { meta: Meta; elements: Element[]; functions: Fn[]; dependencies: DependencyEdge[]; chains: Chain[]; computed?: Computed }

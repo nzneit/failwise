@@ -19,7 +19,7 @@ import type { FakeOptions, FakeProvider } from "./tracker-fakes.ts";
 import type { Link, Observation, Provider, RemoteItem } from "./lib/tracker/provider.ts";
 import type { Action, ActionStatus, FmeaDocument, ObservedState, TrackerConfig, TrackerLink } from "./lib/types.ts";
 import { changedMessage, clone, minimalDoc, runCli } from "./test-helpers.ts";
-import { LEGACY_TRIGGERS, assertLegacyRefused, withTempDir, writeLegacy } from "./test-helpers.ts";
+import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, withTempDir, writeLegacy } from "./test-helpers.ts";
 
 const TODAY = "2026-10-02";
 const key = (n: number): string => `fmea-min/ch-1/act-${n}`;
@@ -203,9 +203,9 @@ test("an invalid document prints what validate.ts prints and exits 2, and the pr
   }
 });
 
-for (const trigger of LEGACY_TRIGGERS) {
+for (const trigger of [...LEGACY_TRIGGERS, ...V2_TRIGGERS]) {
   test(`track.ts plan: ${trigger.name}`, (t) => {
-    withTempDir((dir) => assertLegacyRefused(runTrack(t, ["plan", writeLegacy(dir, trigger)]), trigger.pointer));
+    withTempDir((dir) => assertLegacyRefused(runTrack(t, ["plan", writeLegacy(dir, trigger)]), trigger.pointer, trigger.code));
   });
 }
 

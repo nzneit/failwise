@@ -110,7 +110,7 @@ test("formatError escapes a bidi control and a C1 control in the pointer", () =>
   assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u202eb\\u0085c");
 });
 
-test("CODES holds exactly the twenty-two codes of the closed list", () => {
+test("CODES holds exactly the twenty-three codes of the closed list", () => {
   assert.deepEqual(Object.keys(CODES), [
     "USAGE",
     "NODE",
@@ -118,6 +118,7 @@ test("CODES holds exactly the twenty-two codes of the closed list", () => {
     "TRACKER_PUBLIC",
     "SCHEMA",
     "KIND_LEGACY",
+    "DEPENDENCY_LEGACY",
     "INVARIANT",
     "PRIORITY_MISMATCH",
     "TABLE_ID_MISMATCH",
@@ -142,6 +143,7 @@ test("exitStatus maps every code to 1 usage, 2 validation, or 3 I/O", () => {
   assert.equal(exitStatus("NODE"), 1);
   assert.equal(exitStatus("SCHEMA"), 2);
   assert.equal(exitStatus("KIND_LEGACY"), 2);
+  assert.equal(exitStatus("DEPENDENCY_LEGACY"), 2);
   assert.equal(exitStatus("INVARIANT"), 2);
   assert.equal(exitStatus("PRIORITY_MISMATCH"), 2);
   assert.equal(exitStatus("TABLE_ID_MISMATCH"), 2);
@@ -199,11 +201,13 @@ test("a provisional rating carries no by or date", () => {
   });
 });
 
-test("minimalDoc is one element, one function, one chain priced M with rpn 96", () => {
+test("minimalDoc is one element, one function, no edge and one chain priced M with rpn 96", () => {
   const doc = minimalDoc();
   assert.equal(doc.elements.length, 1);
   assert.equal(doc.functions.length, 1);
+  assert.deepEqual(doc.dependencies, []);
   assert.equal(doc.chains.length, 1);
+  assert.deepEqual(Object.keys(doc), ["meta", "elements", "functions", "dependencies", "chains"]);
   assert.deepEqual(doc.chains[0].priority, { value: "M", table: "priority-fmea-software-v1", rpn: 96 });
   assert.equal(doc.chains[0].ratings.S.value * doc.chains[0].ratings.O.value * doc.chains[0].ratings.D.value, 96);
   assert.equal(doc.meta.scales.priority_table, "priority-fmea-software-v1");
@@ -379,7 +383,7 @@ const TYPE_NAMES = [
   "ElementKind", "ElementBoundary", "SourceKind", "ControlKind", "ControlStatus", "ControlEvidenceKind",
   "RatingEvidenceKind", "ReviewStatus", "ActionStatus", "CauseOrigin", "StaleReason",
   "AssumptionStatus", "Strength", "Factor", "Severity", "HistoryEntry", "Assumption",
-  "Review", "Boundary", "Scales", "Meta", "Dependency", "Source", "Element", "Fn", "Cause",
+  "Review", "Boundary", "Scales", "Meta", "Codebase", "DependencyEdge", "CitedOccurrence", "Source", "Element", "Fn", "Cause",
   "ControlEvidence", "Control", "RatingReview", "Rating", "Ratings", "Priority", "Action",
   "Handoff", "CatalogRef", "Stale", "Effects", "Chain", "Lint", "Computed", "FmeaDocument",
 ];

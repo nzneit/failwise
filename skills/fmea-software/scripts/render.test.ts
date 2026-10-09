@@ -12,7 +12,7 @@ import { loadVocabulary } from "./lib/vocabulary.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
 import { SKILL_ROOT, bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
-import { LEGACY_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
+import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
@@ -748,11 +748,11 @@ test("a document with no computed block is refused at /computed with exit 2", ()
   });
 });
 
-for (const trigger of LEGACY_TRIGGERS) {
+for (const trigger of [...LEGACY_TRIGGERS, ...V2_TRIGGERS]) {
   test(`render.ts: ${trigger.name}, and writes no report`, () => {
     withTempDir((dir) => {
       const out = join(dir, "report.html");
-      assertLegacyRefused(runCli("render.ts", [writeLegacy(dir, trigger), "--out", out]), trigger.pointer);
+      assertLegacyRefused(runCli("render.ts", [writeLegacy(dir, trigger), "--out", out]), trigger.pointer, trigger.code);
       assert.equal(existsSync(out), false);
     });
   });
@@ -942,17 +942,18 @@ function idOf(block: string): string {
   return m === null ? "" : m[1].replace(/<span class="el-prefix">(.*?)<\/span>/, "$1");
 }
 
-// A document whose elements cover what the checkout fixture lacks: a grandchild, a dependency with
+// A document whose elements cover what the checkout fixture lacks: a grandchild, an edge with
 // neither SLA nor limits, and an element whose id does not extend its parent's.
 function structureDoc(): FmeaDocument {
   const doc = minimalDoc();
   const src = doc.elements[0].sources;
   doc.elements = [
     { id: "svc", kind: "service", name: "Service", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: src },
-    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", boundary: "in_scope", security_relevant: false, dependency: { strength: "weak" }, sources: src },
-    { id: "svc.db.shard", kind: "datastore", name: "Shard", description: "One shard.", parent: "svc.db", boundary: "third_party", security_relevant: false, dependency: { strength: "strong", limits: "10 rps" }, sources: src },
+    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", boundary: "in_scope", security_relevant: false, sources: src },
+    { id: "svc.db.shard", kind: "datastore", name: "Shard", description: "One shard.", parent: "svc.db", boundary: "third_party", security_relevant: false, sources: src },
     { id: "elsewhere", kind: "component", name: "Stray", description: "Named apart.", parent: "svc", boundary: "in_scope", security_relevant: true, security_rationale: "holds the signing key", sources: src },
   ];
+  doc.dependencies = [{ from: "svc", to: "svc.db", strength: "weak" }, { from: "svc.db", to: "svc.db.shard", strength: "strong", limits: "10 rps" }];
   return doc;
 }
 
@@ -1012,16 +1013,13 @@ test("each element's block carries its depth in the tree", () => {
   assert.ok(golden_.includes('<li><div class="el" style="--el-depth:0"><div class="el-who"><span class="el-name">'), "a root's block is not shaped as specified");
 });
 
-test("the facts list appears only for a dependency, and holds SLA and limits only when they are set", () => {
-  const golden_ = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
-  assert.ok(elBlock(golden_, "checkout.payment-gateway").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>SLA</dt><dd>99.95% monthly</dd><dt>Limits</dt><dd>50 rps per merchant</dd></dl>'));
-  assert.ok(elBlock(golden_, "pricing").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd><dt>SLA</dt><dd>99.9% monthly</dd></dl>'));
-  for (const id of ["checkout", "checkout.api", "checkout.order-store", "checkout.session-auth"]) {
-    assert.ok(!elBlock(golden_, id).includes("el-facts"), `${id} has no dependency but prints a facts list`);
+test("no element's block prints a facts list, and the template carries no .el-facts rule", () => {
+  for (const doc of [golden(), structureDoc()]) {
+    const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+    assert.ok(!structure.includes("el-facts"), "an element prints a facts list");
+    assert.ok(!structure.includes("<dt>Dependency</dt>"), "an element prints a dependency line");
   }
-  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
-  assert.ok(elBlock(structure, "svc.db").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd></dl>'));
-  assert.ok(elBlock(structure, "svc.db.shard").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>Limits</dt><dd>10 rps</dd></dl>'));
+  assert.ok(!template.includes(".el-facts"), "the template keeps an .el-facts rule");
 });
 
 test("every string in the structure section is entity-escaped", () => {
@@ -1030,12 +1028,11 @@ test("every string in the structure section is entity-escaped", () => {
   const shard = doc.elements[2];
   shard.name = `name ${bad}`;
   shard.description = `desc ${bad}`;
-  shard.dependency = { strength: "strong", sla: `sla ${bad}`, limits: `limits ${bad}` };
   shard.id = `svc.db.${bad}`;
   doc.elements[3].id = `else${bad}`;
   const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
   const safe = escapeHtml(bad);
-  for (const text of [`name ${safe}`, `desc ${safe}`, `sla ${safe}`, `limits ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
+  for (const text of [`name ${safe}`, `desc ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
     assert.ok(structure.includes(text), `missing the escaped form: ${text}`);
   }
   assert.ok(!structure.includes(bad), "a raw string reached the structure section");

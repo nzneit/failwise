@@ -99,15 +99,19 @@ test("element-source-non-catalog flags an element sourced only from the catalog"
   expectOne(checkInvariants(doc), "element-source-non-catalog", "INVARIANT", "/elements/0/sources");
 });
 
-test("element-dependency-required fires on owned_outside and third_party without a dependency block and never on in_scope", () => {
+test("element-dependency-required fires at the boundary of an outside element no edge depends on, and any edge into it satisfies it", () => {
   for (const boundary of ["owned_outside", "third_party"] as const) {
     const doc = minimalDoc();
     doc.elements.push({ id: "svc.gateway", kind: "service", name: "Gateway", description: "", parent: "svc", boundary, security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });
     const issues = checkInvariants(doc);
-    expectOne(issues, "element-dependency-required", "INVARIANT", "/elements/1/dependency");
-    assert.match(only(issues, "element-dependency-required")[0].message, new RegExp(`has boundary ${boundary} and needs a dependency block`));
-    doc.elements[1].dependency = { strength: "strong" };
-    assert.deepEqual(only(checkInvariants(doc), "element-dependency-required"), []);
+    expectOne(issues, "element-dependency-required", "INVARIANT", "/elements/1/boundary");
+    assert.equal(only(issues, "element-dependency-required")[0].message, `element svc.gateway has boundary ${boundary} and no edge depends on it`);
+    for (const from of ["svc", "ghost", "svc.gateway"]) {
+      doc.dependencies = [{ from, to: "svc.gateway", strength: "weak" }];
+      assert.deepEqual(only(checkInvariants(doc), "element-dependency-required"), [], `an edge from ${from}`);
+    }
+    doc.dependencies = [{ from: "svc.gateway", to: "svc", strength: "strong" }];
+    expectOne(checkInvariants(doc), "element-dependency-required", "INVARIANT", "/elements/1/boundary");
   }
   const doc = minimalDoc();
   doc.elements.push({ id: "svc.gateway", kind: "service", name: "Gateway", description: "", parent: "svc", boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }] });

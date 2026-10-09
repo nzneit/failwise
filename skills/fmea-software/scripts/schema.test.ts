@@ -185,7 +185,7 @@ test("SUPPORTED_KEYWORDS and SUPPORTED_FORMATS are the contract lists", () => {
 test("loadSchema reads the shipped schema file", () => {
   assert.match(SCHEMA_PATH, /schemas\/fmea\.schema\.json$/);
   const schema = loadSchema();
-  assert.equal(schema.$id, "urn:fmea-software:schema:fmea:v2");
+  assert.equal(schema.$id, "urn:fmea-software:schema:fmea:v3");
   assert.throws(() => loadSchema("/nonexistent.schema.json"), (err: unknown) => err instanceof ScriptError && err.code === "IO_READ");
 });
 
@@ -260,6 +260,131 @@ test("a chain may carry post_priority beside post_ratings, in the shape of prior
   const extra = clone(doc);
   (extra.chains[0].post_priority as unknown as Record<string, unknown>).weight = 1;
   assert.deepEqual(checkSchema(extra).map((i) => i.pointer), ["/chains/0/post_priority/weight"]);
+});
+
+test("the top level is five authored parts in order, with dependencies required between functions and chains and computed after them", () => {
+  const schema = loadSchema();
+  assert.deepEqual(schema.required, ["meta", "elements", "functions", "dependencies", "chains"]);
+  assert.deepEqual(Object.keys(schema.properties as object), ["meta", "elements", "functions", "dependencies", "chains", "computed"]);
+  const doc = minimalDoc() as unknown as Record<string, unknown>;
+  delete doc.dependencies;
+  const issues = checkSchema(doc);
+  assert.deepEqual(issues.map((i) => i.pointer), [""]);
+  assert.match(issues[0].message, /missing required property "dependencies"/);
+});
+
+test("an element that carries a dependency key is refused at the key", () => {
+  const issues = elementIssues((e) => { e.dependency = { strength: "strong" }; });
+  assert.deepEqual(issues.map((i) => i.pointer), ["/elements/0/dependency"]);
+  assert.match(issues[0].message, /unexpected property "dependency"/);
+});
+
+// minimalDoc() with `dependencies` set to `edges`; the schema checks shape only, so the ends need not resolve.
+function edgeIssues(...edges: unknown[]): string[] {
+  const doc = minimalDoc() as unknown as Record<string, unknown>;
+  doc.dependencies = edges;
+  return checkSchema(doc).map((i) => i.pointer);
+}
+
+test("a dependency edge is closed, requires from, to and strength, and takes sla and limits as free text", () => {
+  const edge = { from: "svc", to: "svc.db", strength: "weak", sla: "99.9% monthly", limits: "10 rps" };
+  assert.deepEqual(edgeIssues(edge, { from: "svc.db", to: "svc", strength: "strong" }), []);
+  for (const key of ["from", "to", "strength"]) {
+    const missing: Record<string, unknown> = { ...edge };
+    delete missing[key];
+    assert.deepEqual(edgeIssues(missing), ["/dependencies/0"], key);
+  }
+  assert.deepEqual(edgeIssues({ ...edge, consumer: "svc" }), ["/dependencies/0/consumer"]);
+  assert.deepEqual(edgeIssues({ ...edge, strength: "critical" }), ["/dependencies/0/strength"]);
+  assert.deepEqual(edgeIssues({ ...edge, from: "Svc" }), ["/dependencies/0/from"]);
+  assert.deepEqual(edgeIssues({ ...edge, to: "svc..db" }), ["/dependencies/0/to"]);
+});
+
+function codebaseIssues(codebases: unknown): string[] {
+  const doc = minimalDoc();
+  (doc.meta as unknown as Record<string, unknown>).codebases = codebases;
+  return checkSchema(doc).map((i) => i.pointer);
+}
+
+test("meta.codebases is optional, never empty, and each entry is closed with an id, a name and an owner/repo repo", () => {
+  const entry = { id: "checkout", name: "Checkout service", repo: "acme/checkout" };
+  assert.deepEqual(codebaseIssues([entry, { ...entry, id: "web", path: "apps/web" }]), []);
+  assert.deepEqual(codebaseIssues([]), ["/meta/codebases"]);
+  for (const key of ["id", "name", "repo"]) {
+    const missing: Record<string, unknown> = { ...entry };
+    delete missing[key];
+    assert.deepEqual(codebaseIssues([missing]), ["/meta/codebases/0"], key);
+  }
+  for (const repo of ["acme", "acme/checkout/web", "acme/checkout@abc", "acme:x/checkout", "acme/check out", "/checkout"]) {
+    assert.deepEqual(codebaseIssues([{ ...entry, repo }]), ["/meta/codebases/0/repo"], repo);
+  }
+  assert.deepEqual(codebaseIssues([{ ...entry, id: "-x" }]), ["/meta/codebases/0/id"]);
+  assert.deepEqual(codebaseIssues([{ ...entry, path: "" }]), ["/meta/codebases/0/path"]);
+  assert.deepEqual(codebaseIssues([{ ...entry, commit: "a".repeat(40) }]), ["/meta/codebases/0/commit"]);
+});
+
+test("elements[].codebase and causes[].chain are optional plain ids", () => {
+  assert.deepEqual(elementIssues((e) => { e.codebase = "checkout"; }), []);
+  assert.deepEqual(elementIssues((e) => { e.codebase = ""; }).map((i) => i.pointer), ["/elements/0/codebase"]);
+  const doc = minimalDoc();
+  doc.chains[0].causes[0].chain = "ch-2";
+  assert.deepEqual(checkSchema(doc), []);
+  doc.chains[0].causes[0].chain = "-ch-2";
+  assert.deepEqual(checkSchema(doc).map((i) => i.pointer), ["/chains/0/causes/0/chain"]);
+});
+
+function citedIssues(cited: unknown): Issue[] {
+  const doc = minimalDoc();
+  Object.assign(doc.chains[0].causes[0], { chain: "ch-2", cited_o: cited });
+  return checkSchema(doc);
+}
+
+test("causes[].cited_o is a closed object: value 1 to 10, evidence_kind required, evidence_ref optional and non-empty", () => {
+  const cited = { value: 6, evidence_kind: "observed_incident", evidence_ref: "INC-2026-0314" };
+  const at = (c: unknown): string[] => citedIssues(c).map((i) => i.pointer);
+  assert.deepEqual(citedIssues(cited), []);
+  assert.deepEqual(citedIssues({ value: 6, evidence_kind: "estimate" }), []);
+  const zero = citedIssues({ ...cited, value: 0 });
+  assert.deepEqual(zero.map((i) => i.pointer), ["/chains/0/causes/0/cited_o/value"]);
+  assert.match(zero[0].message, /value 0 is below the minimum 1/);
+  const eleven = citedIssues({ ...cited, value: 11 });
+  assert.deepEqual(eleven.map((i) => i.pointer), ["/chains/0/causes/0/cited_o/value"]);
+  assert.match(eleven[0].message, /value 11 is above the maximum 10/);
+  const noKind = citedIssues({ value: 6, evidence_ref: "INC-2026-0314" });
+  assert.deepEqual(noKind.map((i) => i.pointer), ["/chains/0/causes/0/cited_o"]);
+  assert.match(noKind[0].message, /missing required property "evidence_kind"/);
+  assert.deepEqual(at({ ...cited, rationale: "x" }), ["/chains/0/causes/0/cited_o/rationale"]);
+  assert.deepEqual(at({ ...cited, evidence_kind: "guess" }), ["/chains/0/causes/0/cited_o/evidence_kind"]);
+  assert.deepEqual(at({ ...cited, evidence_ref: "" }), ["/chains/0/causes/0/cited_o/evidence_ref"]);
+});
+
+test("the v3 properties sit where the plan places them and each new description names the rule that governs it", () => {
+  const schema = loadSchema();
+  const defs = schema.$defs as Record<string, SchemaNode>;
+  const props = (def: string): Record<string, SchemaNode> => defs[def].properties as Record<string, SchemaNode>;
+  const text = (node: SchemaNode): string => String(node.description);
+  assert.ok(!("dependency" in defs));
+  assert.deepEqual(Object.keys(props("meta")).slice(5, 7), ["boundary", "codebases"]);
+  assert.deepEqual(Object.keys(props("element")).slice(-3), ["security_rationale", "codebase", "sources"]);
+  assert.deepEqual(Object.keys(props("cause")), ["text", "origin", "adversarial", "chain", "cited_o"]);
+  const cases: [string, SchemaNode, string[]][] = [
+    ["dependencies", (schema.properties as Record<string, SchemaNode>).dependencies, ["element-dependency-required"]],
+    ["dependencyEdge", defs.dependencyEdge, ["F-WS3-01", "dependency-pair-unique"]],
+    ["dependencyEdge.from", props("dependencyEdge").from, ["dependency-from-resolves"]],
+    ["dependencyEdge.to", props("dependencyEdge").to, ["dependency-to-resolves", "dependency-self"]],
+    ["codebase.id", props("codebase").id, ["codebase-id-unique"]],
+    ["element.codebase", props("element").codebase, ["element-codebase-resolves"]],
+    ["cause.chain", props("cause").chain, ["cause-chain-resolves", "cause-chain-self", "cause-chain-cycle"]],
+    ["cause.cited_o", props("cause").cited_o, ["linked-cause-occurrence-drift"]],
+    ["citedOccurrence", defs.citedOccurrence, ["linked-cause-occurrence-drift"]],
+  ];
+  for (const [where, node, ids] of cases) for (const id of ids) assert.ok(text(node).includes(id), `${where} does not name ${id}`);
+  assert.ok(text(props("cause").cited_o).includes("written only when the consumer's O is rated, re-rated or re-scored and removed with the link"));
+  assert.ok(!text(defs.dependencyEdge).includes("analysed system"));
+  assert.ok(text(defs.elementBoundary).endsWith("An element whose boundary is not in_scope is the `to` of at least one edge in dependencies[] (invariant element-dependency-required)."));
+  assert.ok(text(props("element").parent).endsWith("Derivable from id; the report's tree and the ancestor walk of the lints read it."));
+  assert.ok(text(schema).includes("Five parts are authored (meta, elements, functions, dependencies, chains)"));
+  assert.ok(!text(schema).includes("fifth part"));
 });
 
 // `minimalDoc()` plus a tracker target and one action carrying a link, in the shapes of the
@@ -443,7 +568,9 @@ function constrainedNodes(schema: SchemaNode): string[] {
 // on the golden it also cannot reach /$defs/computed, /$defs/computed/properties/validated_at —
 // the schema file's only `format: "date-time"` node, which is the RFC 3339 pin of §6 —
 // /$defs/lint, or /$defs/lint/properties/severity. This document instantiates all six, so the
-// pair's reach into the schema does not depend on whether Task 26 has already run.
+// pair's reach into the schema does not depend on whether Task 26 has already run. It also sets a
+// codebase entry with a path, an element's codebase and a linked cause with a cited O, which no
+// fixture carries until the fixture gains them.
 function derivationDoc(): Record<string, unknown> {
   const doc = trackedDoc();
   Object.assign(doc.meta.tracker as unknown as Record<string, unknown>, { type: "Task", parent: "ACME-1", states: { done: ["Done"], dropped: ["Won't Do"] } });
@@ -464,6 +591,9 @@ function derivationDoc(): Record<string, unknown> {
   doc.chains[0].history = chainHistory;
   doc.chains[0].stale = stale;
   doc.computed = computed;
+  (doc.meta as unknown as Record<string, unknown>).codebases = [{ id: "svc-repo", name: "Service repository", repo: "acme/svc", path: "services/svc" }];
+  doc.elements[0].codebase = "svc-repo";
+  Object.assign(doc.chains[0].causes[0], { chain: "ch-2", cited_o: { value: 6, evidence_kind: "observed_incident", evidence_ref: "INC-1" } });
   return doc as unknown as Record<string, unknown>;
 }
 
@@ -591,8 +721,16 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // allow. If the schema or either document changes the count legitimately, move the floor —
   // never lower it by more than the change accounts for. The tracker target, link and observed
   // state added 35 derivations, all from the derivation document (1,241 in all), so the floor is
-  // 1,185.
-  assert.ok(derived >= 1185, `expected at least 1185 derived violations, ran ${derived}`);
+  // 1,185. Measured before schema v3, the total was 1,338 (1,137 from the golden, 201 from the
+  // derivation document), not the 1,241 counted above: the documents grew after that count without
+  // its being redone. The floor keeps its convention of the total less 56. Schema v3 moved the
+  // count by 23. The golden lost its two dependency blocks (-4, one required entry and one enum
+  // each), gained the root's fifth required entry (+1) and two edges (+12, three required entries,
+  // two elementId patterns and one enum each). The derivation document gained its fifth root entry
+  // (+1), a codebase entry with a path (+7: three required entries, two patterns, two minLength),
+  // an element codebase (+1) and a linked cause with a cited O (+5: a plainId pattern, two required
+  // entries, one enum, one minLength). The total is 1,361, so the floor is 1,305.
+  assert.ok(derived >= 1305, `expected at least 1305 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -600,6 +738,9 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // assertion above this one now fails too, but as a bare shortfall, while this one says which
   // share vanished, which is the drift this test's name claims to catch. Against the old floor of
   // 883 it was the only assertion that failed at all.
-  // The tracker nodes add six of them (254 in all).
-  assert.ok(minLengthDerived >= 254, `expected at least 254 derived minLength violations, ran ${minLengthDerived}`);
+  // The tracker nodes add six of them (254 counted; measured before schema v3, 268: 231 from the
+  // golden and 37 from the derivation document). Schema v3 adds three, all from the derivation
+  // document: the codebase's name and path and the cited O's evidence_ref, so the total and the
+  // floor are 271.
+  assert.ok(minLengthDerived >= 271, `expected at least 271 derived minLength violations, ran ${minLengthDerived}`);
 });

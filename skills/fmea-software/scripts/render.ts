@@ -174,12 +174,6 @@ function elementIdHtml(el: Element): string {
   return `<span class="el-prefix">${e(prefix)}</span>${e(el.id.slice(prefix.length))}`;
 }
 
-function elementFactsHtml(el: Element): string {
-  const dep = el.dependency;
-  if (!dep) return "";
-  return `<dl class="el-facts"><dt>Dependency</dt><dd>${e(dep.strength)}</dd>${dep.sla ? `<dt>SLA</dt><dd>${e(dep.sla)}</dd>` : ""}${dep.limits ? `<dt>Limits</dt><dd>${e(dep.limits)}</dd>` : ""}</dl>`;
-}
-
 // The element's three marks: its role, its boundary and, when set, the security flag.
 function elementTagHtml(el: Element): string {
   const security = el.security_relevant ? `<span class="el-security">security-relevant</span>` : "";
@@ -191,7 +185,7 @@ function structureHtml(elements: Element[], vocabulary: Vocabulary): string {
   const node = (el: Element, depth: number): string => {
     const who = `<div class="el-who"><span class="el-name">${e(el.name)}</span>${elementTagHtml(el)}</div>`;
     const rationale = el.security_rationale ? `<p class="el-rationale">${e(el.security_rationale)}</p>` : "";
-    const what = `<div class="el-what">${el.description ? `<p class="el-desc">${e(el.description)}</p>` : ""}${rationale}${elementFactsHtml(el)}</div>`;
+    const what = `<div class="el-what">${el.description ? `<p class="el-desc">${e(el.description)}</p>` : ""}${rationale}</div>`;
     const kids = children(el.id);
     return `<li><div class="el" style="--el-depth:${depth}">${who}${what}</div>${kids.length > 0 ? `<ul class="tree">${kids.map((k) => node(k, depth + 1)).join("")}</ul>` : ""}</li>`;
   };

@@ -102,11 +102,6 @@
       "parent": "checkout",
       "boundary": "third_party",
       "security_relevant": false,
-      "dependency": {
-        "strength": "strong",
-        "sla": "99.95% monthly",
-        "limits": "50 rps per merchant"
-      },
       "sources": [
         {
           "kind": "document",
@@ -161,10 +156,6 @@
       "parent": null,
       "boundary": "owned_outside",
       "security_relevant": false,
-      "dependency": {
-        "strength": "weak",
-        "sla": "99.9% monthly"
-      },
       "sources": [
         {
           "kind": "document",
@@ -228,6 +219,21 @@
         "during a price change rollout"
       ],
       "for_whom": "the checkout service"
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "checkout",
+      "to": "checkout.payment-gateway",
+      "strength": "strong",
+      "sla": "99.95% monthly",
+      "limits": "50 rps per merchant"
+    },
+    {
+      "from": "checkout",
+      "to": "pricing",
+      "strength": "weak",
+      "sla": "99.9% monthly"
     }
   ],
   "chains": [

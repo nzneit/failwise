@@ -13,6 +13,7 @@ export const CODES = {
   TRACKER_PUBLIC: EXIT_USAGE,
   SCHEMA: EXIT_VALIDATION,
   KIND_LEGACY: EXIT_VALIDATION, // raised by legacyIssues in legacy.ts, before the schema stage, for a v1 document
+  DEPENDENCY_LEGACY: EXIT_VALIDATION, // raised by legacyIssues in legacy.ts, after the v1 check and before the schema stage, for a v2 document
   INVARIANT: EXIT_VALIDATION,
   PRIORITY_MISMATCH: EXIT_VALIDATION,
   TABLE_ID_MISMATCH: EXIT_VALIDATION,

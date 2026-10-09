@@ -5,10 +5,10 @@ import { join } from "node:path";
 import process from "node:process";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { loadTable } from "./lib/table.ts";
-import { bandTable, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
+import { bandTable, minimalDoc, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { changedMessage, clone, fixturePath, loadFixture, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
-import { LEGACY_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
+import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint } from "./lib/types.ts";
 import { spawnSync } from "node:child_process";
 import { cpSync } from "node:fs";
@@ -33,6 +33,50 @@ test("the golden analysis validates with the eleven expected lints and a score o
   assert.deepEqual(byRule("seeded-action-without-incident"), ["/chains/7/actions/1"]);
   assert.equal(byRule("rating-provisional").length, 8);
   assert.deepEqual(byRule("metadata-without-ground-rules"), []);
+});
+
+const ANALYSIS_FIXTURES = ["checkout-service.fmea.json", "update/before.fmea.json", "update/stale-rows.fmea.json", "legacy-rpn-sheet.expected.fmea.json"];
+
+test("all four analysis fixtures carry a top-level dependencies array between functions and chains and no element dependency key", () => {
+  for (const name of ANALYSIS_FIXTURES) {
+    const doc = loadFixture<Record<string, unknown>>(name);
+    const keys = Object.keys(doc);
+    assert.ok(Array.isArray(doc.dependencies), name);
+    assert.equal(keys.indexOf("dependencies"), keys.indexOf("functions") + 1, name);
+    assert.equal(keys.indexOf("chains"), keys.indexOf("dependencies") + 1, name);
+    assert.deepEqual((doc.elements as Record<string, unknown>[]).filter((e) => "dependency" in e).map((e) => e.id), [], name);
+  }
+});
+
+test("update/before.fmea.json and legacy-rpn-sheet.expected.fmea.json validate with ok true", () => {
+  for (const name of ["update/before.fmea.json", "legacy-rpn-sheet.expected.fmea.json"]) {
+    const result = validateDocument(loadFixture(name), table);
+    assert.equal(result.ok, true, `${name}: ${JSON.stringify(result.errors)}`);
+  }
+});
+
+test("the checkout fixture's edges are its two former blocks, each from checkout", () => {
+  assert.deepEqual(golden().dependencies, [
+    { from: "checkout", to: "checkout.payment-gateway", strength: "strong", sla: "99.95% monthly", limits: "50 rps per merchant" },
+    { from: "checkout", to: "pricing", strength: "weak", sla: "99.9% monthly" },
+  ]);
+});
+
+test("the legacy expected fixture holds the conversion's edge from checkout-api to payment-gateway, strong, with its open assumption owned by user", () => {
+  const doc = loadFixture<FmeaDocument>("legacy-rpn-sheet.expected.fmea.json");
+  assert.deepEqual(doc.dependencies, [{ from: "checkout-api", to: "payment-gateway", strength: "strong" }]);
+  const named = doc.meta.assumptions.filter((a) => a.text.includes("checkout-api") && a.text.includes("payment-gateway"));
+  assert.deepEqual(named.map((a) => [a.owner, a.status]), [["user", "open"]]);
+  assert.match(named[0].text, /first in-scope item in sheet order/);
+  assert.match(named[0].text, /strength strong/);
+  assert.ok(!doc.meta.history[0].change.includes("dependency block"), doc.meta.history[0].change);
+});
+
+test("the update fixtures' checkout-to-gateway edge is strong before the update and weak in the stale rows", () => {
+  const pricing = { from: "checkout", to: "pricing", strength: "weak", sla: "99.9% monthly" };
+  const gateway = (strength: string) => ({ from: "checkout", to: "checkout.payment-gateway", strength, sla: "99.95% monthly", limits: "50 rps per merchant" });
+  assert.deepEqual(loadFixture<FmeaDocument>("update", "before.fmea.json").dependencies, [gateway("strong"), pricing]);
+  assert.deepEqual(loadFixture<FmeaDocument>("update", "stale-rows.fmea.json").dependencies, [gateway("weak"), pricing]);
 });
 
 test("a schema violation short-circuits: no lints, score 0, ok false", () => {
@@ -91,25 +135,73 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
   });
 });
 
-for (const trigger of LEGACY_TRIGGERS) {
+for (const trigger of [...LEGACY_TRIGGERS, ...V2_TRIGGERS]) {
   test(trigger.name, () => {
-    withTempDir((dir) => assertLegacyRefused(runCli("validate.ts", [writeLegacy(dir, trigger)]), trigger.pointer));
+    withTempDir((dir) => assertLegacyRefused(runCli("validate.ts", [writeLegacy(dir, trigger)]), trigger.pointer, trigger.code));
   });
 }
 
-test("a v2 document gets no KIND_LEGACY issue and a top level that is not an analysis falls through to SCHEMA", () => {
+test("a v3 document gets no KIND_LEGACY or DEPENDENCY_LEGACY issue and a top level that is not an analysis falls through to SCHEMA", () => {
   withTempDir((dir) => {
     const path = join(dir, "analysis.json");
     writeFileSync(path, readFileSync(fixturePath("checkout-service.fmea.json")));
-    const v2 = runCli("validate.ts", [path]);
-    assert.equal(v2.status, 0);
-    assert.ok(!v2.stderr.includes("KIND_LEGACY"), v2.stderr);
+    const v3 = runCli("validate.ts", [path]);
+    assert.equal(v3.status, 0);
+    assert.ok(!v3.stderr.includes("KIND_LEGACY"), v3.stderr);
+    assert.ok(!v3.stderr.includes("DEPENDENCY_LEGACY"), v3.stderr);
     writeFileSync(path, '{"meta": 1}\n');
     const other = runCli("validate.ts", [path]);
     assert.equal(other.status, 2);
     assert.match(other.stderr, /^error SCHEMA:/m);
     assert.ok(!other.stderr.includes("KIND_LEGACY"), other.stderr);
+    assert.ok(!other.stderr.includes("DEPENDENCY_LEGACY"), other.stderr);
   });
+});
+
+const V3_REMEDIES = 'a new analysis adds the top-level dependencies array, empty when nothing depends on anything, and an analysis written against 0.3.x to 0.5.x is migrated through the update mode as SKILL.md describes under "Migrate a v2 document"';
+
+test("format-legacy: a document with no top-level dependencies array gets one DEPENDENCY_LEGACY line carrying both remedies", () => {
+  withTempDir((dir) => {
+    const r = runCli("validate.ts", [writeLegacy(dir, V2_TRIGGERS[0])]);
+    assert.equal(r.status, 2);
+    assert.equal(r.stderr, `error DEPENDENCY_LEGACY: format-legacy: document predates schema v3 (no top-level dependencies array); ${V3_REMEDIES} at /dependencies\n`);
+  });
+});
+
+test("the v2 gate on minimalDoc: no top-level dependencies array is one DEPENDENCY_LEGACY issue at /dependencies", () => {
+  const doc = minimalDoc() as unknown as Record<string, unknown>;
+  delete doc.dependencies;
+  assert.deepEqual(validateDocument(doc, table).errors, [{
+    code: "DEPENDENCY_LEGACY", rule: "format-legacy", pointer: "/dependencies",
+    message: `document predates schema v3 (no top-level dependencies array); ${V3_REMEDIES}`,
+  }]);
+});
+
+test("the v2 gate on minimalDoc: an element's dependency key, null included, is a block named by its element's id", () => {
+  for (const block of [{ strength: "strong" }, null]) {
+    const doc = minimalDoc();
+    (doc.elements[0] as unknown as Record<string, unknown>).dependency = block;
+    assert.deepEqual(validateDocument(doc, table).errors, [{
+      code: "DEPENDENCY_LEGACY", rule: "format-legacy", pointer: "/elements/0/dependency",
+      message: `document predates schema v3 (element svc has a dependency block); ${V3_REMEDIES}`,
+    }], JSON.stringify(block));
+  }
+});
+
+test("the v2 gate on minimalDoc: a v1 trait beside a missing dependencies array is KIND_LEGACY alone", () => {
+  const doc = minimalDoc() as unknown as Record<string, unknown>;
+  delete doc.dependencies;
+  delete (doc.elements as Record<string, unknown>[])[0].boundary;
+  assert.deepEqual(validateDocument(doc, table).errors.map((e) => [e.code, e.pointer]), [["KIND_LEGACY", "/elements/0"]]);
+});
+
+test("the v2 gate on minimalDoc: a top-level dependencies of null passes the gate and gets SCHEMA lines", () => {
+  const doc = minimalDoc() as unknown as Record<string, unknown>;
+  doc.dependencies = null;
+  const result = validateDocument(doc, table);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.every((e) => e.code === "SCHEMA"), JSON.stringify(result.errors));
+  assert.ok(result.errors.some((e) => e.pointer === "/dependencies" && /expected type array/.test(e.message)), JSON.stringify(result.errors));
 });
 
 test("validate.ts --write reads an analysis that begins with a byte-order mark and writes it back without the mark", () => {
@@ -156,10 +248,10 @@ test("--write adds a computed block and leaves the authored parts alone", () => 
     const beforeDoc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.equal(runCli("validate.ts", [path, "--write"]).status, 0);
     const first = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
-    assert.deepEqual(Object.keys(first), ["meta", "elements", "functions", "chains", "computed"]);
+    assert.deepEqual(Object.keys(first), ["meta", "elements", "functions", "dependencies", "chains", "computed"]);
     assert.deepEqual(
-      { meta: first.meta, elements: first.elements, functions: first.functions, chains: first.chains },
-      { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, chains: beforeDoc.chains },
+      { meta: first.meta, elements: first.elements, functions: first.functions, dependencies: first.dependencies, chains: first.chains },
+      { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, dependencies: beforeDoc.dependencies, chains: beforeDoc.chains },
     );
     assert.equal(first.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(first.computed?.quality_score, 88);
@@ -174,12 +266,12 @@ test("--write replaces an existing computed block whole and keeps it where the f
     const doc = golden();
     const reordered = {
       computed: { quality_score: 3, lints: [], validated_at: "2020-01-01T00:00:00Z", validator_version: "0.0.1" },
-      meta: doc.meta, elements: doc.elements, functions: doc.functions, chains: doc.chains,
+      meta: doc.meta, elements: doc.elements, functions: doc.functions, dependencies: doc.dependencies, chains: doc.chains,
     };
     writeFileSync(path, JSON.stringify(reordered, null, 2) + "\n");
     assert.equal(runCli("validate.ts", [path, "--write"]).status, 0);
     const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
-    assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "chains"]);
+    assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "dependencies", "chains"]);
     assert.equal(after.computed?.quality_score, 88);
     assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(after.computed?.lints.length, 11);

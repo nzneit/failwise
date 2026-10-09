@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:fmea-software:schema:fmea:v2",
+  "$id": "urn:fmea-software:schema:fmea:v3",
   "title": "fmea-software analysis document",
-  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Four parts are authored (meta, elements, functions, chains): elements and functions are normalized and keyed by stable ids, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. The fifth part, computed, is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
+  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Five parts are authored (meta, elements, functions, dependencies, chains): elements and functions are normalized and keyed by stable ids, dependencies are edges from a consumer element to a provider element, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. A sixth part, computed, follows them and is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["meta", "elements", "functions", "chains"],
+  "required": ["meta", "elements", "functions", "dependencies", "chains"],
   "properties": {
     "meta": {
       "$ref": "#/$defs/meta",
@@ -23,6 +23,13 @@
       "description": "What each element must do, keyed by id and owned by one element. A chain reaches its element only through its function.",
       "items": {
         "$ref": "#/$defs/function"
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "The dependency edges, one per consumer and provider pair, each with its own strength, SLA and limits; an empty array when nothing depends on anything. An element whose boundary is not in_scope is the to of at least one edge (invariant element-dependency-required). The update mode diffs this array against the stored version by each edge's from and to.",
+      "items": {
+        "$ref": "#/$defs/dependencyEdge"
       }
     },
     "chains": {
@@ -203,6 +210,14 @@
         "boundary": {
           "$ref": "#/$defs/boundary"
         },
+        "codebases": {
+          "type": "array",
+          "description": "Optional. The codebases this run covers or reads, one entry each, set in step 1 beside the boundary; absent when the run names none, and never empty. A codebase whose repository the inputs do not name is an open assumption, not an entry.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/codebase"
+          }
+        },
         "ground_rules": {
           "type": "array",
           "description": "Rules decided before the analysis began, one entry each (F-WS6-04). The report prints them.",
@@ -248,13 +263,21 @@
         }
       }
     },
-    "dependency": {
-      "title": "Dependency",
-      "description": "How the analysed system depends on this element, classified strong or weak with its SLA and limits as free text (F-WS3-01). Required when the element's boundary is owned_outside or third_party, which makes it an external dependency, and optional on an in_scope element, which it makes an internal dependency. The keyword subset cannot make it conditional, so the invariant element-dependency-required enforces the requirement.",
+    "dependencyEdge": {
+      "title": "Dependency edge",
+      "description": "How a consumer element depends on a provider element, classified strong or weak with its SLA and limits as free text (F-WS3-01). An edge has no id: its from and to are its identity, and a pair occurs once (invariant dependency-pair-unique). An edge into an element outside the boundary makes that element an external dependency, and one into an in_scope element an internal dependency. Edges may cross levels in either direction and need not be acyclic.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["strength"],
+      "required": ["from", "to", "strength"],
       "properties": {
+        "from": {
+          "$ref": "#/$defs/elementId",
+          "description": "The consumer: the id of the element that depends on the provider (invariant dependency-from-resolves)."
+        },
+        "to": {
+          "$ref": "#/$defs/elementId",
+          "description": "The provider: the id of the element depended on (invariant dependency-to-resolves), never the consumer itself (invariant dependency-self)."
+        },
         "strength": {
           "enum": ["strong", "weak"],
           "description": "Strong or weak, as the design-inputs checklist classifies dependencies."
@@ -266,6 +289,32 @@
         "limits": {
           "type": "string",
           "description": "Scaling or rate limits, as free text in the source's own terms. Nothing computes on it."
+        }
+      }
+    },
+    "codebase": {
+      "title": "Codebase",
+      "description": "One codebase the run covers or reads. Several entries may share a repo, which is the monorepo case; the lint repo-ref-codebase compares repositories only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "repo"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/plainId",
+          "description": "Unique in meta.codebases (invariant codebase-id-unique); elements[].codebase names it."
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "How the team says it."
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[^\\s/@:]+/[^\\s/@:]+$",
+          "description": "The repository in the owner/repo form, the same form as the owner/repo head of a qualified repo source ref, which the lint repo-ref-codebase compares with it byte for byte."
+        },
+        "path": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Optional. A folder inside the repository, slashes allowed, for a codebase that is part of a monorepo. The report header prints it and nothing checks it."
         }
       }
     },
@@ -288,7 +337,7 @@
     },
     "elementBoundary": {
       "enum": ["in_scope", "owned_outside", "third_party"],
-      "description": "Who can change the element and whether this analysis covers it: in_scope, this analysis covers it; owned_outside, the organisation can change it but this analysis does not cover it; third_party, outside the organisation's control. A dependency block is required when the boundary is not in_scope (invariant element-dependency-required)."
+      "description": "Who can change the element and whether this analysis covers it: in_scope, this analysis covers it; owned_outside, the organisation can change it but this analysis does not cover it; third_party, outside the organisation's control. An element whose boundary is not in_scope is the `to` of at least one edge in dependencies[] (invariant element-dependency-required)."
     },
     "element": {
       "title": "Element",
@@ -315,7 +364,7 @@
         },
         "parent": {
           "type": ["string", "null"],
-          "description": "Equal to id with its last dotted segment removed, or null at depth 1; the invariant element-parent-matches-id rejects any other value, and element-parent-resolves requires the named element to exist. Stored for the reader; derivable from id."
+          "description": "Equal to id with its last dotted segment removed, or null at depth 1; the invariant element-parent-matches-id rejects any other value, and element-parent-resolves requires the named element to exist. Derivable from id; the report's tree and the ancestor walk of the lints read it."
         },
         "boundary": {
           "$ref": "#/$defs/elementBoundary"
@@ -328,8 +377,9 @@
           "$ref": "#/$defs/nonEmptyString",
           "description": "Why the flag is set; required when security_relevant is true (invariant element-security-rationale-required) and permitted when it is false."
         },
-        "dependency": {
-          "$ref": "#/$defs/dependency"
+        "codebase": {
+          "$ref": "#/$defs/plainId",
+          "description": "Optional. The id of the entry of meta.codebases the element lives in (invariant element-codebase-resolves). An in_scope element without one inherits its in_scope parent's; an element outside the boundary neither inherits one nor passes one down."
         },
         "sources": {
           "type": "array",
@@ -391,6 +441,37 @@
         "adversarial": {
           "type": "boolean",
           "description": "Absent means false. A chain carries handoff if and only if at least one of its causes is true here (invariants handoff-without-adversarial and adversarial-without-handoff)."
+        },
+        "chain": {
+          "$ref": "#/$defs/plainId",
+          "description": "Optional. The id of another chain whose failure mode this cause is, the provider's chain; under a duplicate chain id, the first in document order. It names a chain (invariant cause-chain-resolves) other than the cause's own (invariant cause-chain-self), and the links over the document form no cycle (invariant cause-chain-cycle)."
+        },
+        "cited_o": {
+          "$ref": "#/$defs/citedOccurrence",
+          "description": "Optional, meaningful only beside chain: the linked chain's ratings.O as the consumer's O rationale cited it, written only when the consumer's O is rated, re-rated or re-scored and removed with the link; the lint linked-cause-occurrence-drift compares it with the linked chain's current ratings.O."
+        }
+      }
+    },
+    "citedOccurrence": {
+      "title": "Cited occurrence",
+      "description": "The linked chain's ratings.O as the consumer's O rationale cited it: written only when the consumer's O is rated, re-rated or re-scored, never refreshed on its own, and removed with the link. The lint linked-cause-occurrence-drift flags a cause whose citation no longer matches the linked chain's current ratings.O, and a citation on a cause with no link.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "evidence_kind"],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "The cited O value."
+        },
+        "evidence_kind": {
+          "enum": ["observed_incident", "test_result", "estimate"],
+          "description": "The cited rating's evidence_kind."
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Present exactly when the cited rating's evidence_ref was."
         }
       }
     },

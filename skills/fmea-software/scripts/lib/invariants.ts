@@ -3,6 +3,7 @@ import type { Chain, Element, FmeaDocument, Factor, Fn, Priority, Ratings } from
 import type { PriorityTable } from "./table.ts";
 import { computePriority } from "./table.ts";
 import { ptr } from "./pointer.ts";
+import { providerIds } from "./graph.ts";
 
 export const INVARIANT_RULES: readonly string[] = [
   "element-id-unique",
@@ -116,11 +117,11 @@ function sourceIssues(elements: Element[]): Issue[] {
   return out;
 }
 
-function dependencyIssues(elements: Element[]): Issue[] {
+function dependencyIssues(elements: Element[], providers: ReadonlySet<string>): Issue[] {
   const out: Issue[] = [];
   for (let i = 0; i < elements.length; i++) {
-    if (elements[i].boundary !== "in_scope" && elements[i].dependency === undefined) {
-      out.push(invariant("element-dependency-required", `element ${elements[i].id} has boundary ${elements[i].boundary} and needs a dependency block`, ptr("elements", i, "dependency")));
+    if (elements[i].boundary !== "in_scope" && !providers.has(elements[i].id)) {
+      out.push(invariant("element-dependency-required", `element ${elements[i].id} has boundary ${elements[i].boundary} and no edge depends on it`, ptr("elements", i, "boundary")));
     }
   }
   return out;
@@ -228,7 +229,7 @@ export function checkInvariants(doc: FmeaDocument): Issue[] {
     ...parentResolvesIssues(elements, elementIds),
     ...parentMatchesIdIssues(elements),
     ...sourceIssues(elements),
-    ...dependencyIssues(elements),
+    ...dependencyIssues(elements, providerIds(doc)),
     ...securityRationaleIssues(elements),
     ...ratingReviewIssues(chains),
     ...postRatingsIssues(chains),
