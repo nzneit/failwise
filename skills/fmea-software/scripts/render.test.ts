@@ -48,11 +48,11 @@ function staleRows(): FmeaDocument {
   return doc;
 }
 
-// The free-text fields: every string the report prints that no schema pattern, format, or enum constrains.
+// The free-text fields: every string the report prints that no schema pattern, format or enum keeps free of markup (codebases[].repo has a pattern, but it admits < > & " ').
 const FREE_TEXT_KEYS = new Set([
   "name", "scope", "security", "outcome", "description", "statement", "for_whom", "failure_mode",
   "local", "next_level", "end", "text", "rationale", "owner", "trigger", "message", "reason",
-  "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident",
+  "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident", "repo", "path",
 ]);
 const FREE_TEXT_ARRAYS = new Set(["ground_rules", "included", "excluded", "reviewers", "conditions"]);
 
@@ -76,6 +76,7 @@ function poisonedDocument(): FmeaDocument {
   const next = (): string => vectors[i++ % vectors.length];
   const doc = golden();
   doc.chains[0].history.push({ version: 1, date: "2026-09-07", change: "seed" });
+  doc.meta.codebases![0].path = "services/checkout";
   return poison(doc, null, next) as FmeaDocument;
 }
 
@@ -441,17 +442,19 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   const labels = [...html.matchAll(FRAME)].map((match) => match[1]);
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
-    "Index of failure chains",
+    "By top-level element", "Dependencies", "Index of failure chains",
     ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);
   assert.equal(new Set(labels).size, labels.length);
 });
 
-test("no table carries a caption; each of the three that had one is named by the paragraph above its frame", () => {
+test("no table carries a caption; each of the five captioned tables is named by the paragraph above its frame", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
   assert.equal(occurrences(html, "<caption"), 0);
   const named: [string, string, string, string][] = [
+    ["roots-caption", "One row per top-level element; every count covers the element and everything under it, and a name links to its chain rows below.", "By top-level element", '<table aria-labelledby="roots-caption">'],
+    ["dependencies-caption", "One row per dependency, in the order the analysis lists them: the consumer depends on the provider.", "Dependencies", '<table aria-labelledby="dependencies-caption">'],
     ["index-caption", INDEX_CAPTION_TEXT, "Index of failure chains", '<table class="index" aria-labelledby="index-caption">'],
     ["actions-caption", "Open actions first, by target date; closed actions last.", "Actions", '<table aria-labelledby="actions-caption">'],
     ["checks-caption", "Blockers first. Findings with the same rule and message share a line; each row location links to its row.", "Automated checks", '<table aria-labelledby="checks-caption">'],
@@ -1045,9 +1048,10 @@ test("every string in the structure section is entity-escaped", () => {
   shard.description = `desc ${bad}`;
   shard.id = `svc.db.${bad}`;
   doc.elements[3].id = `else${bad}`;
+  doc.dependencies.push({ from: doc.elements[0].id, to: shard.id, strength: "strong", sla: `sla ${bad}`, limits: `limits ${bad}` });
   const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
   const safe = escapeHtml(bad);
-  for (const text of [`name ${safe}`, `desc ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
+  for (const text of [`name ${safe}`, `desc ${safe}`, `sla ${safe}`, `limits ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
     assert.ok(structure.includes(text), `missing the escaped form: ${text}`);
   }
   assert.ok(!structure.includes(bad), "a raw string reached the structure section");
@@ -1090,11 +1094,14 @@ test("a rationale is escaped, and one recorded on a false flag is printed withou
   assert.ok(elBlock(structure, "elsewhere").includes('<span class="el-security">security-relevant</span>'));
 });
 
-test("the structure section opens with the vocabulary, each role, boundary and the flag with its test, then the tree", () => {
+test("the structure section opens with the top-level table, then the vocabulary, the tree and the Dependencies table", () => {
   const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   const afterHeading = structure.slice(structure.indexOf("<h2>Structure</h2>") + "<h2>Structure</h2>".length).trimStart();
-  assert.ok(afterHeading.startsWith('<section class="vocabulary">'), "the vocabulary is not the heading's first follower");
-  const block = afterHeading.slice(0, afterHeading.indexOf("</section>") + "</section>".length);
+  assert.ok(afterHeading.startsWith('<p class="caption" id="roots-caption">'), "the top-level table is not the heading's first follower");
+  assert.ok(afterHeading.includes('</table></div><section class="vocabulary">'), "the vocabulary does not follow the top-level table");
+  const start = afterHeading.indexOf('<section class="vocabulary">');
+  const end = afterHeading.indexOf("</section>", start) + "</section>".length;
+  const block = afterHeading.slice(start, end);
   const pairs = [...vocabulary.roles, ...vocabulary.boundaries, vocabulary.security].map((x) => `<dt>${escapeHtml(x.label)}</dt><dd>${escapeHtml(x.test)}</dd>`);
   assert.equal(occurrences(block, "<dt>"), pairs.length, "the vocabulary holds a different number of terms than roles, boundaries and the flag");
   let at = 0;
@@ -1104,7 +1111,8 @@ test("the structure section opens with the vocabulary, each role, boundary and t
     at = next;
   }
   for (const label of ["Service", "In scope", "Security-relevant"]) assert.ok(block.includes(`<dt>${label}</dt>`), `the vocabulary does not list ${label}`);
-  assert.ok(afterHeading.slice(block.length).startsWith('<ul class="tree">'), "the tree does not follow the vocabulary");
+  assert.ok(afterHeading.slice(end).startsWith('<ul class="tree">'), "the tree does not follow the vocabulary");
+  assert.ok(structure.indexOf('<ul class="tree">') < structure.indexOf('id="dependencies-caption"'), "the Dependencies table does not follow the tree");
 });
 
 // render.ts run from a copy of the skill folder whose vocabulary file is changed by `alter`: it
@@ -1135,7 +1143,75 @@ test("render.ts with a malformed vocabulary file exits 3 with one VOCABULARY_REA
 test("a document with no elements prints the empty state", () => {
   const doc = minimalDoc();
   doc.elements = [];
-  assert.ok(sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains").includes('<p class="empty">No elements.</p>'));
+  const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes('<p class="empty">No elements.</p>'));
+  assert.ok(!structure.includes("roots-caption"));
+});
+
+const ROOTS_HEAD = '<thead><tr><th>Top-level element</th><th>Codebase</th><th class="num">Chains</th><th class="num">H</th><th class="num">Provisional</th><th class="num">Open actions</th></tr></thead>';
+const DEPENDENCIES_HEAD = "<thead><tr><th>Consumer</th><th>Provider</th><th>Strength</th><th>SLA</th><th>Limits</th></tr></thead>";
+
+test("the header lists the codebases after Security boundary, each with its repository and its path when set", () => {
+  const doc = golden();
+  doc.meta.codebases![1].path = "packages/auth";
+  assert.ok(headerOf(doc).includes(
+    `<dt>Security boundary</dt><dd>${escapeHtml(doc.meta.boundary.security)}</dd><dt>Codebases</dt><dd>Checkout service, <code>acme/checkout</code><br>` +
+    "Session authentication library, <code>acme/session-auth</code>, <code>packages/auth</code></dd><dt>Scales version</dt><dd>1</dd>"));
+});
+
+test("the top-level table rolls up each root, links a name to its group, and heads its count with the table's first value", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes(`<table aria-labelledby="roots-caption">${ROOTS_HEAD}<tbody>` +
+    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">5</td><td class="num">4</td><td class="num">7</td></tr>' +
+    '<tr><td><a href="#group-pricing">Pricing service</a></td><td>owned outside</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr></tbody></table>'));
+  const idle = sectionOf(renderHtml(idleRoot(), table, template, vocabulary), "structure", "chains");
+  assert.ok(idle.includes("<tr><td>Idle</td>"), "a root with no chains is not linked");
+  assert.ok(!idle.includes('href="#group-idle"'));
+});
+
+test("the Dependencies table lists every edge in order, an absent SLA or limits as an empty cell, and escapes ids", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes(`<table aria-labelledby="dependencies-caption">${DEPENDENCIES_HEAD}<tbody>` +
+    "<tr><td><code>checkout</code></td><td><code>checkout.payment-gateway</code></td><td>strong</td><td>99.95% monthly</td><td>50 rps per merchant</td></tr>" +
+    "<tr><td><code>checkout</code></td><td><code>pricing</code></td><td>weak</td><td>99.9% monthly</td><td></td></tr>" +
+    "<tr><td><code>checkout</code></td><td><code>checkout.order-store</code></td><td>strong</td><td>99.99% monthly</td><td></td></tr></tbody></table>"));
+  const doc = minimalDoc();
+  doc.dependencies = [{ from: "gh<o>st", to: "svc", strength: "weak" }];
+  const escaped = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  assert.ok(escaped.includes(`<tr><td><code>${escapeHtml("gh<o>st")}</code></td><td><code>svc</code></td><td>weak</td><td></td><td></td></tr>`));
+  assert.ok(!escaped.includes("gh<o>st"), "a raw id reached the Dependencies table");
+});
+
+test("with no edges the Structure section prints No dependencies.", () => {
+  const structure = sectionOf(renderHtml(minimalDoc(), table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes('<p class="empty">No dependencies.</p>'));
+  assert.ok(!structure.includes("dependencies-caption"));
+});
+
+test("without codebases there is no Codebases row, no codebase column and no tree codebase", () => {
+  const html = renderHtml(minimalDoc(), table, template, vocabulary);
+  assert.ok(!headerOf(minimalDoc()).includes("<dt>Codebases</dt>"));
+  const structure = sectionOf(html, "structure", "chains");
+  assert.ok(structure.includes('<thead><tr><th>Top-level element</th><th class="num">Chains</th>'));
+  assert.ok(!structure.includes("<th>Codebase</th>"));
+  assert.ok(!structure.includes('class="el-codebase"'));
+});
+
+test("tree lines name the effective codebase, none for an in-scope element without one, nothing for an outside element without one", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  assert.ok(elBlock(structure, "checkout").includes('<span class="el-boundary">in scope</span></span><span class="el-codebase">Checkout service</span></div>'));
+  assert.ok(elBlock(structure, "checkout.api").includes('<span class="el-codebase">Checkout service</span>'));
+  assert.ok(elBlock(structure, "checkout.session-auth").includes('security-relevant</span></span><span class="el-codebase">Session authentication library</span></div>'));
+  for (const id of ["checkout.payment-gateway", "pricing"]) assert.ok(!elBlock(structure, id).includes("el-codebase"), id);
+  const doc = minimalDoc();
+  doc.meta.codebases = [{ id: "lib", name: "Library", repo: "acme/lib" }];
+  const own = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  assert.ok(elBlock(own, "svc").includes('<span class="el-codebase">none</span>'));
+  assert.ok(own.includes('<tr><td><a href="#group-svc">Service</a></td><td>none</td>'));
+});
+
+test("the template styles the tree's codebase label", () => {
+  assert.ok(template.includes(".el-codebase { color:var(--muted); font-size:.9em; }"));
 });
 
 test("the actions table carries the document's rows", () => {
@@ -1178,7 +1254,7 @@ test("the provenance appendix has a head row, and a chain named like a section k
 });
 
 test("every href in the report resolves to exactly one id, and the actions, checks and provenance sections link every row id", () => {
-  for (const doc of [golden(), staleRows(), twinRoots()]) {
+  for (const doc of [golden(), staleRows(), twinRoots(), idleRoot()]) {
     const html = renderHtml(doc, table, template, vocabulary);
     const targets = new Set([...html.matchAll(/href="#([^"]*)"/g)].map((m) => m[1]));
     assert.ok(targets.size > 0);

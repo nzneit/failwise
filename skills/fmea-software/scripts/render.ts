@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ScriptError } from "./lib/codes.ts";
-import type { Action, Chain, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
+import type { Action, Chain, DependencyEdge, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import type { Vocabulary } from "./lib/vocabulary.ts";
@@ -11,7 +11,7 @@ import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { buildReportModel } from "./lib/report-model.ts";
-import type { ActionRow, Attention, CheckGroup, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
+import type { ActionRow, Attention, CheckGroup, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RootRow, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
@@ -164,6 +164,9 @@ function headerHtml(doc: FmeaDocument, model: ReportModel): string {
     ["In boundary", m.boundary.included.map(e).join("; ")],
     ["Out of boundary", m.boundary.excluded.length === 0 ? "&mdash;" : m.boundary.excluded.map(e).join("; ")],
     ["Security boundary", e(m.boundary.security)],
+    ...(model.codebases.length > 0
+      ? [["Codebases", model.codebases.map((c) => `${e(c.name)}, <code>${e(c.repo)}</code>${c.path ? `, <code>${e(c.path)}</code>` : ""}`).join("<br>")] as [string, string]]
+      : []),
     ["Scales version", String(m.scales.version)],
     ["Priority table", `<code>${e(m.scales.priority_table)}</code>`],
     ["Created", e(m.created)],
@@ -184,18 +187,52 @@ function elementTagHtml(el: Element): string {
   return `<span class="el-tag"><code class="el-id">${elementIdHtml(el)}</code><span class="el-kind">${e(el.kind.replaceAll("_", " "))}</span><span class="el-boundary">${e(el.boundary.replaceAll("_", " "))}</span>${security}</span>`;
 }
 
-function structureHtml(elements: Element[], vocabulary: Vocabulary): string {
-  const children = (parent: string | null): Element[] => elements.filter((el) => el.parent === parent);
-  const node = (el: Element, depth: number): string => {
-    const who = `<div class="el-who"><span class="el-name">${e(el.name)}</span>${elementTagHtml(el)}</div>`;
+const ROOTS_CAPTION = "One row per top-level element; every count covers the element and everything under it, and a name links to its chain rows below.";
+const DEPENDENCIES_CAPTION = "One row per dependency, in the order the analysis lists them: the consumer depends on the provider.";
+
+// One row per top-level element with its subtree's roll-ups; a name links to its group section,
+// which only a root with chains has.
+function rootsHtml(roots: RootRow[]): string {
+  if (roots.length === 0) return "";
+  const withCodebase = roots[0].codebase !== null;
+  const head = `<thead><tr><th>Top-level element</th>${withCodebase ? "<th>Codebase</th>" : ""}<th class="num">Chains</th><th class="num">${e(roots[0].top.value)}</th>` +
+    `<th class="num">Provisional</th><th class="num">Open actions</th></tr></thead>`;
+  const row = (r: RootRow): string => {
+    const name = r.chains > 0 ? `<a href="#group-${e(r.id)}">${e(r.name)}</a>` : e(r.name);
+    const codebase = r.codebase === null ? "" : `<td>${e(r.codebase)}</td>`;
+    return `<tr><td>${name}</td>${codebase}<td class="num">${r.chains}</td><td class="num">${r.top.count}</td><td class="num">${r.provisional}</td><td class="num">${r.openActions}</td></tr>`;
+  };
+  return captionHtml("roots-caption", ROOTS_CAPTION) +
+    frameHtml("By top-level element", `<table aria-labelledby="roots-caption">${head}<tbody>${roots.map(row).join("")}</tbody></table>`);
+}
+
+function dependenciesHtml(edges: DependencyEdge[]): string {
+  if (edges.length === 0) return `<p class="empty">No dependencies.</p>`;
+  const head = "<thead><tr><th>Consumer</th><th>Provider</th><th>Strength</th><th>SLA</th><th>Limits</th></tr></thead>";
+  const row = (d: DependencyEdge): string =>
+    `<tr><td><code>${e(d.from)}</code></td><td><code>${e(d.to)}</code></td><td>${e(d.strength)}</td><td>${e(d.sla ?? "")}</td><td>${e(d.limits ?? "")}</td></tr>`;
+  return captionHtml("dependencies-caption", DEPENDENCIES_CAPTION) +
+    frameHtml("Dependencies", `<table aria-labelledby="dependencies-caption">${head}<tbody>${edges.map(row).join("")}</tbody></table>`);
+}
+
+// The element tree; `labels` is indexed by element position and names each element's codebase, null for none printed.
+function treeHtml(elements: Element[], labels: (string | null)[]): string {
+  const children = (parent: string | null): number[] => elements.flatMap((el, i) => (el.parent === parent ? [i] : []));
+  const node = (at: number, depth: number): string => {
+    const el = elements[at];
+    const label = labels[at];
+    const who = `<div class="el-who"><span class="el-name">${e(el.name)}</span>${elementTagHtml(el)}${label === null ? "" : `<span class="el-codebase">${e(label)}</span>`}</div>`;
     const rationale = el.security_rationale ? `<p class="el-rationale">${e(el.security_rationale)}</p>` : "";
     const what = `<div class="el-what">${el.description ? `<p class="el-desc">${e(el.description)}</p>` : ""}${rationale}</div>`;
     const kids = children(el.id);
     return `<li><div class="el" style="--el-depth:${depth}">${who}${what}</div>${kids.length > 0 ? `<ul class="tree">${kids.map((k) => node(k, depth + 1)).join("")}</ul>` : ""}</li>`;
   };
   const roots = children(null);
-  const tree = roots.length === 0 ? `<p class="empty">No elements.</p>` : `<ul class="tree">${roots.map((r) => node(r, 0)).join("")}</ul>`;
-  return vocabularyHtml(vocabulary) + tree;
+  return roots.length === 0 ? `<p class="empty">No elements.</p>` : `<ul class="tree">${roots.map((r) => node(r, 0)).join("")}</ul>`;
+}
+
+function structureHtml(doc: FmeaDocument, model: ReportModel, vocabulary: Vocabulary): string {
+  return rootsHtml(model.roots) + vocabularyHtml(vocabulary) + treeHtml(doc.elements, model.treeLabels) + dependenciesHtml(model.edges);
 }
 
 function marksHtml(marks: readonly RowMark[]): string {
@@ -422,7 +459,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     "ground-rules": list(doc.meta.ground_rules.map(e), "No ground rules recorded."),
     assumptions: list(doc.meta.assumptions.map((a) => `${e(a.text)} <span class="empty">(${e(a.owner)}, ${e(a.status)})</span>`), "No assumptions recorded."),
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),
-    structure: structureHtml(doc.elements, vocabulary),
+    structure: structureHtml(doc, model, vocabulary),
     chains: chainsHtml(model),
     actions: actionsHtml(model.actions, model.tracked),
     lints: checksHtml(model.groups, model.tiles.qualityScore),
