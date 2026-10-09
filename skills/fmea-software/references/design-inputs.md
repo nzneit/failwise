@@ -11,7 +11,7 @@ No input is a rating and no input is a chain; an input is evidence about the sys
 | 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. | [paraphrased:C014] |
 | 2 | Component inventory by type | The system decomposed by component type: ingress, networking, compute, data, storage, supporting services — identity, messaging, key and secret storage — and egress. | [paraphrased:C014] |
 | 3 | Dependency classification | Every dependency placed on two axes: internal or external by the element's boundary (`in_scope` against `owned_outside` or `third_party`), and strong or weak. | [paraphrased:C014] [skill-authored] |
-| 4 | Dependency reliability data | For every element that carries a `dependency` block, whatever its boundary, the availability SLA and the scaling limits. | [paraphrased:C014] [skill-authored] |
+| 4 | Dependency reliability data | For every element that is the provider of an edge, whatever its boundary, the availability SLA and the scaling limits. | [paraphrased:C014] [skill-authored] |
 | 5 | Incident history | The incidents the system has had, the postmortems written for them, and the follow-up tasks those postmortems raised. | [cites:C023] |
 | 6 | Release controls | Release-side controls such as canary releases and staged rollouts. | [cites:C018] |
 | 7 | Observability controls | Central error logging and alerting. | [cites:C022] |
@@ -21,8 +21,9 @@ No input is a rating and no input is a chain; an input is evidence about the sys
 | 11 | Written assumptions | Every assumption, each written as its own item. | [paraphrased:C110] |
 | 12 | Contract files | The interface definitions the system publishes and consumes, with their published limits and error contracts. | [skill-authored] |
 | 13 | Data flows | What data crosses which boundary, in which direction. | [skill-authored] |
+| 14 | Codebases | The repositories the run covers or reads, each with its owner and name, the folder inside a monorepo, and the team that owns it when known, found in the service catalog and the organisation's repository hosting; ask for them when the inputs omit them. | [skill-authored] |
 
-Items 1 to 4 are the structure inputs and are wanted before step 2; items 5 to 9 are wanted before controls are inventoried in step 4; items 10 and 11 are decided first and revised throughout. [skill-authored]
+Items 1 to 4 and 14 are the structure inputs and are wanted before step 2; items 5 to 9 are wanted before controls are inventoried in step 4; items 10 and 11 are decided first and revised throughout. [skill-authored]
 
 ## Flows, components and dependencies
 
@@ -30,10 +31,10 @@ Flows come first: the analysis assumes user and system flows have already been i
 Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [skill-authored]
 A strong dependency is one the system cannot function or stay available without; a weak one, when absent, costs named features while the system as a whole keeps serving. [paraphrased:C014]
 The source states the reliability data — availability SLA, scaling limits — for internal dependencies. [paraphrased:C014]
-This skill asks for it on every element carrying a `dependency` block, a `skill-authored` extension. [skill-authored]
+This skill asks for it on every element that is the provider of an edge, a `skill-authored` extension. [skill-authored]
 Internal or external is a boundary question, strong or weak is a criticality question, and an element is classified on both. [skill-authored]
-In the analysis JSON this lands on the element: `dependency.strength` holds strong or weak, `dependency.sla` and `dependency.limits` hold the commitment and the limits as free text in the source's own words. [skill-authored]
-An element whose boundary is `owned_outside` or `third_party` must carry `dependency` and is an external dependency; an `in_scope` element that carries one is an internal dependency. [skill-authored]
+In the analysis JSON this lands on the edge from the consumer to the provider in `dependencies[]`: `strength` holds strong or weak, `sla` and `limits` hold the commitment and the limits as free text in the source's own words. [skill-authored]
+An element whose boundary is `owned_outside` or `third_party` is the provider of at least one edge and is an external dependency; an `in_scope` element that is the provider of an edge is an internal dependency. [skill-authored]
 
 ## Incident history
 
@@ -65,10 +66,11 @@ How deep the inventory goes follows the lifecycle phase: functions or problem do
 At the architectural design phase only a preliminary analysis is possible, so an inventory taken there is collected expecting to revisit it. [paraphrased:C130]
 Ground rules and assumptions are analysis metadata, not element data: `meta.ground_rules` holds one entry per rule and `meta.assumptions` holds each assumption with an owner and an open or closed status. [skill-authored]
 An unattended run records every missing input as an open assumption owned by the user, and proceeds without it. [skill-authored]
+The exception is an answer the document cannot validate without, or a removal the update rules put to the person, which the migration, conversion and update rules name: the run does not proceed without it, writes nothing and ends with the question. [skill-authored]
 
 ## Contracts and data flows
 
-Two checklist items are the skill's own, because the research produced no record on interface or data-flow inputs: the contract files and the data flows. [skill-authored]
+The contract files and the data flows are the skill's own checklist items, because the research produced no record on interface or data-flow inputs. [skill-authored]
 They are in the checklist because an interface element cannot be described without its contract, and a datastore or event-stream element cannot be described without knowing what data reaches it. [skill-authored]
 Collect the schema and interface definition files from the repository, the published rate and size limits, the declared error responses, and for each flow what data crosses which boundary and in which direction. [skill-authored]
 v1 ships no catalog rows for interfaces, event streams or datastores; the questions that elicit them are in design-failure-catalog.md, the rows are not. [skill-authored]
@@ -79,6 +81,7 @@ v1 ships no catalog rows for interfaces, event streams or datastores; the questi
 |---|---|---|
 | Critical flows | Architecture documents; the service catalog, where one is kept. | [skill-authored] |
 | Component inventory | The repository, then the architecture documents that describe it. | [skill-authored] |
+| Codebases | The service catalog; the organisation's repository hosting. | [skill-authored] |
 | Dependency classification | The service catalog and the architecture documents. | [skill-authored] |
 | Dependency SLAs and limits | Contract files and the service catalog entry for the dependency. | [skill-authored] |
 | Incident history | The incident tracker, and the postmortems it links. | [skill-authored] |

@@ -41,7 +41,7 @@
     {
       "id": "in_scope",
       "label": "In scope",
-      "test": "This analysis covers it: its sources are the repository, documents, incidents or people of the analysed system",
+      "test": "This analysis covers it: its sources are the repository, documents, incidents or people of the system this analysis covers",
       "basis": "The line between in scope and outside it rests on the scope of the analysed workload in the Azure Well-Architected Framework (C143) and in the AWS Well-Architected reliability pillar (C146), on the external systems the analysed system needs in MIL-STD-1629A (C134), and on the interactors outside the scope in Microsoft's SDL threat-modeling article (C149).",
       "tags": ["cites:C143", "cites:C146", "cites:C134", "cites:C149", "skill-authored"]
     },
