@@ -6,8 +6,11 @@
 // is rendered: to a path where no file exists, without --force. The same render command run again
 // must then refuse with IO_EXISTS, which is why the flag exists. The second round, after a re-score
 // that changes a rating, takes the optional --force on the render line, as every re-render does.
-// Any other non-zero exit fails the test. No shell is involved: each line is split on spaces and
-// its script started with this Node, so the test behaves the same under bash and fish.
+// Any other non-zero exit fails the test. The Scripts block's update-check.ts line is also run as
+// given, on a stored copy and an unchanged draft of the fixture, its placeholders filled before the
+// line is split, and each heading the legacy messages name is checked against SKILL.md. No shell is
+// involved: each line is split on spaces and its script started with this Node, so the test
+// behaves the same under bash and fish.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -103,15 +106,21 @@ function rescore(path: string): void {
   writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
 }
 
-function withDocument(body: (doc: string, report: string) => void): void {
+function inTempDir(body: (dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), "skill-commands-"));
   try {
-    const doc = join(dir, "analysis.json");
-    writeFileSync(doc, JSON.stringify(unwrittenFixture(), null, 2) + "\n");
-    body(doc, join(dir, "report.html"));
+    body(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function withDocument(body: (doc: string, report: string) => void): void {
+  inTempDir((dir) => {
+    const doc = join(dir, "analysis.json");
+    writeFileSync(doc, JSON.stringify(unwrittenFixture(), null, 2) + "\n");
+    body(doc, join(dir, "report.html"));
+  });
 }
 
 const skillMd = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
@@ -146,4 +155,40 @@ test("work-tracking.md rule 7 gives validate.ts and render.ts --force as the Scr
     runAll(commands.map(required), doc, report, "the run before tracking");
     runAll(rule, doc, report, "rule 7");
   });
+});
+
+const UPDATE_CHECK_LINE = "node ${CLAUDE_SKILL_DIR}/scripts/update-check.ts <stored copy> <draft> [--check]";
+
+/** The block's update-check.ts line, exactly once. */
+function updateCheckCommand(block: string[]): string {
+  const lines = block.filter((line) => scriptOf(line) === "update-check.ts");
+  assert.equal(lines.length, 1, "the block gives update-check.ts once");
+  return lines[0];
+}
+
+test("SKILL.md's update-check.ts line runs on a stored copy and an unchanged draft, exits 0 and prints its summary line", () => {
+  const line = updateCheckCommand(scriptsBlock(skillMd));
+  assert.equal(line, UPDATE_CHECK_LINE);
+  inTempDir((dir) => {
+    const copy = join(dir, "copy.json");
+    const draft = join(dir, "draft.json");
+    const text = readFileSync(FIXTURE, "utf8");
+    writeFileSync(copy, text);
+    writeFileSync(draft, text);
+    // the placeholders hold a space, so they are filled before argv() splits the line
+    const filled = required(line).replace("<stored copy>", copy).replace("<draft>", draft);
+    const result = spawnSync(process.execPath, argv(filled, draft, ""), { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.equal(result.stdout.trimEnd().split("\n").at(-1),
+      "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer");
+  });
+});
+
+test("each SKILL.md heading the KIND_LEGACY and DEPENDENCY_LEGACY messages name is a heading of SKILL.md", () => {
+  const legacy = readFileSync(join(SKILL_DIR, "scripts", "lib", "legacy.ts"), "utf8");
+  const named = [...legacy.matchAll(/SKILL\.md describes under "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...named].sort(), ["Migrate a v1 document", "Migrate a v2 document"],
+    "lib/legacy.ts names both migration headings, each written whole inside one template literal with bare double quotes");
+  for (const heading of named) assert.match(skillMd, new RegExp(`^### ${heading}$`, "m"), `SKILL.md has no '### ${heading}' heading`);
 });
