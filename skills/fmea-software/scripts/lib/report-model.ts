@@ -2,10 +2,12 @@
 // No HTML and no escaping here; `render.ts` emits and escapes. Chains are addressed by their
 // position in `chains[]`.
 
-import type { Action, Chain, Factor, FmeaDocument, Ratings, Severity, Stale, StaleReason } from "./types.ts";
+import type { Action, Chain, Codebase, DependencyEdge, Element, Factor, FmeaDocument, Ratings, Severity, Stale, StaleReason } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
 import { vocabularyRank } from "./table.ts";
 import { chainIndex } from "./pointer.ts";
+import { chainElement, effectiveCodebases, indexDocument, resolvedLinks, rootOf, sameTrimmed, triggerRestates } from "./graph.ts";
+import type { DocIndex, ResolvedLink } from "./graph.ts";
 
 const FACTORS: Factor[] = ["S", "O", "D"];
 
@@ -37,6 +39,14 @@ export interface PlacedFinding { severity: Severity; rule: string; message: stri
 
 export type RowMark = "stale" | "handoff" | "provisional" | "blocker";
 
+// A cause of the row's chain that links to another chain: the cause's index, and the provider
+// chain's id, element and failure mode as stored; `differs` when the cause text and that mode
+// differ after trimming.
+export interface CauseLink { cause: number; chainId: string; element: string; failureMode: string; differs: boolean }
+
+// A chain whose causes link into the row's chain, with that chain's element.
+export interface Propagation { chainId: string; element: string }
+
 // One row of the index, in the index order (§5.7, §5.8).
 export interface RowModel {
   chain: Chain;
@@ -50,6 +60,8 @@ export interface RowModel {
   trigger: string | null;          // the trimmed trigger, when it gets its own part (§5.3); else null
   triggerCauses: number[];         // indexes into chain.causes of every cause whose trimmed text equals the trimmed trigger
   staleNotice: string | null;      // null when stale.flag is false
+  causeLinks: CauseLink[];         // the causes linked to another chain, in cause order; element "" only when the provider's function does not resolve
+  propagatesTo: Propagation[];     // each chain linking into this one once, in the index order; element "" only when the consumer's function does not resolve
 }
 
 export type GroupLocation =
@@ -74,6 +86,15 @@ export interface Attention {
   nextActions: ActionRow[];                                        // at most three; empty means the item is left out
 }
 
+// A top-level element with the roll-up of every chain in its subtree. `codebase` is the effective
+// codebase's name, "none" for an in-scope element without one, the boundary in words for an
+// outside one without one, and null when the document lists no codebases. `top` counts the chains
+// at the first value of the loaded vocabulary; `provisional` counts chains, not ratings.
+export interface RootRow { id: string; name: string; codebase: string | null; chains: number; top: { value: string; count: number }; provisional: number; openActions: number }
+
+// The index rows under one top-level element; `root` null for the rows whose chain reaches none.
+export interface GroupSection { root: { id: string; name: string } | null; rows: RowModel[] }
+
 export interface ReportModel {
   tiles: Tiles;
   vocabulary: { value: string; style: RankStyle }[];   // the loaded table's vocabulary in order, for the key
@@ -82,6 +103,11 @@ export interface ReportModel {
   actions: ActionRow[];                                // open first, then by target date, ties in document order (§5.2)
   tracked: boolean;                                    // whether any action carries a link
   attention: Attention;
+  codebases: Codebase[];                               // meta.codebases ?? []
+  roots: RootRow[];                                    // in table order: by the best priority in the subtree, then id; chainless roots last, by id
+  edges: DependencyEdge[];                             // doc.dependencies, in document order
+  sections: GroupSection[];                            // in the roots' order; the rootless tail last, present only when it has rows
+  treeLabels: (string | null)[];                       // indexed by element position; null means print nothing
 }
 
 // "1 row", "0 rows": the singular only for exactly one (§4).
@@ -273,11 +299,10 @@ function actionsCell(chain: Chain): RowModel["actionsCell"] {
 // The trigger rule (§5.3): a trigger that restates causes marks them and gets no part of its own;
 // one that restates none is shown alone, trimmed; an empty one is no trigger.
 function triggerMatch(chain: Chain): { trigger: string | null; triggerCauses: number[] } {
-  const trigger = chain.trigger?.trim() ?? "";
-  if (trigger === "") return { trigger: null, triggerCauses: [] };
   const triggerCauses: number[] = [];
-  chain.causes.forEach((cause, i) => { if (cause.text.trim() === trigger) triggerCauses.push(i); });
-  return { trigger: triggerCauses.length === 0 ? trigger : null, triggerCauses };
+  chain.causes.forEach((cause, i) => { if (triggerRestates(chain, cause.text)) triggerCauses.push(i); });
+  const trigger = chain.trigger?.trim() ?? "";
+  return { trigger: trigger !== "" && triggerCauses.length === 0 ? trigger : null, triggerCauses };
 }
 
 const STALE_REASON_WORDS: Record<StaleReason, string> = {
@@ -301,18 +326,50 @@ function staleNotice(stale: Stale): string | null {
   return `Stale${since}${words === null ? "." : `: ${words}.`}`;
 }
 
+// The element id of the chain's function, through the first function of its id; "" when the
+// function does not resolve.
+function elementIdOf(doc: FmeaDocument, docIndex: DocIndex, chain: Chain): string {
+  const fn = docIndex.fn.get(chain.function);
+  return fn === undefined ? "" : doc.functions[fn].element;
+}
+
+// The resolved links of the chain at position `at`, in cause order, each with its provider.
+function causeLinksOf(doc: FmeaDocument, docIndex: DocIndex, links: ResolvedLink[], at: number): CauseLink[] {
+  const causes = doc.chains[at].causes;
+  return links.filter((l) => l.chain === at).map((l) => {
+    const provider = doc.chains[l.provider];
+    return {
+      cause: l.cause,
+      chainId: provider.id,
+      element: elementIdOf(doc, docIndex, provider),
+      failureMode: provider.failure_mode,
+      differs: !sameTrimmed(causes[l.cause].text, provider.failure_mode),
+    };
+  });
+}
+
+// Each row's consumers: the rows, in the index order, whose chain links into the row's chain,
+// each once. Rows are matched by chain position, never by id.
+function propagationsOf(rows: RowModel[], doc: FmeaDocument, docIndex: DocIndex, links: ResolvedLink[]): void {
+  const positions = rows.map((row) => doc.chains.indexOf(row.chain));
+  rows.forEach((row, r) => {
+    const consumers = rows.filter((_, c) => links.some((l) => l.provider === positions[r] && l.chain === positions[c]));
+    row.propagatesTo = consumers.map((consumer) => ({ chainId: consumer.chain.id, element: elementIdOf(doc, docIndex, consumer.chain) }));
+  });
+}
+
 // The rows in the index order. A row's findings are found by its chain's position in
 // `doc.chains` (object identity), never by its id.
-function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]): RowModel[] {
-  return sortChains(doc, table).map((chain) => {
+function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[], docIndex: DocIndex, links: ResolvedLink[]): RowModel[] {
+  const rows = sortChains(doc, table).map((chain): RowModel => {
     const index = doc.chains.indexOf(chain);
     const own = located.filter((l) => l.index === index).map((l) => l.finding);
-    const fn = doc.functions.find((f) => f.id === chain.function);
+    const fn = docIndex.fn.get(chain.function);
     const shown = own.filter((f) => !(f.rule === "rating-provisional" && f.severity === "warning"));
     return {
       chain,
-      element: fn?.element ?? "",
-      statement: fn?.statement ?? "",
+      element: elementIdOf(doc, docIndex, chain),
+      statement: fn === undefined ? "" : doc.functions[fn].statement,
       style: rankStyle(table.vocabulary, chain.priority.value),
       postStyle: chain.post_priority ? rankStyle(table.vocabulary, chain.post_priority.value) : null,
       marks: rowMarks(chain, own),
@@ -320,8 +377,73 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[]):
       actionsCell: actionsCell(chain),
       ...triggerMatch(chain),
       staleNotice: staleNotice(chain.stale),
+      causeLinks: causeLinksOf(doc, docIndex, links, index),
+      propagatesTo: [],
     };
   });
+  propagationsOf(rows, doc, docIndex, links);
+  return rows;
+}
+
+// Each chain's top-level element, by chain position; undefined when its function or element does
+// not resolve, or its parent walk reaches no top-level element.
+function chainRoots(doc: FmeaDocument, docIndex: DocIndex): (number | undefined)[] {
+  return doc.chains.map((_, i) => {
+    const el = chainElement(doc, docIndex, i);
+    return el === undefined ? undefined : rootOf(doc, docIndex, el);
+  });
+}
+
+// The positions of the top-level elements, each the first occurrence of its id.
+function rootIndexes(doc: FmeaDocument, docIndex: DocIndex): number[] {
+  return doc.elements.flatMap((el, i) => (el.parent === null && docIndex.element.get(el.id) === i ? [i] : []));
+}
+
+// The codebase text of an element: null when the document lists no codebases; else the effective
+// codebase's name; else "none" in scope; else, outside the scope, the boundary in words on a root
+// and nothing on a tree line.
+function codebaseText(doc: FmeaDocument, el: Element, effective: Codebase | undefined, root: boolean): string | null {
+  if ((doc.meta.codebases ?? []).length === 0) return null;
+  if (effective !== undefined) return effective.name;
+  if (el.boundary === "in_scope") return "none";
+  return root ? el.boundary.replaceAll("_", " ") : null;
+}
+
+// A root's row with the element position it stands for.
+interface OrderedRoot { at: number; row: RootRow }
+
+// The roots with their roll-ups, in table order: those with chains by the best priority rank over
+// their chains, then by id; then the chainless ones by id.
+function rootRows(doc: FmeaDocument, table: PriorityTable, chainRootOf: (number | undefined)[], roots: number[], effective: (Codebase | undefined)[]): OrderedRoot[] {
+  const top = table.vocabulary[0];
+  const ranked = roots.map((at) => {
+    const el = doc.elements[at];
+    const chains = doc.chains.filter((_, i) => chainRootOf[i] === at);
+    const row: RootRow = {
+      id: el.id,
+      name: el.name,
+      codebase: codebaseText(doc, el, effective[at], true),
+      chains: chains.length,
+      top: { value: top, count: chains.filter((c) => c.priority.value === top).length },
+      provisional: chains.filter((c) => provisionalCount(c) > 0).length,
+      openActions: chains.reduce((n, c) => n + c.actions.filter(isOpen).length, 0),
+    };
+    return { at, row, best: Math.min(...chains.map((c) => vocabularyRank(table, c.priority.value))) };
+  });
+  // A chainless root's best rank is Infinity, so it sorts after every root with chains.
+  ranked.sort((a, b) => (a.best === b.best ? 0 : a.best - b.best) || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : 0));
+  return ranked.map(({ at, row }) => ({ at, row }));
+}
+
+// One section per root with chains, in the roots' order, with its rows in the index order; then
+// the rows whose chain reaches no root, when there are any.
+function buildSections(rows: RowModel[], doc: FmeaDocument, chainRootOf: (number | undefined)[], ordered: OrderedRoot[]): GroupSection[] {
+  const rootOfRow = (row: RowModel): number | undefined => chainRootOf[doc.chains.indexOf(row.chain)];
+  const sections: GroupSection[] = ordered
+    .filter(({ row }) => row.chains > 0)
+    .map(({ at, row }) => ({ root: { id: row.id, name: row.name }, rows: rows.filter((r) => rootOfRow(r) === at) }));
+  const rootless = rows.filter((r) => rootOfRow(r) === undefined);
+  return rootless.length === 0 ? sections : [...sections, { root: null, rows: rootless }];
 }
 
 // Every action in document order (chain position, then action position), then sorted open
@@ -416,7 +538,12 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     qualityScore: doc.computed ? doc.computed.quality_score : null,
   };
   const located = placeFindings(doc);
-  const rows = buildRows(doc, table, located);
+  const docIndex = indexDocument(doc);
+  const links = resolvedLinks(doc, docIndex);
+  const effective = effectiveCodebases(doc, docIndex);
+  const chainRootOf = chainRoots(doc, docIndex);
+  const ordered = rootRows(doc, table, chainRootOf, rootIndexes(doc, docIndex), effective);
+  const rows = buildRows(doc, table, located, docIndex, links);
   const actions = orderActions(doc);
   return {
     tiles,
@@ -426,5 +553,10 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     actions,
     tracked: actions.some((a) => a.tracker !== null),
     attention: buildAttention(rows, actions, tiles.ratings.provisional, located),
+    codebases: doc.meta.codebases ?? [],
+    roots: ordered.map((o) => o.row),
+    edges: doc.dependencies,
+    sections: buildSections(rows, doc, chainRootOf, ordered),
+    treeLabels: doc.elements.map((el, i) => codebaseText(doc, el, effective[i], false)),
   };
 }
