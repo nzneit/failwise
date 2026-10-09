@@ -21,6 +21,8 @@ import {
   type EvalResults,
   type RunResult,
   type RunScore,
+  type SessionCheck,
+  type SessionClause,
 } from "./eval-report.ts";
 
 function allTwo(prompt: number, except: Record<string, number> = {}, rubric = 1): RunScore[] {
@@ -1192,4 +1194,84 @@ test("a rejudged entry with no date, or a rejudged that is not a list, is one co
   const ok = JSON.parse(JSON.stringify(sampleResults()));
   ok.rejudged = [rejudging("c1-missing-inputs-asked", "2026-09-15", 8, 0)];
   assert.equal(reportOn(JSON.stringify(ok), "eval-report-rejudged-").status, 0);
+});
+
+const MIGRATION_CLAUSES: SessionClause[] = [
+  { clause: "validate.ts returns ok: true", outcome: "pass" },
+  { clause: "exactly one assumption is added, naming ch-5", outcome: "fail", detail: "two assumptions were added" },
+  { clause: "the final message names ch-5", outcome: "unverified", detail: "the run's final message was not kept" },
+];
+
+function withSessionChecks(): EvalResults {
+  const r = sampleResults();
+  const check: SessionCheck = { name: "Migration check", run: "before.fmea.json at the merge base, attended", clauses: MIGRATION_CLAUSES };
+  r.session_checks = [check];
+  r.not_rerun = [{ prompt: 5, reason: "it adds no criterion of this round" }];
+  return r;
+}
+
+test("session checks print one table per check, between the unevaluated checks and the critic, an unverified clause as UNVERIFIED", () => {
+  const md = renderReport(withSessionChecks());
+  assert.ok(md.includes(
+    "## Session checks\n\nChecks made in a session against copies of the fixtures outside the repository, each against its clauses. A clause marked UNVERIFIED did not run or could not be judged: it is a hole in the evidence, never a pass; the acceptance note rules on each one.\n\n" +
+    "### Migration check (before.fmea.json at the merge base, attended)\n\n| Clause | Outcome | Detail |\n|---|---|---|\n" +
+    "| validate.ts returns ok: true | pass | — |\n| exactly one assumption is added, naming ch-5 | FAIL | two assumptions were added |\n" +
+    "| the final message names ch-5 | UNVERIFIED | the run's final message was not kept |\n\n"), md);
+  assert.doesNotMatch(md, /\| the final message names ch-5 \| pass/);
+  const at = (h: string) => md.indexOf(h);
+  assert.ok(at("## Checks that could not be evaluated") >= 0);
+  assert.ok(at("## Checks that could not be evaluated") < at("## Session checks"));
+  assert.ok(at("## Session checks") < at("## Prompts not re-run"));
+  assert.ok(at("## Prompts not re-run") < at("## Completeness critic"));
+});
+
+test("prompts not re-run print one bullet each, with the reason", () => {
+  assert.ok(renderReport(withSessionChecks()).includes(
+    "## Prompts not re-run\n\nPrompts this round did not run, each with the reason. No result of an earlier round stands in for them; the acceptance note rules on each one.\n\n- Prompt 5: it adds no criterion of this round\n\n## Completeness critic"));
+});
+
+test("a results file without session_checks or not_rerun renders exactly as before", () => {
+  const plain = renderReport(sampleResults());
+  assert.doesNotMatch(plain, /## Session checks|## Prompts not re-run/);
+  assert.equal(renderReport({ ...withSessionChecks(), session_checks: undefined, not_rerun: undefined }), plain);
+  assert.doesNotMatch(renderReport(staleShapedResults()), /## Session checks|## Prompts not re-run/);
+});
+
+test("an empty session_checks prints None. and a pipe in a clause is escaped", () => {
+  const empty = sampleResults();
+  empty.session_checks = [];
+  assert.match(renderReport(empty), /## Session checks\n\n[^\n]+\n\nNone\.\n/);
+  const piped = withSessionChecks();
+  piped.session_checks = [{ name: "x", run: "y", clauses: [{ clause: "a | b", outcome: "pass" }] }];
+  assert.ok(renderReport(piped).includes("| a \\| b | pass | — |"));
+});
+
+test("malformed session_checks or not_rerun are one coded IO_READ line each", () => {
+  const cases: [unknown, unknown, RegExp][] = [
+    [{ a: 1 }, undefined, /has a session_checks that is not a list/],
+    [[{ name: "x", run: "y" }], undefined, /has a session_checks\[0\] that is not \{name, run, clauses\}/],
+    [[{ name: "x", run: "y", clauses: [MIGRATION_CLAUSES[0], { clause: "c", outcome: "passed" }] }], undefined,
+      /has a session_checks\[0\]\.clauses\[1\] that is not \{clause, outcome, detail\?\} with outcome pass, fail or unverified/],
+    [undefined, { prompt: 5 }, /has a not_rerun that is not a list/],
+    [undefined, [{ prompt: "5", reason: "r" }], /has a not_rerun\[0\] that is not \{prompt, reason\}/],
+  ];
+  for (const [sessionChecks, notRerun, message] of cases) {
+    const r = JSON.parse(JSON.stringify(sampleResults()));
+    r.session_checks = sessionChecks;
+    r.not_rerun = notRerun;
+    const out = reportOn(JSON.stringify(r), "eval-report-session-");
+    assert.equal(out.status, 3, out.stderr);
+    assert.equal(out.stderr.trimEnd().split("\n").length, 1, out.stderr);
+    assert.match(out.stderr, /^error IO_READ: /);
+    assert.match(out.stderr, message);
+  }
+  assert.equal(reportOn(JSON.stringify(withSessionChecks()), "eval-report-session-").status, 0);
+});
+
+test("under rubric 3 a critic area naming c1-missing-inputs-asked prints no stale-critic caveat", () => {
+  const r = sampleResults();
+  r.rubric = 3;
+  r.critic.missing = [{ area: "c1-missing-inputs-asked (must)", detail: "the run asked no question on the planted gap" }];
+  assert.deepEqual(staleCriticParts(r), { answered: [], halfAnswered: false, pairTally: false });
+  assert.doesNotMatch(renderReport(r), /### What the critic's lists predate/);
 });
