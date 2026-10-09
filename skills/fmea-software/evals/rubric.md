@@ -6,9 +6,9 @@ Scoring guide for the skill evals of design §10. Each of prompts 1, 5, 6, and 7
 
 The judge reads the prompt and its preamble, the run's `inputs/`, `analysis.json`, `report.html`, `validate.json` (the validator's output for `analysis.json`), the final message in `transcript.json` (`result`), and the run's message stream `transcript.jsonl` (one JSON object per line; its assistant `tool_use` blocks are the only record of the commands the run ran — `transcript.json` holds the final message and cost metadata, never a tool call); for prompt 6 also `fixtures/legacy-rpn-sheet.expected.fmea.json`, for prompt 7 also `fixtures/update/expected-stale.json`. Every criterion is scored 0, 1, or 2 with one or two sentences of evidence naming the pointer, file, or transcript text relied on. A criterion marked **must** has to score 2 for the run to pass.
 
-Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts). Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts).
+Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts). Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts). Under rubric 3, prompt 1 adds c14 and c15 (maximum 26, 8 musts) and prompt 6 adds c14 (maximum 24, 8 musts); prompt 7 is unchanged (maximum 22, 9 musts).
 
-**Rubric version.** This is rubric 2, dated 2026-10-07: it adds c13. A results file written under it carries `rubric: 2` at its top level; a file with no such field was judged under rubric 1 and is read without c13, so the v1 document regenerates as it was.
+**Rubric version.** This is rubric 3, dated 2026-10-09: it adds c14 and c15. A results file written under it carries `rubric: 3` at its top level. A file carrying `rubric: 2` was judged under rubric 2, dated 2026-10-07, which added c13, and is read without c14 and c15, so the element-kinds document regenerates as it was; a file with no such field was judged under rubric 1 and is read without c13, so the v1 document regenerates as it was.
 
 **Unattended runs.** The run cannot ask a question, so the things the skill normally does interactively are judged by their unattended substitutes:
 
@@ -22,15 +22,15 @@ Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 
 
 Missing inputs are asked for rather than invented. The prompt 1 and prompt 5 fixtures deliberately leave a gap — `checkout-inputs.md` gives the pricing service's availability SLA and omits its scaling limit — so a run on those prompts has at least one input to ask for, and a run that records no assumption there scores 0.
 
-The gap is one the skill's own checklist asks about (amended 2026-09-15 by the user's ruling at the acceptance re-gate, which reconciled this clause with `references/design-inputs.md` after the first re-judging scored the same fact pattern 0, 1 and 2 across four runs). Item 4 of that file requires the availability SLA and the scaling limits *for every element carrying a dependency block*, and pricing carries one: the fixture types pricing as a `service` owned outside the analysis with a weak dependency, and the only third-party element in it is `checkout.payment-gateway` (amended 2026-10-07 with rubric 2, after that file's item 4 came to name every element carrying a dependency block in place of internal dependencies, and the retired kind `external_dependency` gave way to a role and a boundary). The fixture also states the order store's ceiling in as many words ("no published request ceiling"), so pricing's silence is the planted omission rather than the fixture declining to supply the datum.
+The gap is one the skill's own checklist asks about (amended 2026-09-15 by the user's ruling at the acceptance re-gate, which reconciled this clause with `references/design-inputs.md` after the first re-judging scored the same fact pattern 0, 1 and 2 across four runs). Item 4 of that file requires the availability SLA and the scaling limits *for every element that is the provider of an edge*, and pricing is one: the fixture types pricing as a `service` owned outside the analysis as the provider of a weak edge, and the only third-party element in it is `checkout.payment-gateway` (amended 2026-10-07 with rubric 2, after that file's item 4 came to name every element carrying a dependency block in place of internal dependencies, and the retired kind `external_dependency` gave way to a role and a boundary; amended 2026-10-09 with rubric 3, after dependencies became edges from a consumer to a provider in a top-level list and that file's item 4 came to name every element that is the provider of an edge). The fixture also states the order store's ceiling in as many words ("no published request ceiling"), so pricing's silence is the planted omission rather than the fixture declining to supply the datum.
 
-Read that clause literally: it is met only by an entry in `meta.assumptions[]` with `owner: "user"` and `status: "open"` naming the missing input, together with the question in the final message, so a run that instead writes a value for that input into a document field — however reasonable the value, and however plainly the field records it as unstated — scores 0, because a field value is not a question. A run that records the gap in neither an assumption nor the final message scores 0 as well, whatever else it recorded: the score is on this input, not on the run's general diligence, so recording other gaps conscientiously does not substitute for this one. (Second sentence added 2026-09-15 by the same ruling.) Prompts 6 and 7 carry no planted gap: score 2 when the run needed nothing it was not given, and score 1 or 0 only when you can name an input the run stated as fact without having been given it.
+Read that clause literally: it is met only by an entry in `meta.assumptions[]` with `owner: "user"` and `status: "open"` naming the missing input, together with the question in the final message, so a run that instead writes a value for that input into a document field, an edge's `limits` included — however reasonable the value, and however plainly the field records it as unstated — scores 0, because a field value is not a question. A run that records the gap in neither an assumption nor the final message scores 0 as well, whatever else it recorded: the score is on this input, not on the run's general diligence, so recording other gaps conscientiously does not substitute for this one. (Second sentence added 2026-09-15 by the same ruling.) Prompts 6 and 7 carry no planted gap: score 2 when the run needed nothing it was not given, and score 1 or 0 only when you can name an input the run stated as fact without having been given it.
 
 - **2** — Every input the run lacked is recorded as an open assumption with owner `user` in `meta.assumptions[]` and listed as a question in the final message, and no value for a missing input appears in the document as a fact.
 - **1** — Gaps are recorded in `meta.assumptions[]` or in the final message but not both, or one missing input is invented as fact while the others are recorded.
 - **0** — A missing input is invented as fact with no assumption recorded, or the run records no assumption although the inputs have a gap.
 
-For prompt 6, the substitutions the conversion rule of design §5 prescribes (the rationale text `converted from <sheet file name>; no rationale recorded`, `evidence_kind: "estimate"`, the conversion date) are declared defaults, not inventions, as long as `meta.history` records each substitution and on how many rows; they do not lower this score.
+For prompt 6, the substitutions the conversion rule of design §5 prescribes (the rationale text `converted from <sheet file name>; no rationale recorded`, `evidence_kind: "estimate"`, the conversion date) are declared defaults, not inventions, as long as `meta.history` records each substitution and on how many rows; they do not lower this score. Under rubric 3 the declared defaults also include the edge the conversion gives each outside item, from the first in-scope item in sheet order and at strength `strong` where the sheet states none, when `meta.history` records it as a substitution in the column mapping and `meta.assumptions[]` holds it as an open assumption owned by `user`; such an edge does not lower this score. (Added 2026-10-09 with rubric 3.)
 
 ### c2-element-traceability (must)
 
@@ -152,6 +152,51 @@ Prompt 6 (`legacy-rpn-sheet.csv`, typed by the converter from the item text):
 - **1** — Every role matches, and the boundary or the flag differs on at most one element.
 - **0** — Otherwise.
 
+### c14-edges-and-codebases (prompts 1 and 6; rubric 3)
+
+Every dependency the inputs state is an edge in `dependencies[]`, and every codebase the inputs name is in `meta.codebases[]` with the elements the inputs place in it. An element's effective codebase is its own `codebase` when it sets one; otherwise, when the element and its parent are both `in_scope`, its parent's effective codebase; otherwise none, as `references/structure-elements.md` states under "Runs over several codebases". Compare against the tables for the prompt.
+
+- **2** — Every dependency the inputs state is an edge with the stated `from`, `to` and `strength`; every codebase the inputs name is in `meta.codebases[]`; every in-scope element the inputs place in a codebase has that codebase as its effective codebase, whether set on it or inherited; and an `owned_outside` or `third_party` element has a codebase only when the inputs place it in a named repository.
+- **1** — Every stated edge is present with its stated ends, and exactly one of these differs: one edge's strength, one codebase entry missing or extra (such as an entry for pricing, whose repository the inputs do not name, so it is an open assumption and not an entry), or one element's effective codebase. A redundant `codebase` equal to the inherited one is not a difference.
+- **0** — Otherwise, two or more differences included.
+
+The codebase clauses are vacuous on a prompt whose inputs name no codebase, as c9 is with no catalog refs, so prompt 6 is scored on its edge alone. On prompt 6 the conversion's declared default counts as a stated edge: from `checkout-api` to `payment-gateway`, strength `strong`, recorded as a declared default in the column mapping of `meta.history` and as an open assumption owned by `user`; missing, or with another `from`, it scores 0, and present with another strength, or without its recorded default, it scores 1. Any other edge, one that neither the inputs nor the conversion rule prescribe, is neither required nor penalised here; a strength the inputs do not state is an invented value under c1 unless it is recorded as an open assumption.
+
+Prompt 1 (`checkout-inputs.md`), edges:
+
+| From | To | Strength |
+|---|---|---|
+| `checkout` | `checkout.payment-gateway` | `strong` |
+| `checkout` | `pricing` | `weak` |
+| `checkout` | `checkout.order-store` | `strong` |
+
+Prompt 1, codebases: `meta.codebases[]` holds exactly two entries, with `repo` `acme/checkout` and `acme/session-auth`, and each element's effective codebase is:
+
+| Element | Effective codebase (`repo`) | Set or inherited |
+|---|---|---|
+| `checkout` | `acme/checkout` | set |
+| `checkout.api` | `acme/checkout` | inherited from `checkout` |
+| `checkout.order-store` | `acme/checkout` | inherited from `checkout` |
+| `checkout.session-auth` | `acme/session-auth` | set |
+| `checkout.payment-gateway` | none | — |
+| `pricing` | none | — |
+
+Prompt 6 (`legacy-rpn-sheet.csv`), edges:
+
+| From | To | Strength |
+|---|---|---|
+| `checkout-api` | `payment-gateway` | `strong`, the declared default |
+
+### c15-cross-service-trace (prompt 1; rubric 3)
+
+A failure that crosses from a provider to its consumer is recorded as a link: a cause on the consumer's chain names, in `causes[].chain`, the provider's chain whose failure mode it is.
+
+- **2** — At least one cause on a chain whose element is `checkout` or one of its `in_scope` descendants (`checkout.api`, `checkout.order-store` or `checkout.session-auth`, and not `checkout.payment-gateway`, which is `third_party`) links to a chain on `checkout.payment-gateway` or on `pricing`, and that provider chain's `effects.next_level` states the consumer chain's failure mode, in the words of its `failure_mode` or a plain paraphrase of it, as the reviewer row `linked-pair-next-level` of `references/quality-and-lint.md` requires.
+- **1** — Such a link exists and the provider chain's `effects.next_level` does not state the consumer's failure mode.
+- **0** — No such link.
+
+Judgeable from the document alone; the inputs give the textbook pair, a failed authorization failing the checkout. A run that links but records no `cited_o` carries the `linked-cause-occurrence-drift` warning and loses no score here.
+
 ## Stability between the two runs at the same model capability
 
 `tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when both hold:
@@ -163,9 +208,9 @@ Run-to-run instability is one of the three documented failure modes of AI-genera
 
 ## Pass rule
 
-A run passes when every **must** criterion scores 2 and the total is at least **80%** of the maximum (16 of 20; 18 of 22, since 17.6 rounds up to the next whole score). A (prompt, model capability) pair passes when both of its runs pass and the stability check between them passes. v1 is accepted on the evals when all eight pairs pass (design §15, criterion 2).
+A run passes when every **must** criterion scores 2 and the total is at least **80%** of the maximum (16 of 20; 18 of 22, since 17.6 rounds up to the next whole score; 20 of 24, since 19.2 rounds up; 21 of 26, since 20.8 rounds up). A (prompt, model capability) pair passes when both of its runs pass and the stability check between them passes. v1 is accepted on the evals when all eight pairs pass (design §15, criterion 2).
 
-With the criteria as written, only c3, c8 and c13 are not musts. On prompts 5 and 7 a run whose musts all score 2 already totals at least 16 of 20 or 18 of 22; on prompts 1 and 6 under rubric 2 such a run totals 16 of 22 with the three at 0 and needs two more points among them, so the total rule binds there.
+With the criteria as written, only c3, c8, c13, c14 and c15 are not musts. On prompts 5 and 7 a run whose musts all score 2 already totals at least 16 of 20 or 18 of 22. Under rubric 2, on prompts 1 and 6 such a run totals 16 of 22 with the three non-musts at 0 and needs two more points among them. Under rubric 3 the musts total 16, so prompt 1 needs 5 of the 10 points among c3, c8, c13, c14 and c15 to reach 21 of 26, and prompt 6 needs 4 of the 8 among c3, c8, c13 and c14 to reach 20 of 24; the total rule binds there. Each file's maximum comes from `criteriaFor` in `tools/eval-report.ts`.
 
 ## Changing a threshold
 
