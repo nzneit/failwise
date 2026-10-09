@@ -1,8 +1,9 @@
-import type { Chain, Element, FmeaDocument, Lint, Ratings, Factor, Severity } from "./types.ts";
+import type { Codebase, Element, FmeaDocument, Lint, Ratings, Factor, Severity } from "./types.ts";
 import { ptr } from "./pointer.ts";
 import type { PriorityTable } from "./table.ts";
 import { checkTableProperties } from "./table.ts";
-import { providerIds } from "./graph.ts";
+import { chainElement, edgeJoins, effectiveCodebases, indexDocument, isDescendantOf, providerIds, resolvedLinks } from "./graph.ts";
+import type { DocIndex, ResolvedLink } from "./graph.ts";
 
 export interface MachineRule { id: string; severity: Severity; check: (doc: FmeaDocument) => Lint[] }
 
@@ -10,13 +11,6 @@ const FACTORS: Factor[] = ["S", "O", "D"];
 
 function lint(rule: string, severity: Severity, pointer: string, message: string): Lint {
   return { rule, severity, pointer, message };
-}
-
-// The element a chain analyses: chain.function names a function, whose element names the element.
-// Undefined when either link does not resolve, which the invariants report on their own.
-function elementOfChain(doc: FmeaDocument, chain: Chain): Element | undefined {
-  const fn = doc.functions.find((f) => f.id === chain.function);
-  return fn === undefined ? undefined : doc.elements.find((e) => e.id === fn.element);
 }
 
 // The row lint that reads the catalog rows of each prefix.
@@ -27,10 +21,13 @@ const ROW_RULES: Record<string, string> = { dependency: "dependency-row-without-
 function rowLints(doc: FmeaDocument, prefix: string, applies: (el: Element) => boolean, describe: (el: Element) => string): Lint[] {
   const rule = ROW_RULES[prefix];
   const out: Lint[] = [];
+  const index = indexDocument(doc);
   for (let i = 0; i < doc.chains.length; i++) {
     const chain = doc.chains[i];
-    const el = elementOfChain(doc, chain);
-    if (el === undefined || applies(el)) continue;
+    const at = chainElement(doc, index, i);
+    if (at === undefined) continue;
+    const el = doc.elements[at];
+    if (applies(el)) continue;
     for (let j = 0; j < chain.catalog_refs.length; j++) {
       const ref = chain.catalog_refs[j].id;
       if (ref.startsWith(`cat-${prefix}-`)) {
@@ -42,11 +39,11 @@ function rowLints(doc: FmeaDocument, prefix: string, applies: (el: Element) => b
   return out;
 }
 
-// A repo ref in the qualified owner/repo@commit:path form; group 1 is the commit.
-const QUALIFIED_REPO_REF = /^[^\s/@:]+\/[^\s/@:]+@([^\s:]+):.+$/;
+// A repo ref in the qualified owner/repo@commit:path form; group 1 is the owner/repo head, group 2 the commit.
+const QUALIFIED_REPO_REF = /^([^\s/@:]+\/[^\s/@:]+)@([^\s:]+):.+$/;
 const FULL_SHA = /^[0-9a-f]{40}$/i;
 
-interface RepoRef { ref: string; element: string; pointer: string; commit: string | undefined }
+interface RepoRef { ref: string; element: string; index: number; pointer: string; head: string | undefined; commit: string | undefined }
 
 function repoRefs(doc: FmeaDocument): RepoRef[] {
   const out: RepoRef[] = [];
@@ -55,7 +52,8 @@ function repoRefs(doc: FmeaDocument): RepoRef[] {
     for (let j = 0; j < el.sources.length; j++) {
       const s = el.sources[j];
       if (s.kind !== "repo") continue;
-      out.push({ ref: s.ref, element: el.id, pointer: ptr("elements", i, "sources", j, "ref"), commit: QUALIFIED_REPO_REF.exec(s.ref)?.[1] });
+      const m = QUALIFIED_REPO_REF.exec(s.ref);
+      out.push({ ref: s.ref, element: el.id, index: i, pointer: ptr("elements", i, "sources", j, "ref"), head: m?.[1], commit: m?.[2] });
     }
   }
   return out;
@@ -70,6 +68,27 @@ function repoRefLint(r: RepoRef): Lint[] {
     return [lint("repo-ref-form", "warning", r.pointer, `${head}: its commit is not a full 40-hex-digit SHA`)];
   }
   return [];
+}
+
+function repoCodebaseLint(r: RepoRef, codebases: Codebase[], own: Codebase | undefined): Lint[] {
+  if (r.head === undefined) return [];
+  const head = `repo ref ${r.ref} on element ${r.element} names repository ${r.head}`;
+  if (!codebases.some((cb) => cb.repo === r.head)) {
+    return [lint("repo-ref-codebase", "warning", r.pointer, `${head}, which no entry of meta.codebases lists`)];
+  }
+  if (own !== undefined && own.repo !== r.head) {
+    return [lint("repo-ref-codebase", "warning", r.pointer, `${head}, but the element's codebase ${own.id} is ${own.repo}`)];
+  }
+  return [];
+}
+
+function unlinkedLint(doc: FmeaDocument, index: DocIndex, link: ResolvedLink): Lint[] {
+  const c = chainElement(doc, index, link.chain);
+  const p = chainElement(doc, index, link.provider);
+  if (c === undefined || p === undefined || p === c || isDescendantOf(index, p, c)) return [];
+  if (doc.dependencies.some((e) => edgeJoins(index, e, c, p))) return [];
+  return [lint("cause-chain-unlinked", "warning", ptr("chains", link.chain, "causes", link.cause, "chain"),
+    `cause ${link.cause} links to chain ${doc.chains[link.provider].id} on element ${doc.elements[p].id}, which is neither element ${doc.elements[c].id} nor below it, and no edge joins them`)];
 }
 
 export const MACHINE_RULES: MachineRule[] = [
@@ -238,6 +257,28 @@ export const MACHINE_RULES: MachineRule[] = [
       const refs = repoRefs(doc);
       if (!refs.some((r) => r.commit !== undefined)) return [];
       return refs.flatMap(repoRefLint);
+    },
+  },
+  {
+    // A qualified repo ref should name a repository a codebase lists, and the one its element's
+    // codebase names; while the document lists no codebases the rule stays silent.
+    id: "repo-ref-codebase",
+    severity: "warning",
+    check(doc) {
+      const codebases = doc.meta.codebases;
+      if (codebases === undefined) return [];
+      const effective = effectiveCodebases(doc, indexDocument(doc));
+      return repoRefs(doc).flatMap((r) => repoCodebaseLint(r, codebases, effective[r.index]));
+    },
+  },
+  {
+    // A cause linked to another element's chain runs down the containment walk or across a
+    // recorded edge; a link that does neither names a dependency the document does not hold.
+    id: "cause-chain-unlinked",
+    severity: "warning",
+    check(doc) {
+      const index = indexDocument(doc);
+      return resolvedLinks(doc, index).flatMap((l) => unlinkedLint(doc, index, l));
     },
   },
 ];

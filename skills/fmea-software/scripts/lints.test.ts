@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { MACHINE_RULES, formatLintLine, runLints, tablePropertyLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
 import { validateDocument } from "./lib/validation.ts";
-import { bandTable, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
-import type { Control, FmeaDocument, Lint, TrackerLink } from "./lib/types.ts";
+import { bandTable, edge, graphDoc, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
+import type { Codebase, Control, FmeaDocument, Lint, Source, TrackerLink } from "./lib/types.ts";
 
 function ruleById(id: string) {
   const rule = MACHINE_RULES.find((r) => r.id === id);
@@ -42,6 +42,8 @@ test("MACHINE_RULES lists every rule with its severity, in order", () => {
     ["dependency-row-without-dependency", "warning"],
     ["security-row-without-flag", "warning"],
     ["repo-ref-form", "warning"],
+    ["repo-ref-codebase", "warning"],
+    ["cause-chain-unlinked", "warning"],
   ]);
 });
 
@@ -303,6 +305,97 @@ test("repo-ref-form stays silent while no repo ref is qualified, then flags the 
 
   doc.elements.push(element("doc", "document", "acme/checkout@abc1234:docs/x.md"));
   assert.deepEqual(fired(doc, "repo-ref-form"), two);
+});
+
+const SHA = "a".repeat(40);
+const CODEBASES: Codebase[] = [{ id: "cb-a", name: "A", repo: "acme/a" }, { id: "cb-b", name: "B", repo: "acme/b" }];
+function repoSource(repo: string, path = "src/index.ts"): Source { return { kind: "repo", ref: `${repo}@${SHA}:${path}` }; }
+
+test("repo-ref-codebase flags a head no codebase lists, then a head that differs from the element's effective codebase, one finding per ref in element and source order", () => {
+  const doc = graphDoc({ elements: [
+    { id: "a", codebase: "cb-a", sources: [repoSource("acme/a"), repoSource("acme/b", "src/b.ts")] },
+    { id: "a.x", sources: [repoSource("acme/zzz", "src/x.ts")] },
+  ] });
+  doc.meta.codebases = structuredClone(CODEBASES);
+  assert.deepEqual(fired(doc, "repo-ref-codebase"), [
+    { rule: "repo-ref-codebase", severity: "warning", pointer: "/elements/0/sources/1/ref",
+      message: `repo ref acme/b@${SHA}:src/b.ts on element a names repository acme/b, but the element's codebase cb-a is acme/a` },
+    { rule: "repo-ref-codebase", severity: "warning", pointer: "/elements/1/sources/0/ref",
+      message: `repo ref acme/zzz@${SHA}:src/x.ts on element a.x names repository acme/zzz, which no entry of meta.codebases lists` },
+  ]);
+  delete doc.meta.codebases;
+  assert.deepEqual(fired(doc, "repo-ref-codebase"), []);
+});
+
+test("repo-ref-codebase compares the head byte for byte and leaves an unqualified ref alone", () => {
+  const doc = graphDoc({ elements: [{ id: "a", codebase: "cb-a", sources: [repoSource("Acme/A"), { kind: "repo", ref: "src/a.ts" }] }] });
+  doc.meta.codebases = structuredClone(CODEBASES);
+  assert.deepEqual(fired(doc, "repo-ref-codebase").map((l) => [l.pointer, l.message]), [
+    ["/elements/0/sources/0/ref", `repo ref Acme/A@${SHA}:src/index.ts on element a names repository Acme/A, which no entry of meta.codebases lists`],
+  ]);
+});
+
+test("repo-ref-codebase gives only the first check to an element with no effective codebase: a head that names an entry passes, one that names none is flagged", () => {
+  const doc = graphDoc({ elements: [
+    { id: "gw", boundary: "third_party", codebase: "cb-b" },
+    { id: "gw.adapter", sources: [repoSource("acme/b"), repoSource("acme/zzz", "src/adapter.ts")] },
+    { id: "a", codebase: "cb-missing", sources: [repoSource("acme/b")] },
+    { id: "a.x", sources: [repoSource("acme/b"), repoSource("acme/zzz", "src/x.ts")] },
+  ] });
+  doc.meta.codebases = structuredClone(CODEBASES);
+  assert.deepEqual(fired(doc, "repo-ref-codebase").map((l) => [l.pointer, l.message]), [
+    ["/elements/1/sources/1/ref", `repo ref acme/zzz@${SHA}:src/adapter.ts on element gw.adapter names repository acme/zzz, which no entry of meta.codebases lists`],
+    ["/elements/3/sources/1/ref", `repo ref acme/zzz@${SHA}:src/x.ts on element a.x names repository acme/zzz, which no entry of meta.codebases lists`],
+  ]);
+});
+
+// ch-1 on svc.api (fn-svc.api, functions[1]) links its one cause to ch-2 on svc (fn-svc, functions[0]), its parent, with no edge.
+function childToParent(): FmeaDocument {
+  return graphDoc({ elements: ["svc", "svc.api"], chains: [["ch-1", "svc.api"], ["ch-2", "svc"]], links: [["ch-1", "ch-2"]] });
+}
+const CHILD_TO_PARENT = "cause 0 links to chain ch-2 on element svc, which is neither element svc.api nor below it, and no edge joins them";
+
+test("cause-chain-unlinked accepts a same-element link, a link to a grandchild with no edge, and a link across an ancestor-to-ancestor edge", () => {
+  assert.deepEqual(fired(graphDoc({ elements: ["svc"], chains: [["ch-1", "svc"], ["ch-2", "svc"]], links: [["ch-1", "ch-2"]] }), "cause-chain-unlinked"), []);
+  assert.deepEqual(fired(graphDoc({ elements: ["svc", "svc.api", "svc.api.h"], chains: [["ch-1", "svc"], ["ch-2", "svc.api.h"]], links: [["ch-1", "ch-2"]] }), "cause-chain-unlinked"), []);
+  assert.deepEqual(fired(graphDoc({ elements: ["a", "a.x", "b", "b.y"], edges: [edge("a", "b")], chains: [["ch-1", "a.x"], ["ch-2", "b.y"]], links: [["ch-1", "ch-2"]] }), "cause-chain-unlinked"), []);
+});
+
+test("cause-chain-unlinked flags a child-to-parent link no edge covers, keeps flagging it across an edge from the parent down, and accepts it once the child depends on the parent", () => {
+  const doc = childToParent();
+  assert.deepEqual(fired(doc, "cause-chain-unlinked"), [{ rule: "cause-chain-unlinked", severity: "warning", pointer: "/chains/0/causes/0/chain", message: CHILD_TO_PARENT }]);
+  doc.dependencies = [edge("svc", "svc.api")];
+  assert.deepEqual(fired(doc, "cause-chain-unlinked").map((l) => l.message), [CHILD_TO_PARENT]);
+  doc.dependencies = [edge("svc.api", "svc")];
+  assert.deepEqual(fired(doc, "cause-chain-unlinked"), []);
+});
+
+test("cause-chain-unlinked decides by the walk and not the id text: a nested id whose parent is missing or null is not below C", () => {
+  for (const parent of ["ghost", null]) {
+    const doc = graphDoc({ elements: ["svc", { id: "svc.api", parent }], chains: [["ch-1", "svc"], ["ch-2", "svc.api"]], links: [["ch-1", "ch-2"]] });
+    assert.deepEqual(fired(doc, "cause-chain-unlinked").map((l) => [l.pointer, l.message]),
+      [["/chains/0/causes/0/chain", "cause 0 links to chain ch-2 on element svc.api, which is neither element svc nor below it, and no edge joins them"]]);
+  }
+});
+
+test("cause-chain-unlinked returns on two elements that name each other as parent, and accepts a link between them", () => {
+  const doc = graphDoc({ elements: [{ id: "a", parent: "b" }, { id: "b", parent: "a" }], chains: [["ch-1", "a"], ["ch-2", "b"]], links: [["ch-1", "ch-2"]] });
+  assert.deepEqual(fired(doc, "cause-chain-unlinked"), []);
+});
+
+test("cause-chain-unlinked skips a link that does not resolve, and a function or an element of either end that does not resolve", () => {
+  const breaks: [string, (d: FmeaDocument) => void][] = [
+    ["the link", (d) => { d.chains[0].causes[0].chain = "ch-missing"; }],
+    ["the consumer's function", (d) => { d.chains[0].function = "fn-missing"; }],
+    ["the consumer's element", (d) => { d.functions[1].element = "ghost"; }],
+    ["the provider's function", (d) => { d.chains[1].function = "fn-missing"; }],
+    ["the provider's element", (d) => { d.functions[0].element = "ghost"; }],
+  ];
+  for (const [what, breakDoc] of breaks) {
+    const doc = childToParent();
+    breakDoc(doc);
+    assert.deepEqual(fired(doc, "cause-chain-unlinked"), [], what);
+  }
 });
 
 test("runLints takes a rule subset", () => {
