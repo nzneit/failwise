@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { INVARIANT_RULES, checkInvariants, checkPriorities } from "./lib/invariants.ts";
 import { loadTable } from "./lib/table.ts";
-import { clone, minimalDoc, rating } from "./test-helpers.ts";
-import type { FmeaDocument } from "./lib/types.ts";
+import { clone, edge, graphDoc, minimalDoc, rating } from "./test-helpers.ts";
+import type { Codebase, FmeaDocument } from "./lib/types.ts";
 import type { Issue } from "./lib/codes.ts";
 
 const table = loadTable();
@@ -19,6 +19,14 @@ function expectOne(issues: Issue[], rule: string, code: string, pointer: string)
   assert.equal(hits[0].pointer, pointer);
 }
 
+function found(issues: Issue[], rule: string): [string, string][] {
+  return only(issues, rule).map((i) => [i.pointer, i.message]);
+}
+const CB_A: Codebase = { id: "cb-a", name: "Checkout", repo: "acme/checkout" };
+const CB_B: Codebase = { id: "cb-b", name: "Session auth", repo: "acme/session-auth" };
+function cycles(doc: FmeaDocument): [string, string][] { return found(checkInvariants(doc), "cause-chain-cycle"); }
+function onSvc(ids: string[]): [string, string][] { return ids.map((id) => [id, "svc"]); }
+
 test("the minimal document violates no invariant and no priority rule", () => {
   const doc = minimalDoc();
   assert.deepEqual(checkInvariants(doc), []);
@@ -30,11 +38,14 @@ test("INVARIANT_RULES lists every rule id this module can report", () => {
     "element-id-unique", "function-id-unique", "chain-id-unique", "action-id-unique",
     "function-element-resolves", "chain-function-resolves", "element-parent-resolves", "element-parent-matches-id",
     "element-source-non-catalog", "element-dependency-required", "element-security-rationale-required",
+    "codebase-id-unique", "element-codebase-resolves", "dependency-from-resolves", "dependency-to-resolves",
+    "dependency-self", "dependency-pair-unique", "cause-chain-resolves", "cause-chain-self", "cause-chain-cycle",
     "rating-review-by-date", "post-ratings-without-completed", "post-priority-presence",
     "handoff-without-adversarial", "adversarial-without-handoff", "handoff-cause-mismatch",
     "stale-without-reason", "stale-version-ahead",
     "priority-table-mismatch", "priority-row-table-mismatch", "priority-value-mismatch", "priority-rpn-mismatch",
   ]);
+  assert.equal(INVARIANT_RULES.length, 32);
 });
 
 test("element-id-unique flags the second occurrence", () => {
@@ -129,6 +140,121 @@ test("element-security-rationale-required fires on a true flag with no or an emp
   doc.elements[1].security_relevant = false;
   doc.elements[1].security_rationale = "not trusted";
   assert.deepEqual(only(checkInvariants(doc), "element-security-rationale-required"), []);
+});
+
+test("codebase-id-unique flags each later entry that repeats an id, at its id", () => {
+  const doc = minimalDoc();
+  doc.meta.codebases = [CB_A, CB_B, { ...CB_A, name: "Again" }];
+  assert.deepEqual(found(checkInvariants(doc), "codebase-id-unique"), [["/meta/codebases/2/id", "codebase id cb-a is used more than once"]]);
+});
+
+test("element-codebase-resolves flags every codebase while meta.codebases is absent, then only an id no entry has", () => {
+  const doc = graphDoc({ elements: [{ id: "a", codebase: "cb-a" }, { id: "b", codebase: "cb-x" }] });
+  assert.deepEqual(found(checkInvariants(doc), "element-codebase-resolves"), [
+    ["/elements/0/codebase", "codebase cb-a names no entry of meta.codebases"],
+    ["/elements/1/codebase", "codebase cb-x names no entry of meta.codebases"],
+  ]);
+  doc.meta.codebases = [CB_A];
+  assert.deepEqual(found(checkInvariants(doc), "element-codebase-resolves"), [["/elements/1/codebase", "codebase cb-x names no entry of meta.codebases"]]);
+});
+
+test("dependency-from-resolves, dependency-to-resolves and dependency-self report edge by edge, in that order within an edge", () => {
+  const doc = graphDoc({ elements: ["svc"] });
+  doc.dependencies = [edge("ghost", "svc"), edge("svc", "phantom"), edge("svc", "svc"), edge("void", "void")];
+  assert.deepEqual(checkInvariants(doc).filter((i) => i.rule.startsWith("dependency-")).map((i) => [i.rule, i.pointer, i.message]), [
+    ["dependency-from-resolves", "/dependencies/0/from", "element ghost does not exist"],
+    ["dependency-to-resolves", "/dependencies/1/to", "element phantom does not exist"],
+    ["dependency-self", "/dependencies/2/to", "edge from svc to svc has the same element at both ends"],
+    ["dependency-from-resolves", "/dependencies/3/from", "element void does not exist"],
+    ["dependency-to-resolves", "/dependencies/3/to", "element void does not exist"],
+    ["dependency-self", "/dependencies/3/to", "edge from void to void has the same element at both ends"],
+  ]);
+});
+
+test("element-dependency-required is satisfied by any edge whose to names the element, a self-edge or an unresolved from included", () => {
+  const doc = graphDoc({ elements: ["svc", { id: "svc.gateway", boundary: "third_party" }] });
+  doc.dependencies = [edge("svc.gateway", "svc.gateway")];
+  const issues = checkInvariants(doc);
+  assert.deepEqual(only(issues, "element-dependency-required"), []);
+  assert.deepEqual(found(issues, "dependency-self"), [["/dependencies/0/to", "edge from svc.gateway to svc.gateway has the same element at both ends"]]);
+  doc.dependencies = [edge("ghost", "svc.gateway")];
+  assert.deepEqual(only(checkInvariants(doc), "element-dependency-required"), []);
+});
+
+test("dependency-pair-unique is silent on one provider with two consumers at different strengths, and the document violates nothing", () => {
+  const doc = graphDoc({ elements: ["checkout", "billing", { id: "gateway", boundary: "third_party" }],
+    edges: [edge("checkout", "gateway", "strong"), edge("billing", "gateway", "weak")] });
+  assert.deepEqual(checkInvariants(doc), []);
+});
+
+test("dependency-pair-unique flags each later edge with the same from and to, at the edge, and never an edge that shares one end or reverses it", () => {
+  const doc = graphDoc({ elements: ["svc", "db", "cache"] });
+  doc.dependencies = [edge("svc", "db"), edge("svc", "db", "weak")];
+  assert.deepEqual(found(checkInvariants(doc), "dependency-pair-unique"), [["/dependencies/1", "edge from svc to db is listed more than once"]]);
+  doc.dependencies.push(edge("svc", "db"));
+  assert.deepEqual(found(checkInvariants(doc), "dependency-pair-unique").map(([p]) => p), ["/dependencies/1", "/dependencies/2"]);
+  doc.dependencies = [edge("svc", "db"), edge("svc", "cache"), edge("cache", "db"), edge("db", "svc")];
+  assert.deepEqual(only(checkInvariants(doc), "dependency-pair-unique"), []);
+});
+
+test("cause-chain-resolves and cause-chain-self report cause by cause, a link resolving to the first chain of its id", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-2"]) });
+  doc.chains[0].causes = [{ text: "a", chain: "ch-missing" }, { text: "b", chain: "ch-1" }];
+  doc.chains[1].causes[0].chain = "ch-2";
+  doc.chains[2].causes[0].chain = "ch-2";
+  assert.deepEqual(checkInvariants(doc).filter((i) => i.rule === "cause-chain-resolves" || i.rule === "cause-chain-self").map((i) => [i.rule, i.pointer, i.message]), [
+    ["cause-chain-resolves", "/chains/0/causes/0/chain", "chain ch-missing does not exist"],
+    ["cause-chain-self", "/chains/0/causes/1/chain", "cause 1 links to its own chain ch-1"],
+    ["cause-chain-self", "/chains/1/causes/0/chain", "cause 0 links to its own chain ch-2"],
+  ]);
+});
+
+test("cause-chain-cycle reports a two-chain and a three-chain cycle once, at the smallest link inside it", () => {
+  assert.deepEqual(cycles(graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2"]), links: [["ch-1", "ch-2"], ["ch-2", "ch-1"]] })),
+    [["/chains/0/causes/0/chain", "cause 0 of chain ch-1 is on a cycle of links through chains ch-1, ch-2"]]);
+  assert.deepEqual(cycles(graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-3"]), links: [["ch-1", "ch-2"], ["ch-2", "ch-3"], ["ch-3", "ch-1"]] })),
+    [["/chains/0/causes/0/chain", "cause 0 of chain ch-1 is on a cycle of links through chains ch-1, ch-2, ch-3"]]);
+});
+
+test("cause-chain-cycle reports two disjoint cycles once each, in pointer order", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-3", "ch-4"]), links: [["ch-1", "ch-3"], ["ch-3", "ch-1"], ["ch-2", "ch-4"], ["ch-4", "ch-2"]] });
+  assert.deepEqual(cycles(doc), [
+    ["/chains/0/causes/0/chain", "cause 0 of chain ch-1 is on a cycle of links through chains ch-1, ch-3"],
+    ["/chains/1/causes/0/chain", "cause 0 of chain ch-2 is on a cycle of links through chains ch-2, ch-4"],
+  ]);
+});
+
+test("cause-chain-cycle reports two cycles that share a link once, at the smallest (chain index, cause index)", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-3"]), links: [["ch-1", "ch-2"], ["ch-2", "ch-1"], ["ch-3", "ch-1"]] });
+  doc.chains[1].causes.push({ text: "a second cause", chain: "ch-3" });
+  assert.deepEqual(cycles(doc), [["/chains/0/causes/0/chain", "cause 0 of chain ch-1 is on a cycle of links through chains ch-1, ch-2, ch-3"]]);
+});
+
+test("cause-chain-cycle never reports at a link that leaves the component, though it is the chain's cause 0", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-3"]), links: [["ch-2", "ch-1"]] });
+  doc.chains[0].causes = [{ text: "a", chain: "ch-3" }, { text: "b", chain: "ch-2" }];
+  assert.deepEqual(cycles(doc), [["/chains/0/causes/1/chain", "cause 1 of chain ch-1 is on a cycle of links through chains ch-1, ch-2"]]);
+});
+
+test("cause-chain-cycle does not report a chain that leads into a cycle but is not on it", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-3"]), links: [["ch-1", "ch-2"], ["ch-2", "ch-3"], ["ch-3", "ch-2"]] });
+  assert.deepEqual(cycles(doc), [["/chains/1/causes/0/chain", "cause 0 of chain ch-2 is on a cycle of links through chains ch-2, ch-3"]]);
+});
+
+test("cause-chain-cycle survives a dangling link and a duplicate chain id, resolving to the first chain", () => {
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(["ch-1", "ch-2", "ch-2"]), links: [["ch-1", "ch-2"], ["ch-2", "ch-1"]] });
+  doc.chains[2].causes = [{ text: "a", chain: "ch-missing" }, { text: "b", chain: "ch-2" }];
+  assert.doesNotThrow(() => checkInvariants(doc));
+  assert.deepEqual(cycles(doc), [["/chains/0/causes/0/chain", "cause 0 of chain ch-1 is on a cycle of links through chains ch-1, ch-2"]]);
+});
+
+test("cause-chain-cycle walks a path of 20000 links without recursion, and reports it once when its end links back", () => {
+  const ids = Array.from({ length: 20000 }, (_, i) => `ch-${i + 1}`);
+  const doc = graphDoc({ elements: ["svc"], chains: onSvc(ids) });
+  for (let i = 0; i + 1 < ids.length; i++) doc.chains[i].causes[0].chain = ids[i + 1];
+  assert.deepEqual(cycles(doc), []);
+  doc.chains[ids.length - 1].causes[0].chain = ids[0];
+  assert.deepEqual(cycles(doc).map(([p]) => p), ["/chains/0/causes/0/chain"]);
 });
 
 test("rating-review-by-date flags a rescored rating with no reviewer", () => {

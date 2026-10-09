@@ -1,9 +1,10 @@
 import type { Issue } from "./codes.ts";
-import type { Chain, Element, FmeaDocument, Factor, Fn, Priority, Ratings } from "./types.ts";
+import type { Chain, DependencyEdge, Element, FmeaDocument, Factor, Fn, Priority, Ratings } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
 import { computePriority } from "./table.ts";
 import { ptr } from "./pointer.ts";
-import { providerIds } from "./graph.ts";
+import { indexDocument, providerIds, resolvedLinks } from "./graph.ts";
+import type { DocIndex, ResolvedLink } from "./graph.ts";
 
 export const INVARIANT_RULES: readonly string[] = [
   "element-id-unique",
@@ -17,6 +18,15 @@ export const INVARIANT_RULES: readonly string[] = [
   "element-source-non-catalog",
   "element-dependency-required",
   "element-security-rationale-required",
+  "codebase-id-unique",
+  "element-codebase-resolves",
+  "dependency-from-resolves",
+  "dependency-to-resolves",
+  "dependency-self",
+  "dependency-pair-unique",
+  "cause-chain-resolves",
+  "cause-chain-self",
+  "cause-chain-cycle",
   "rating-review-by-date",
   "post-ratings-without-completed",
   "post-priority-presence",
@@ -137,6 +147,118 @@ function securityRationaleIssues(elements: Element[]): Issue[] {
   return out;
 }
 
+function codebaseIssues(elements: Element[], codebaseIds: Set<string>): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < elements.length; i++) {
+    const id = elements[i].codebase;
+    if (id !== undefined && !codebaseIds.has(id)) {
+      out.push(invariant("element-codebase-resolves", `codebase ${id} names no entry of meta.codebases`, ptr("elements", i, "codebase")));
+    }
+  }
+  return out;
+}
+
+// dependency-from-resolves, dependency-to-resolves and dependency-self, which share the loop over edges.
+function edgeIssues(edges: DependencyEdge[], elements: ReadonlyMap<string, number>): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < edges.length; i++) {
+    const { from, to } = edges[i];
+    if (!elements.has(from)) out.push(invariant("dependency-from-resolves", `element ${from} does not exist`, ptr("dependencies", i, "from")));
+    if (!elements.has(to)) out.push(invariant("dependency-to-resolves", `element ${to} does not exist`, ptr("dependencies", i, "to")));
+    if (from === to) out.push(invariant("dependency-self", `edge from ${from} to ${to} has the same element at both ends`, ptr("dependencies", i, "to")));
+  }
+  return out;
+}
+
+function pairIssues(edges: DependencyEdge[]): Issue[] {
+  const seen = new Set<string>();
+  const out: Issue[] = [];
+  for (let i = 0; i < edges.length; i++) {
+    const { from, to } = edges[i];
+    const key = JSON.stringify([from, to]);
+    if (seen.has(key)) out.push(invariant("dependency-pair-unique", `edge from ${from} to ${to} is listed more than once`, ptr("dependencies", i)));
+    else seen.add(key);
+  }
+  return out;
+}
+
+// cause-chain-resolves and cause-chain-self, which share the loop over causes.
+function causeLinkIssues(chains: Chain[], chainIndex: ReadonlyMap<string, number>): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < chains.length; i++) {
+    for (let j = 0; j < chains[i].causes.length; j++) {
+      const id = chains[i].causes[j].chain;
+      if (id === undefined) continue;
+      const at = chainIndex.get(id);
+      if (at === undefined) out.push(invariant("cause-chain-resolves", `chain ${id} does not exist`, ptr("chains", i, "causes", j, "chain")));
+      else if (at === i) out.push(invariant("cause-chain-self", `cause ${j} links to its own chain ${id}`, ptr("chains", i, "causes", j, "chain")));
+    }
+  }
+  return out;
+}
+
+type Adjacency = number[][];
+
+function adjacency(size: number, links: ResolvedLink[], reversed: boolean): Adjacency {
+  const out: Adjacency = Array.from({ length: size }, () => []);
+  for (const l of links) {
+    if (reversed) out[l.provider].push(l.chain);
+    else out[l.chain].push(l.provider);
+  }
+  return out;
+}
+
+// Each node once, in the order its depth-first visit finishes, with an explicit stack.
+function finishOrder(graph: Adjacency): number[] {
+  const seen = Array.from({ length: graph.length }, () => false);
+  const order: number[] = [];
+  for (let root = 0; root < graph.length; root++) {
+    if (seen[root]) continue;
+    seen[root] = true;
+    const stack: [number, number][] = [[root, 0]];
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const next = graph[top[0]][top[1]++];
+      if (next === undefined) { order.push(top[0]); stack.pop(); }
+      else if (!seen[next]) { seen[next] = true; stack.push([next, 0]); }
+    }
+  }
+  return order;
+}
+
+// The component of each chain: the reversed graph walked in reverse finishing order.
+function components(size: number, links: ResolvedLink[]): number[] {
+  const reversed = adjacency(size, links, true);
+  const comp = Array.from({ length: size }, () => -1);
+  const order = finishOrder(adjacency(size, links, false));
+  let count = 0;
+  for (let k = order.length - 1; k >= 0; k--) {
+    if (comp[order[k]] !== -1) continue;
+    const stack = [order[k]];
+    comp[order[k]] = count;
+    for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+      for (const next of reversed[node]) if (comp[next] === -1) { comp[next] = count; stack.push(next); }
+    }
+    count++;
+  }
+  return comp;
+}
+
+function cycleIssues(doc: FmeaDocument, index: DocIndex): Issue[] {
+  const links = resolvedLinks(doc, index);
+  const comp = components(doc.chains.length, links);
+  const reported = new Set<number>();
+  const out: Issue[] = [];
+  for (const l of links) {
+    const c = comp[l.chain];
+    if (c !== comp[l.provider] || reported.has(c)) continue;
+    reported.add(c);
+    const through = doc.chains.filter((_, k) => comp[k] === c).map((ch) => ch.id).join(", ");
+    out.push(invariant("cause-chain-cycle", `cause ${l.cause} of chain ${doc.chains[l.chain].id} is on a cycle of links through chains ${through}`, ptr("chains", l.chain, "causes", l.cause, "chain")));
+  }
+  return out;
+}
+
 // rating-review-by-date over one ratings block of chain `chainIdx`; `key` names the block.
 function reviewIssues(ratings: Ratings, chainIdx: number, key: "ratings" | "post_ratings"): Issue[] {
   const out: Issue[] = [];
@@ -211,13 +333,15 @@ function staleIssues(chains: Chain[], version: number): Issue[] {
 }
 
 // Every invariant issue of `doc`. The helpers run in the order of INVARIANT_RULES; a helper that
-// checks several rules reports them chain by chain.
+// checks several rules reports them record by record.
 export function checkInvariants(doc: FmeaDocument): Issue[] {
   const elements = doc.elements;
   const functions = doc.functions;
   const chains = doc.chains;
   const elementIds = new Set(elements.map((e) => e.id));
   const functionIds = new Set(functions.map((f) => f.id));
+  const index = indexDocument(doc);
+  const codebaseIds = (doc.meta.codebases ?? []).map((c) => c.id);
 
   return [
     ...duplicates(elements.map((e) => e.id), "element-id-unique", (i) => ptr("elements", i, "id"), "element"),
@@ -231,6 +355,12 @@ export function checkInvariants(doc: FmeaDocument): Issue[] {
     ...sourceIssues(elements),
     ...dependencyIssues(elements, providerIds(doc)),
     ...securityRationaleIssues(elements),
+    ...duplicates(codebaseIds, "codebase-id-unique", (i) => ptr("meta", "codebases", i, "id"), "codebase"),
+    ...codebaseIssues(elements, new Set(codebaseIds)),
+    ...edgeIssues(doc.dependencies, index.element),
+    ...pairIssues(doc.dependencies),
+    ...causeLinkIssues(chains, index.chain),
+    ...cycleIssues(doc, index),
     ...ratingReviewIssues(chains),
     ...postRatingsIssues(chains),
     ...handoffIssues(chains),
