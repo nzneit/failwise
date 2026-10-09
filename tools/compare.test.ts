@@ -445,5 +445,7 @@ test("a group section on the after side only is named as added and is not photog
   const result = run([], { rendered: { before: HTML, after } });
   assert.equal(result.status, 0);
   assert.ok((result.read("/repo/build/compare/summary.md") ?? "").includes("## Parts added\n\n- group-pricing\n"));
-  for (const env of result.env.filter((one) => one.FAILWISE_COMPARE_PASS !== undefined)) assert.equal(env.FAILWISE_COMPARE_PARTS, PARTS.join(","));
+  const envs = result.env.filter((one) => one.FAILWISE_COMPARE_PASS !== undefined);
+  assert.ok(envs.length > 0, "no comparison pass was started");
+  for (const env of envs) assert.equal(env.FAILWISE_COMPARE_PARTS, PARTS.join(","));
 });

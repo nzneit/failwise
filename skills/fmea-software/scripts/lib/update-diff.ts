@@ -100,7 +100,7 @@ function consumerLinks(ctx: Ctx, e: EdgeChange): ResolvedLink[] {
 function reachedRows(ctx: Ctx): ReachedRow[] {
   const rule = new Map<number, string>();
   const mark = (i: number, text: string): void => { if (inBoth(ctx, i) && !rule.has(i)) rule.set(i, text); };
-  for (const el of ctx.elements) if (el.change === "changed") for (const i of chainsOn(ctx, el.id)) mark(i, `element ${el.id} ${el.fields[0]} changed`);
+  for (const el of ctx.elements) if (el.change === "changed") for (const i of chainsOn(ctx, el.id)) mark(i, `element ${el.id} ${el.fields.join(", ")} changed`);
   for (const e of ctx.edges) for (const i of chainsOn(ctx, e.to)) mark(i, `edge ${e.from} to ${e.to} changed`);
   for (const e of ctx.edges) for (const l of consumerLinks(ctx, e)) {
     mark(l.chain, `link /chains/${l.chain}/causes/${l.cause} into ${ctx.draft.chains[l.provider].id} across edge ${e.from} to ${e.to}`);

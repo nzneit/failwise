@@ -50,6 +50,16 @@ test("diffUpdate: a boundary change reaches its element's own chains only, and l
   });
 });
 
+test("diffUpdate: an element change in two fields names both in its chains' rule, joined as the elements section joins them", () => {
+  const copy = graphDoc({ elements: ["checkout", "pricing"], chains: [["ch-1", "checkout"], ["ch-2", "pricing"]] });
+  assert.deepEqual(changed(copy, (d) => { d.elements[1].kind = "datastore"; d.elements[1].security_relevant = true; }), {
+    ...EMPTY,
+    elements: [{ change: "changed", id: "pricing", fields: ["kind", "security_relevant"] }],
+    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing kind, security_relevant changed" }],
+    order: ["ch-2"],
+  });
+});
+
 test("diffUpdate: a re-parented consumer marks the provider's chains through the added edge, and its new chain is never reached", () => {
   const copy = graphDoc({ elements: ["checkout", "checkout.api", { id: "gw", boundary: "third_party" }], edges: [edge("checkout.api", "gw")],
     chains: [["ch-1", "gw"], ["ch-2", "checkout.api"]], links: [["ch-2", "ch-1"]] });
@@ -83,6 +93,21 @@ test("diffUpdate: a re-parented provider marks nothing, its new chain is never s
     elements: [{ change: "added", id: "gw", fields: [] }, { change: "removed", id: "checkout.gw", fields: [] }],
     removedLinks: [{ chainId: "ch-2", index: 1, cause: 0, removed: "ch-1", candidates: ["ch-3"] }],
   });
+});
+
+test("diffUpdate: a link into a removed chain lists no candidate that reaches the consumer, directly or through another new chain", () => {
+  const copy = graphDoc({ elements: ["checkout", { id: "checkout.gw", boundary: "third_party" }], edges: [edge("checkout", "checkout.gw")],
+    chains: [["ch-1", "checkout.gw"], ["ch-2", "checkout"]], links: [["ch-2", "ch-1"]] });
+  const diff = changed(copy, (d) => {
+    d.elements[1] = newElement("gw", { boundary: "third_party" });
+    d.functions[1] = { ...d.functions[1], id: "fn-gw", element: "gw" };
+    d.dependencies = [edge("checkout", "gw")];
+    const base = { ...d.chains[0], function: "fn-gw" };
+    const linked = (id: string, into: string): Chain => ({ ...clone(base), id, causes: [{ ...clone(base.causes[0]), chain: into }] });
+    d.chains[0] = { ...clone(base), id: "ch-4" };
+    d.chains.push(linked("ch-5", "ch-2"), linked("ch-6", "ch-5"));
+  });
+  assert.deepEqual(diff.removedLinks, [{ chainId: "ch-2", index: 1, cause: 0, removed: "ch-1", candidates: ["ch-4"] }]);
 });
 
 test("diffUpdate: an edge change reaches the chains on to and the links into them from from, an ancestor of from and a descendant of from, and no further", () => {
