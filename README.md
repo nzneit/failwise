@@ -58,7 +58,7 @@ Claude works through a new analysis with you in seven steps:
 6. Plan actions.
 7. Write the report.
 
-At the end, Claude gives you the analysis and the rendered report. Claude then asks you to re-score each rating in the session, one at a time. Claude writes your name and the date on each rating that you re-score. After your re-scores, Claude runs the scripts again, so that the priorities and the report follow your ratings. Expect several dozen ratings for one service. Each failure chain carries three ratings, and the four test runs of a new analysis wrote between 12 and 18 chains.
+At the end, Claude gives you the analysis and the rendered report. Claude then asks you to re-score each rating in the session, one at a time. Claude writes your name and the date on each rating that you re-score. After your re-scores, Claude runs the scripts again, so that the priorities and the report follow your ratings. Expect several dozen ratings for one service. Each failure chain carries three ratings. The four test runs of a new analysis at version 0.1.0 wrote between 12 and 18 chains, and the two at version 0.6.0 wrote 16 each.
 
 ## What you get
 
@@ -93,7 +93,7 @@ One failure mode, with its effects, causes and controls, is one failure chain, a
 
 ## Status and limitations
 
-0.6.0 is a pre-release. The evaluation of its skill ran on version 0.1.0, and that version did not pass its own acceptance gate. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation. 0.6.0 also changes the format of the analysis to schema v3, so an analysis written with 0.3.x to 0.5.x needs a one-time migration, as [Compatibility between versions](docs/scripts.md#compatibility-between-versions) describes.
+0.6.0 is a pre-release. The full evaluation of its skill ran on version 0.1.0, and that version did not pass its own acceptance gate. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation. 0.6.0 also changes the format of the analysis to schema v3, so an analysis written with 0.3.x to 0.5.x needs a one-time migration, as [Compatibility between versions](docs/scripts.md#compatibility-between-versions) describes.
 
 The evaluation tested the skill on four prompts. It ran each prompt at two model capabilities, high and medium. glm-5.3 filled the high capability, and glm-5.3-flash filled the medium capability. Three of the eight combinations passed:
 
@@ -104,14 +104,16 @@ New analyses and postmortem seeding did not pass. The [eval results](docs/specs/
 
 The other six acceptance criteria pass, with one caveat. The check that each cited record supports its statement predates the edits of 2026-09-29. Four reference files have open findings from that check, and none of the findings is about licensing. The check did not run again on two other reference files. The addendum of the acceptance note gives the details.
 
+Version 0.6.0 ran three of the four prompts again, twice each at high: the new analysis, the conversion of a legacy RPN sheet and the update after an architecture change. Two of the three passed: the conversion and the update. The new analysis failed on a must criterion: its second run wrote "None stated." as the scaling limit of the pricing service, instead of raising the missing limit as an open question. Postmortem seeding did not run again and has no result at 0.6.0. Four checks in a session also tried the migration of an older analysis and the update rules on dependencies and codebases. The [multi-codebase eval results](docs/specs/2026-10-08-multi-codebase-eval-results.md) give the scores, the checks and what stayed unverified.
+
 Known limitations:
 
-- Claude does not always ask for a missing input. The test inputs leave out the scaling limit of a dependency on purpose. No tested run of a new analysis or of postmortem seeding asked for it.
-- Results vary between runs. The same inputs gave 12 failure chains in one run and 18 in another.
+- Claude does not always ask for a missing input. The test inputs leave out the scaling limit of a dependency on purpose. At version 0.1.0, no tested run of a new analysis or of postmortem seeding asked for it. At version 0.6.0, one of the two runs of a new analysis recorded it as an open assumption for you to answer, and the other did not.
+- Results vary between runs. At version 0.1.0 the same inputs gave 12 failure chains in one run and 18 in another, and at version 0.6.0 both runs wrote 16.
 - Read the priorities from the analysis or the rendered report. The scripts compute the priorities in both. Do not read them from Claude's closing message, which once stated a priority that the analysis did not carry.
 - Every rating stays provisional until a named person re-scores it.
 - No person took part in the tested runs. Nobody answered questions, so the tests did not exercise the back-and-forth of a session or the re-score step.
-- The tested runs used glm-5.3 and glm-5.3-flash, not Anthropic models.
+- The 0.1.0 runs used glm-5.3 and glm-5.3-flash, not Anthropic models. The 0.6.0 runs used Claude Opus 5.5 (`claude-opus-5-5`) at the high capability.
 
 Not in this version:
 
