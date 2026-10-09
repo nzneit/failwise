@@ -86,7 +86,7 @@ export function resolvedLinks(doc: FmeaDocument, index: DocIndex): ResolvedLink[
 
 /** The edge runs from the consumer, an ancestor or a descendant of it, to the provider or an
  *  ancestor of it. */
-export function edgeJoins(index: DocIndex, edge: DependencyEdge, consumer: number, provider: number): boolean {
+export function edgeJoins(index: DocIndex, edge: Pick<DependencyEdge, "from" | "to">, consumer: number, provider: number): boolean {
   const from = index.element.get(edge.from);
   const to = index.element.get(edge.to);
   if (from === undefined || to === undefined) return false;

@@ -45,11 +45,16 @@ export function bandTable(bySBand: [string, string, string]): PriorityTable {
   return { id: "priority-test-properties", vocabulary: ["H", "M", "L"], bands: { S: bands, O: clone(bands), D: clone(bands) }, cells };
 }
 
+/** Writes `value` as indented JSON with a final newline to `name` in `dir`, and returns the path. */
+export function writeJson(dir: string, name: string, value: unknown): string {
+  const path = join(dir, name);
+  writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
+  return path;
+}
+
 /** Writes `table` to table.json in `dir`, as a --table-file, and returns the path. */
 export function writeTable(dir: string, table: PriorityTable): string {
-  const path = join(dir, "table.json");
-  writeFileSync(path, JSON.stringify(table, null, 2) + "\n");
-  return path;
+  return writeJson(dir, "table.json", table);
 }
 
 /** minimalDoc as priority.ts --write leaves it under `table`: the table recorded, the row priced by it. */
@@ -135,7 +140,7 @@ export const LEGACY_TRIGGERS: LegacyTrigger[] = [
 
 /** Turns a v3 document back into its v2 shape: each edge becomes a dependency block on the first
  *  element whose id is the edge's `to`, and the top-level dependencies array goes. */
-function moveEdgesIntoBlocks(doc: FmeaDocument): void {
+export function moveEdgesIntoBlocks(doc: FmeaDocument): void {
   for (const edge of doc.dependencies) {
     const target = doc.elements.find((e) => e.id === edge.to);
     if (target === undefined) continue;

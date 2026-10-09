@@ -1,7 +1,7 @@
 // A document in which one object repeats a key is refused on reading: JSON.parse keeps the last
 // of the two values and says nothing, so the first would be invisible to every check and gone
 // after the next --write. The scan itself is in lib/duplicate-keys.ts; these tests reach it
-// through readJsonFile and the four scripts, the way a document does.
+// through readJsonFile and the five scripts, the way a document does.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -80,6 +80,7 @@ test("every script refuses a document that repeats a key with one IO_READ line, 
       ["priority.ts", path, "--write"],
       ["render.ts", path, "--out", report],
       ["track.ts", "plan", path],
+      ["update-check.ts", path, path],
     ]) {
       const result = runCli(script, args);
       assert.equal(result.status, 3, `${script}: ${result.stderr}`);
