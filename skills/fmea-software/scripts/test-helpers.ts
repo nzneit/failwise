@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import type { FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus } from "./lib/types.ts";
+import type { Chain, CitedOccurrence, DependencyEdge, Element, FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus, Strength } from "./lib/types.ts";
 import { computePriority } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 
@@ -238,4 +238,55 @@ export function minimalDoc(): FmeaDocument {
       },
     ],
   };
+}
+
+/** An in-scope service named `id`, its parent `id` without its last dotted segment (null at depth
+ *  1), changed by `overrides`. */
+export function newElement(id: string, overrides: Partial<Element> = {}): Element {
+  const dot = id.lastIndexOf(".");
+  return {
+    id, kind: "service", name: id, description: "", parent: dot === -1 ? null : id.slice(0, dot),
+    boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }], ...overrides,
+  };
+}
+
+/** A dependency edge from `from` to `to`. */
+export function edge(from: string, to: string, strength: Strength = "strong", extra: { sla?: string; limits?: string } = {}): DependencyEdge {
+  return { from, to, strength, ...extra };
+}
+
+/** The provider's O as a linked cause cites it. */
+function citeO(chain: Chain): CitedOccurrence {
+  const o = chain.ratings.O;
+  const cited: CitedOccurrence = { value: o.value, evidence_kind: o.evidence_kind };
+  if (o.evidence_ref !== undefined) cited.evidence_ref = o.evidence_ref;
+  return cited;
+}
+
+/** A multi-element document: the elements, by id or by id and overrides; the edges; chains as
+ *  [chain id, element id]; links as [consumer chain id, provider chain id]. */
+interface GraphSpec {
+  elements: (string | (Partial<Element> & { id: string }))[];
+  edges?: DependencyEdge[];
+  chains?: [chainId: string, elementId: string][];
+  links?: [consumer: string, provider: string][];
+}
+
+/** minimalDoc's meta over the spec's graph: one function `fn-<element id>` per element, each chain a
+ *  copy of minimalDoc's chain on its element's function, and each link written into the consumer's
+ *  first cause with the provider's O cited. */
+export function graphDoc(spec: GraphSpec): FmeaDocument {
+  const base = minimalDoc();
+  const elements = spec.elements.map((e) => (typeof e === "string" ? newElement(e) : newElement(e.id, e)));
+  const functions = elements.map((el) => ({ id: `fn-${el.id}`, element: el.id, statement: "serve requests", conditions: [], for_whom: "clients" }));
+  const chains = (spec.chains ?? []).map(([id, elementId]) => ({ ...clone(base.chains[0]), id, function: `fn-${elementId}` }));
+  const doc: FmeaDocument = { meta: base.meta, elements, functions, dependencies: spec.edges ?? [], chains };
+  for (const [consumerId, providerId] of spec.links ?? []) {
+    const consumer = chains.find((c) => c.id === consumerId);
+    const provider = chains.find((c) => c.id === providerId);
+    if (consumer === undefined || provider === undefined) continue;
+    consumer.causes[0].chain = providerId;
+    consumer.causes[0].cited_o = citeO(provider);
+  }
+  return doc;
 }
