@@ -34,18 +34,18 @@ const chainsWithPriorities = (values: string[]): FmeaDocument =>
   docOf(...values.map((value) => ({ priority: { value, table: table.id, rpn: 96 } })));
 
 test("sortChains, moved to the model, sorts the checkout fixture and is the function render.ts exports", () => {
-  assert.deepEqual(sortChains(fixture(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(fixture(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
   assert.equal(renderSortChains, sortChains);
 });
 
 test("the tiles for the checkout fixture", () => {
   assert.deepEqual(modelOf(fixture()).tiles, {
-    priorities: [{ value: "H", style: "top", count: 4 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
-    chainsLine: "8 failure chains",
-    ratings: { provisional: 8, total: 27, line: "provisional, in 3 rows" },
-    checks: { blockers: "1 blocker", warnings: "10 warnings", alert: true },
+    priorities: [{ value: "H", style: "top", count: 5 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
+    chainsLine: "9 failure chains",
+    ratings: { provisional: 11, total: 30, line: "provisional, in 4 rows" },
+    checks: { blockers: "1 blocker", warnings: "13 warnings", alert: true },
     actions: { headline: "8 open", of: "of 9", line: "next due 2026-10-09" },
-    qualityScore: 88,
+    qualityScore: 89,
   });
 });
 
@@ -163,7 +163,7 @@ test("a row finding is labelled by where its pointer lies within the row", () =>
   ]);
 });
 
-test("the fixture's findings form four groups, blockers first, rating-provisional as one group over three rows", () => {
+test("the fixture's findings form four groups, blockers first, rating-provisional as one group over four rows", () => {
   const S = { text: "S", raw: false };
   const O = { text: "O", raw: false };
   const D = { text: "D", raw: false };
@@ -172,10 +172,11 @@ test("the fixture's findings form four groups, blockers first, rating-provisiona
       count: 1, locations: [{ kind: "row", chainId: "ch-7", labels: [D] }] },
     { severity: "warning", rule: "occurrence-estimate-without-trigger", message: "Occurrence is 7 or more on an estimate with no trigger recorded",
       count: 1, locations: [{ kind: "row", chainId: "ch-6", labels: [O] }] },
-    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 8, locations: [
+    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 11, locations: [
       { kind: "row", chainId: "ch-2", labels: [S, O, D] },
       { kind: "row", chainId: "ch-4", labels: [O, D] },
       { kind: "row", chainId: "ch-8", labels: [S, O, D] },
+      { kind: "row", chainId: "ch-9", labels: [S, O, D] },
     ] },
     { severity: "warning", rule: "seeded-action-without-incident", message: "action on a chain seeded from INC-2026-0314 carries no source_incident",
       count: 1, locations: [{ kind: "row", chainId: "ch-8", labels: [{ text: "act-2", raw: false }] }] },
@@ -210,6 +211,7 @@ test("the fixture's rows carry their element, statement and badge styles in the 
     ["ch-1", "checkout.payment-gateway", "top", null],
     ["ch-5", "checkout.session-auth", "top", null],
     ["ch-7", "checkout", "top", null],
+    ["ch-9", "checkout", "top", null],
     ["ch-4", "checkout.order-store", "mid", null],
     ["ch-8", "checkout.payment-gateway", "mid", null],
     ["ch-6", "checkout.api", "mid", null],
@@ -218,9 +220,9 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
 });
 
-test("the fixture's row marks: provisional on ch-2, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
+test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
   assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
-    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]],
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
     ["ch-4", ["provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
   ]);
 });
@@ -502,8 +504,11 @@ test("attention: the checkout fixture's block", () => {
   });
   assert.equal(a.stale, null);
   assert.deepEqual(a.provisional, {
-    label: "8 ratings not yet reviewed",
-    rows: [{ chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] }],
+    label: "11 ratings not yet reviewed",
+    rows: [
+      { chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-9", factors: ["S", "O", "D"] },
+      { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] },
+    ],
   });
   assert.deepEqual(a.handoffs, {
     label: "1 row passed to threat modelling",

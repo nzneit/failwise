@@ -18,12 +18,12 @@ import { SKILL_ROOT } from "./test-helpers.ts";
 const table = loadTable();
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
 
-test("the golden analysis validates with the eleven expected lints and a score of 88", () => {
+test("the golden analysis validates with the fourteen expected lints and a score of 89", () => {
   const result = validateDocument(golden(), table);
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.lints.length, 11);
-  assert.equal(result.quality_score, 88);
+  assert.equal(result.lints.length, 14);
+  assert.equal(result.quality_score, 89);
   const blockers = result.lints.filter((l) => l.severity === "blocker");
   assert.equal(blockers.length, 1);
   assert.equal(blockers[0].rule, "detection-1-without-evidenced-control");
@@ -31,8 +31,39 @@ test("the golden analysis validates with the eleven expected lints and a score o
   const byRule = (rule: string) => result.lints.filter((l) => l.rule === rule).map((l) => l.pointer);
   assert.deepEqual(byRule("occurrence-estimate-without-trigger"), ["/chains/5/ratings/O"]);
   assert.deepEqual(byRule("seeded-action-without-incident"), ["/chains/7/actions/1"]);
-  assert.equal(byRule("rating-provisional").length, 8);
+  assert.equal(byRule("rating-provisional").length, 11);
+  assert.deepEqual(byRule("rating-provisional").slice(-3), ["/chains/8/ratings/S", "/chains/8/ratings/O", "/chains/8/ratings/D"]);
   assert.deepEqual(byRule("metadata-without-ground-rules"), []);
+});
+
+test("the checkout fixture holds two codebases, three edges from checkout, and ch-9 at /chains/8 linked to ch-1 with ch-1's O as its cited O", () => {
+  const doc = golden();
+  const metaKeys = Object.keys(doc.meta);
+  assert.equal(metaKeys[metaKeys.indexOf("boundary") + 1], "codebases");
+  assert.deepEqual(doc.meta.codebases, [
+    { id: "checkout", name: "Checkout service", repo: "acme/checkout" },
+    { id: "session-auth", name: "Session authentication library", repo: "acme/session-auth" },
+  ]);
+  assert.deepEqual(doc.elements.map((e) => [e.id, e.codebase ?? null]), [
+    ["checkout", "checkout"], ["checkout.api", null], ["checkout.payment-gateway", null],
+    ["checkout.order-store", null], ["checkout.session-auth", "session-auth"], ["pricing", null],
+  ]);
+  for (const i of [0, 4]) { const keys = Object.keys(doc.elements[i]); assert.equal(keys[keys.indexOf("sources") - 1], "codebase"); }
+  assert.deepEqual(doc.dependencies, [
+    { from: "checkout", to: "checkout.payment-gateway", strength: "strong", sla: "99.95% monthly", limits: "50 rps per merchant" },
+    { from: "checkout", to: "pricing", strength: "weak", sla: "99.9% monthly" },
+    { from: "checkout", to: "checkout.order-store", strength: "strong", sla: "99.99% monthly" },
+  ]);
+  const [ch1, ch9] = [doc.chains[0], doc.chains[8]];
+  assert.deepEqual([doc.chains.length, ch9.id, ch9.function, ch9.trigger], [9, "ch-9", "fn-checkout-order", undefined]);
+  assert.equal(`${ch9.failure_mode}.`, ch1.effects.next_level);
+  assert.equal(ch9.effects.end, ch1.effects.end);
+  assert.deepEqual(ch9.causes, [{ text: ch1.failure_mode, chain: "ch-1",
+    cited_o: { value: ch1.ratings.O.value, evidence_kind: ch1.ratings.O.evidence_kind, evidence_ref: ch1.ratings.O.evidence_ref } }]);
+  assert.deepEqual((["S", "O", "D"] as const).map((f) => [ch9.ratings[f].value, ch9.ratings[f].evidence_kind, ch9.ratings[f].review.status]),
+    [[9, "estimate", "provisional"], [6, "estimate", "provisional"], [3, "estimate", "provisional"]]);
+  assert.deepEqual([ch9.actions, ch9.catalog_refs, ch9.priority], [[], [], { value: "H", table: "priority-fmea-software-v1", rpn: 162 }]);
+  assert.equal(doc.computed!.validator_version, "0.4.1");
 });
 
 const ANALYSIS_FIXTURES = ["checkout-service.fmea.json", "update/before.fmea.json", "update/stale-rows.fmea.json", "legacy-rpn-sheet.expected.fmea.json"];
@@ -53,13 +84,6 @@ test("update/before.fmea.json and legacy-rpn-sheet.expected.fmea.json validate w
     const result = validateDocument(loadFixture(name), table);
     assert.equal(result.ok, true, `${name}: ${JSON.stringify(result.errors)}`);
   }
-});
-
-test("the checkout fixture's edges are its two former blocks, each from checkout", () => {
-  assert.deepEqual(golden().dependencies, [
-    { from: "checkout", to: "checkout.payment-gateway", strength: "strong", sla: "99.95% monthly", limits: "50 rps per merchant" },
-    { from: "checkout", to: "pricing", strength: "weak", sla: "99.9% monthly" },
-  ]);
 });
 
 test("the legacy expected fixture holds the conversion's edge from checkout-api to payment-gateway, strong, with its open assumption owned by user", () => {
@@ -97,8 +121,8 @@ test("an invariant failure still reports lints and a score", () => {
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].rule, "stale-without-reason");
   assert.equal(result.errors[0].code, "INVARIANT");
-  assert.equal(result.lints.length, 11);
-  assert.equal(result.quality_score, 88);
+  assert.equal(result.lints.length, 14);
+  assert.equal(result.quality_score, 89);
 });
 
 test("a table whose id differs is a TABLE_ID_MISMATCH error and no per-row errors", () => {
@@ -130,8 +154,8 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
     assert.equal(r.stderr, "");
     const parsed = JSON.parse(r.stdout);
     assert.equal(parsed.ok, true);
-    assert.equal(parsed.quality_score, 88);
-    assert.equal(parsed.lints.length, 11);
+    assert.equal(parsed.quality_score, 89);
+    assert.equal(parsed.lints.length, 14);
   });
 });
 
@@ -213,7 +237,7 @@ test("validate.ts --write reads an analysis that begins with a byte-order mark a
     assert.equal(r.status, 0);
     const after = readFileSync(path, "utf8");
     assert.equal(after.startsWith("\uFEFF"), false);
-    assert.equal((JSON.parse(after) as FmeaDocument).computed?.quality_score, 88);
+    assert.equal((JSON.parse(after) as FmeaDocument).computed?.quality_score, 89);
   });
 });
 
@@ -254,8 +278,8 @@ test("--write adds a computed block and leaves the authored parts alone", () => 
       { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, dependencies: beforeDoc.dependencies, chains: beforeDoc.chains },
     );
     assert.equal(first.computed?.validator_version, PLUGIN_VERSION);
-    assert.equal(first.computed?.quality_score, 88);
-    assert.equal(first.computed?.lints.length, 11);
+    assert.equal(first.computed?.quality_score, 89);
+    assert.equal(first.computed?.lints.length, 14);
     assert.ok(isRfc3339DateTime(String(first.computed?.validated_at)));
   });
 });
@@ -272,9 +296,9 @@ test("--write replaces an existing computed block whole and keeps it where the f
     assert.equal(runCli("validate.ts", [path, "--write"]).status, 0);
     const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "dependencies", "chains"]);
-    assert.equal(after.computed?.quality_score, 88);
+    assert.equal(after.computed?.quality_score, 89);
     assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
-    assert.equal(after.computed?.lints.length, 11);
+    assert.equal(after.computed?.lints.length, 14);
   });
 });
 
@@ -336,7 +360,7 @@ test("a document that already carries computed is validated, not compared agains
   doc.computed = { quality_score: 3, lints: [], validated_at: "2020-01-01T00:00:00Z", validator_version: "0.0.1" };
   const result = validateDocument(doc, table);
   assert.equal(result.ok, true);
-  assert.equal(result.quality_score, 88);
+  assert.equal(result.quality_score, 89);
 });
 
 test("--write accepts a validated_at written with a lower-case t and z and replaces it with a new stamp", () => {
@@ -350,7 +374,7 @@ test("--write accepts a validated_at written with a lower-case t and z and repla
     assert.equal(r.stderr, "");
     const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.match(String(after.computed?.validated_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    assert.equal(after.computed?.quality_score, 88);
+    assert.equal(after.computed?.quality_score, 89);
   });
 });
 
@@ -451,9 +475,9 @@ test("staleComputed gives one COMPUTED_STALE issue for the score and one for a s
   const issues = staleComputed({ ...doc.computed!, quality_score: 3, lints: [] }, validateDocument(doc, table));
   assert.deepEqual(issues, [
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/quality_score",
-      message: "computed.quality_score is 3 but validate.ts now gives 88; run validate.ts --write, then render.ts again" },
+      message: "computed.quality_score is 3 but validate.ts now gives 89; run validate.ts --write, then render.ts again" },
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints",
-      message: "computed.lints, written by validator 0.1.0, holds 11 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again" },
+      message: "computed.lints, written by validator 0.4.1, holds 14 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again" },
   ]);
 });
 
@@ -480,7 +504,7 @@ test("staleComputed points at the first stored lint past the validator's list wh
   const fresh = validateDocument(doc, table);
   const extra = { rule: "rating-provisional", severity: "warning" as const, pointer: "/chains/0/ratings/S", message: "an old finding" };
   assert.deepEqual(staleComputed({ ...doc.computed!, lints: [...fresh.lints, extra] }, fresh), [
-    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/11",
-      message: "computed.lints, written by validator 0.1.0, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again" },
+    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/14",
+      message: "computed.lints, written by validator 0.4.1, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again" },
   ]);
 });

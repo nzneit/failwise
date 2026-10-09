@@ -568,9 +568,7 @@ function constrainedNodes(schema: SchemaNode): string[] {
 // on the golden it also cannot reach /$defs/computed, /$defs/computed/properties/validated_at —
 // the schema file's only `format: "date-time"` node, which is the RFC 3339 pin of §6 —
 // /$defs/lint, or /$defs/lint/properties/severity. This document instantiates all six, so the
-// pair's reach into the schema does not depend on whether Task 26 has already run. It also sets a
-// codebase entry with a path, an element's codebase and a linked cause with a cited O, which no
-// fixture carries until the fixture gains them.
+// pair's reach into the schema does not depend on whether Task 26 has already run.
 function derivationDoc(): Record<string, unknown> {
   const doc = trackedDoc();
   Object.assign(doc.meta.tracker as unknown as Record<string, unknown>, { type: "Task", parent: "ACME-1", states: { done: ["Done"], dropped: ["Won't Do"] } });
@@ -591,6 +589,9 @@ function derivationDoc(): Record<string, unknown> {
   doc.chains[0].history = chainHistory;
   doc.chains[0].stale = stale;
   doc.computed = computed;
+  // meta.codebases, an element codebase, a linked cause and its cited_o. The golden fixture reaches
+  // /$defs/codebase and /$defs/citedOccurrence too from step 3 on; these stay so that the
+  // derivation document covers them whatever the golden carries.
   (doc.meta as unknown as Record<string, unknown>).codebases = [{ id: "svc-repo", name: "Service repository", repo: "acme/svc", path: "services/svc" }];
   doc.elements[0].codebase = "svc-repo";
   Object.assign(doc.chains[0].causes[0], { chain: "ch-2", cited_o: { value: 6, evidence_kind: "observed_incident", evidence_ref: "INC-1" } });
@@ -688,6 +689,11 @@ test("every constrained schema node the golden fixture cannot reach is reached b
   for (const pointer of ["/$defs/historyEntry", "/$defs/stale/properties/reason"]) {
     assert.ok(unreached.includes(pointer), `${pointer} is constrained and, by plan reference §H, unreachable from the golden fixture, but was reported as reached`);
   }
+  // From step 3 the golden carries meta.codebases, two element codebases and ch-9's linked cause
+  // with its cited_o, so these four are in its reach; derivationDoc() still reaches them too.
+  for (const pointer of ["/$defs/codebase", "/$defs/codebase/properties/repo", "/$defs/citedOccurrence", "/$defs/citedOccurrence/properties/evidence_kind"]) {
+    assert.ok(!unreached.includes(pointer), `${pointer} is reached by the golden fixture from step 3 on`);
+  }
 });
 
 test("drift: every required list, enum, pattern, format, and minLength in the schema file is enforced", () => {
@@ -729,8 +735,12 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // two elementId patterns and one enum each). The derivation document gained its fifth root entry
   // (+1), a codebase entry with a path (+7: three required entries, two patterns, two minLength),
   // an element codebase (+1) and a linked cause with a cited O (+5: a plainId pattern, two required
-  // entries, one enum, one minLength). The total is 1,361, so the floor is 1,305.
-  assert.ok(derived >= 1305, `expected at least 1305 derived violations, ran ${derived}`);
+  // entries, one enum, one minLength). The total is 1,361, so the floor is 1,305. The enriched golden
+  // of step 3 adds 111 derivations: 12 from the two `meta.codebases` entries, 2 from the two
+  // element `codebase` ids, 6 from the order-store edge, 70 from `ch-9` and 21 from its three
+  // `rating-provisional` findings in `computed`. 20 of them are `minLength` (2 from the codebase
+  // names, 12 from `ch-9`, 6 from the findings). The total is 1,472, so the floor is 1,416.
+  assert.ok(derived >= 1416, `expected at least 1416 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -741,6 +751,10 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // The tracker nodes add six of them (254 counted; measured before schema v3, 268: 231 from the
   // golden and 37 from the derivation document). Schema v3 adds three, all from the derivation
   // document: the codebase's name and path and the cited O's evidence_ref, so the total and the
-  // floor are 271.
-  assert.ok(minLengthDerived >= 271, `expected at least 271 derived minLength violations, ran ${minLengthDerived}`);
+  // floor are 271. The enriched golden of step 3 adds 111 derivations: 12 from the two
+  // `meta.codebases` entries, 2 from the two element `codebase` ids, 6 from the order-store edge,
+  // 70 from `ch-9` and 21 from its three `rating-provisional` findings in `computed`. 20 of them
+  // are `minLength` (2 from the codebase names, 12 from `ch-9`, 6 from the findings), so the total
+  // and the floor are 291.
+  assert.ok(minLengthDerived >= 291, `expected at least 291 derived minLength violations, ran ${minLengthDerived}`);
 });

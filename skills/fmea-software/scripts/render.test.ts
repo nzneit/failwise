@@ -198,8 +198,8 @@ test("the automated checks section explains the checks, states the score and gro
   assert.ok(checks.includes("<h2>Automated checks and quality score</h2>"));
   const text = stripTags(checks);
   assert.ok(text.includes(escapeHtml("Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A blocker must be fixed before the row it names, or the analysis as a whole, can be relied on. A warning is for a reviewer to judge and may be acceptable as it stands.")));
-  assert.ok(text.includes(escapeHtml("Quality score: 88 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
-  assert.ok(checks.includes("<strong>Quality score: 88 of 100</strong>"));
+  assert.ok(text.includes(escapeHtml("Quality score: 89 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
+  assert.ok(checks.includes("<strong>Quality score: 89 of 100</strong>"));
   // the intro's two marks, then one per group: one blocker group and three warning groups
   assert.equal(occurrences(checks, 'class="mark mark-blocker"'), 2);
   assert.equal(occurrences(checks, 'class="mark mark-warning"'), 4);
@@ -210,9 +210,9 @@ test("the automated checks section explains the checks, states the score and gro
     .map((rule) => checks.indexOf(`<code>${rule}</code>`));
   assert.ok(order.every((at) => at !== -1));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×8</span>'));
+  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×11</span>'));
   assert.equal(occurrences(checks, "×"), 1, "a group of one finding shows no count");
-  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D'));
+  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D<br><a href="#row-ch-9"><code>ch-9</code></a> S, O, D'));
   assert.ok(checks.includes("<td>The rating is still provisional and needs re-scoring</td>"));
   assert.ok(checks.includes('<a href="#row-ch-7"><code>ch-7</code></a> D</td><td>Detection is 1 with no existing detection control carrying evidence</td>'));
   assert.ok(checks.includes('<a href="#row-ch-8"><code>ch-8</code></a> act-2</td>'));
@@ -261,7 +261,7 @@ test("the header carries every field section 9 requires, and the provisional cou
   ]) {
     assert.ok(header.includes(pair), `the header is missing ${pair}`);
   }
-  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">8 <small>of 27</small></span><span class="sub">provisional, in 3 rows</span>'), "the header is missing the provisional tile");
+  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span>'), "the header is missing the provisional tile");
   assert.ok(!header.includes("ratings provisional"), "the old provisional line is still printed");
 });
 
@@ -282,11 +282,11 @@ test("the header shows the five tiles, each linking to its section", () => {
   const header = headerOf(golden());
   assert.equal(occurrences(header, '<a class="tile'), 5);
   for (const tile of [
-    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>4</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">8 failure chains</span></a>',
-    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">8 <small>of 27</small></span><span class="sub">provisional, in 3 rows</span></a>',
-    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">10 warnings</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>5</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span></a>',
+    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">13 warnings</span></a>',
     '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
-    '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">88 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
+    '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">89 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
   ]) {
     assert.ok(header.includes(tile), `the header is missing the tile ${tile}`);
   }
@@ -322,8 +322,8 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
     attnItem(`1 row fails an automated check<br>${mark("blocker")}`,
       '<a href="#row-ch-7"><code>ch-7</code></a> D &mdash; Detection is 1 with no existing detection control carrying evidence',
       "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again."),
-    attnItem(`8 ratings not yet reviewed<br>${mark("provisional")}`,
-      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
+    attnItem(`11 ratings not yet reviewed<br>${mark("provisional")}`,
+      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
       "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does."),
     attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
@@ -396,10 +396,10 @@ test("the contents line wraps between its links, and each link is at least 24 px
   assert.ok(!template.includes(".toc a { margin-right"));
 });
 
-test("row marks: one handoff, three provisional rows, no stale row", () => {
+test("row marks: one handoff, four provisional rows, no stale row", () => {
   const index = indexTable(renderHtml(golden(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
-  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 3);
+  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 4);
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
 });
 
@@ -412,10 +412,10 @@ test("a flagged row carries the stale mark; a cleared row carries none", () => {
 });
 
 test("chains sort by priority, then by severity descending, then by id", () => {
-  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
   const html = renderHtml(golden(), table, template, vocabulary);
   const table_start = html.indexOf('id="chains"');
-  const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
+  const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
@@ -428,7 +428,7 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
     "Index of failure chains",
-    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
+    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);
   assert.equal(new Set(labels).size, labels.length);
@@ -634,9 +634,9 @@ test("a post_priority does not move a row in the sort order", () => {
   const ch3 = doc.chains.find((c) => c.id === "ch-3");
   assert.ok(ch3 && ch3.post_ratings, "ch-3 is the fixture's one post-action row");
   ch3.post_priority = computePriority(table, ch3.post_ratings);
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
   ch3.post_priority = { value: table.vocabulary[0], table: table.id, rpn: 1000 };
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
 });
 
 test("the provenance appendix names the catalog row, its tag, and the record the tag carries", () => {
@@ -732,7 +732,7 @@ test("the CLI writes the report and exits 0", () => {
     const r = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out]);
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">8 <small>of 27</small></span>'));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
   });
 });
 
@@ -768,7 +768,7 @@ test("an existing output needs --force", () => {
     assert.equal(readFileSync(out, "utf8"), "old report\n");
     const forced = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out, "--force"]);
     assert.equal(forced.status, 0);
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">8 <small>of 27</small></span>'));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
   });
 });
 
@@ -830,8 +830,8 @@ test("a computed block left stale by priority.ts --write is refused with COMPUTE
     assert.equal(render.status, 2);
     assert.equal(render.stdout, "");
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.quality_score is 88 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
+      "error COMPUTED_STALE: computed-stale: computed.quality_score is 89 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -904,7 +904,7 @@ test("a computed block whose lints hold the right findings in another order is r
     const { render, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
     assert.equal(existsSync(out), false);
   });
 });
@@ -917,7 +917,7 @@ test("a stored lint whose message alone differs from the validator's is refused,
     const { render, path, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });

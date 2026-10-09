@@ -18,6 +18,18 @@
       ],
       "security": "Session authentication is in scope as an ordinary element; any failure whose agent is an adversary is recorded as a handoff row to threat modeling rather than rated as a reliability failure alone."
     },
+    "codebases": [
+      {
+        "id": "checkout",
+        "name": "Checkout service",
+        "repo": "acme/checkout"
+      },
+      {
+        "id": "session-auth",
+        "name": "Session authentication library",
+        "repo": "acme/session-auth"
+      }
+    ],
     "ground_rules": [
       "The analysis covers the design of the checkout service and the interfaces it owns, not the storefront and not the gateway's internals.",
       "A rating is provisional until a named reviewer re-scores it against the anchors in scales-software.md."
@@ -68,6 +80,7 @@
       "parent": null,
       "boundary": "in_scope",
       "security_relevant": false,
+      "codebase": "checkout",
       "sources": [
         {
           "kind": "document",
@@ -137,6 +150,7 @@
       "boundary": "in_scope",
       "security_relevant": true,
       "security_rationale": "Issues and verifies the session token that authenticates a shopper; a wrong accept lets a stranger act as the shopper.",
+      "codebase": "session-auth",
       "sources": [
         {
           "kind": "document",
@@ -234,6 +248,12 @@
       "to": "pricing",
       "strength": "weak",
       "sla": "99.9% monthly"
+    },
+    {
+      "from": "checkout",
+      "to": "checkout.order-store",
+      "strength": "strong",
+      "sla": "99.99% monthly"
     }
   ],
   "chains": [
@@ -1025,10 +1045,79 @@
         "table": "priority-fmea-software-v1",
         "rpn": 105
       }
+    },
+    {
+      "id": "ch-9",
+      "function": "fn-checkout-order",
+      "failure_mode": "Checkout returns a retryable error to the storefront and the cart is not confirmed",
+      "effects": {
+        "local": "The checkout request receives no authorization decision within its budget and stops waiting for one.",
+        "next_level": "The storefront shows the shopper a retryable error and the cart stays unconfirmed.",
+        "end": "Shoppers cannot complete checkout for as long as the gateway stays degraded."
+      },
+      "causes": [
+        {
+          "text": "The authorization call exceeds its timeout budget and returns no decision",
+          "chain": "ch-1",
+          "cited_o": {
+            "value": 6,
+            "evidence_kind": "observed_incident",
+            "evidence_ref": "INC-2026-0314"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "kind": "detection",
+          "description": "Latency and error-rate alerting on gateway calls, paging the on-call engineer",
+          "status": "existing",
+          "evidence": {
+            "kind": "observed_incident",
+            "ref": "INC-2026-0314"
+          }
+        }
+      ],
+      "ratings": {
+        "S": {
+          "value": 9,
+          "rationale": "The end effect restates ch-1's, loss of checkout for all shoppers while the gateway is degraded, which the severity anchor places in the top class at majority radius.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "O": {
+          "value": 6,
+          "rationale": "The one cause is ch-1's failure mode, so this row's exposure is ch-1's: ch-1 rates O 6 on observed_incident INC-2026-0314.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        },
+        "D": {
+          "value": 3,
+          "rationale": "The gateway latency and error-rate alerting that paged the on-call engineer during INC-2026-0314 catches the cause before shoppers report it, which the detection anchor places near the middle.",
+          "evidence_kind": "estimate",
+          "review": {
+            "status": "provisional"
+          }
+        }
+      },
+      "actions": [],
+      "catalog_refs": [],
+      "stale": {
+        "flag": false
+      },
+      "history": [],
+      "priority": {
+        "value": "H",
+        "table": "priority-fmea-software-v1",
+        "rpn": 162
+      }
     }
   ],
   "computed": {
-    "quality_score": 88,
+    "quality_score": 89,
     "lints": [
       {
         "rule": "occurrence-estimate-without-trigger",
@@ -1091,13 +1180,31 @@
         "message": "The rating is still provisional and needs re-scoring"
       },
       {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/8/ratings/S",
+        "message": "The rating is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/8/ratings/O",
+        "message": "The rating is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/8/ratings/D",
+        "message": "The rating is still provisional and needs re-scoring"
+      },
+      {
         "rule": "seeded-action-without-incident",
         "severity": "warning",
         "pointer": "/chains/7/actions/1",
         "message": "action on a chain seeded from INC-2026-0314 carries no source_incident"
       }
     ],
-    "validated_at": "2026-10-02T06:33:53.564Z",
-    "validator_version": "0.1.0"
+    "validated_at": "2026-10-09T04:39:16.131Z",
+    "validator_version": "0.4.1"
   }
 }

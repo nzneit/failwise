@@ -579,14 +579,25 @@ test("runLints takes a rule subset", () => {
   assert.deepEqual(runLints(doc, [ruleById("detection-1-without-evidenced-control")]), []);
 });
 
-// The golden fixture's lint facts, recorded in the plan reference §H and asserted by Tasks 26,
-// 27 and 28. Pinned here so that a rule added in Step 5 which fires on the golden analysis fails
-// in this task rather than two tasks later inside validate.test.ts.
-test("the golden fixture produces exactly the eleven lints the later tasks assert", () => {
+// The golden fixture's lint facts. A rule that fires on the golden analysis fails here first, before validate.test.ts.
+test("the golden fixture produces exactly the fourteen lints the later tasks assert, none from the four rules of schema v3", () => {
   const doc = loadFixture<FmeaDocument>("checkout-service.fmea.json");
   const lints = runLints(doc);
-  assert.equal(lints.length, 11);
+  assert.equal(lints.length, 14);
   assert.equal(lints.filter((l) => l.severity === "blocker").length, 1);
+  for (const rule of ["repo-ref-codebase", "cause-chain-unlinked", "cause-chain-severity", "linked-cause-occurrence-drift"]) {
+    assert.deepEqual(lints.filter((l) => l.rule === rule), [], rule);
+  }
+});
+
+test("linked-cause-occurrence-drift on the golden fixture: ch-1's O raised to 7 gives exactly one finding, at /chains/8/ratings/O", () => {
+  const doc = golden();
+  assert.deepEqual(fired(doc, "linked-cause-occurrence-drift"), []);
+  doc.chains[0].ratings.O.value = 7;
+  assert.deepEqual(fired(doc, "linked-cause-occurrence-drift"), [{
+    rule: "linked-cause-occurrence-drift", severity: "warning", pointer: "/chains/8/ratings/O",
+    message: "cause 0 cites ch-1 at O 6 (observed_incident, INC-2026-0314); ch-1 now rates O 7 (observed_incident, INC-2026-0314)",
+  }]);
 });
 
 // ---- The loaded table's broken properties, which validateDocument adds after the document's lints.
