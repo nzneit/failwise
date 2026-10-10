@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionRefs, buildItem, itemKey, splitKey, textHash } from "./lib/tracker/items.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { actionRefs, buildItem, DONE_CLOSE, DONE_DECISION, DONE_OTHER, itemKey, splitKey, textHash } from "./lib/tracker/items.ts";
+import type { Block, Section, TrackedItem } from "./lib/tracker/provider.ts";
 import { clone, minimalDoc, rating } from "./test-helpers.ts";
 import type { Action, FmeaDocument, TrackerConfig } from "./lib/types.ts";
 
@@ -77,34 +80,11 @@ test("a description that is only whitespace gives the title <chain id>/<action i
   assert.equal(itemOf(docWith(" \n\t ")).content.title, "ch-1/act-1");
 });
 
-test("the facts are seven, in the order of §7, with the causes joined by '; '", () => {
-  const doc = docWith("do it");
-  doc.chains[0].causes.push({ text: "disk full" });
-  const { facts } = itemOf(doc).content;
-  assert.deepEqual(facts, [
-    { label: "Failure mode", value: "stops serving" },
-    { label: "End effect", value: "users cannot check out" },
-    { label: "Causes", value: "process crash; disk full" },
-    { label: "Row priority", value: "M (S 8, O 3, D 4)" },
-    { label: "Owner", value: "A. Owner" },
-    { label: "Target date", value: "2026-11-01" },
-    { label: "Status when created", value: "Open" },
-  ]);
-  assert.equal(itemOf(doc).content.action, "do it");
-});
-
-test("the priority fact says it rests on provisional ratings when any of the three is provisional", () => {
-  const doc = docWith("do it");
-  doc.chains[0].ratings.O = rating(3, "provisional");
-  const value = itemOf(doc).content.facts[3].value;
-  assert.equal(value, "M (S 8, O 3, D 4), resting on provisional ratings");
-});
-
 test("the origin carries the analysis name, the ids, and <record_url>#row-<chain id> only when record_url is set", () => {
   const doc = docWith("do it");
-  assert.deepEqual(itemOf(doc).content.origin, { analysis: "Minimal", chain: "ch-1", action: "act-1" });
+  assert.deepEqual(itemOf(doc).content.origin, { analysis: "Minimal", version: 1, chain: "ch-1", action: "act-1" });
   const withUrl = itemOf(doc, { ...config, record_url: "https://example.org/report.html" }).content.origin;
-  assert.deepEqual(withUrl, { analysis: "Minimal", chain: "ch-1", action: "act-1", url: "https://example.org/report.html#row-ch-1" });
+  assert.deepEqual(withUrl, { analysis: "Minimal", version: 1, chain: "ch-1", action: "act-1", url: "https://example.org/report.html#row-ch-1" });
 });
 
 test("the item carries the key, the text hash, the label and the target date", () => {
@@ -113,4 +93,226 @@ test("the item carries the key, the text hash, the label and the target date", (
   assert.equal(item.text, textHash("Add a retry budget"));
   assert.equal(item.label, "failwise");
   assert.equal(item.due, "2026-11-01");
+});
+
+test("origin.version is the analysis's meta.version", () => {
+  const doc = docWith("do it");
+  doc.meta.version = 7;
+  assert.equal(itemOf(doc).content.origin.version, 7);
+});
+
+const FIXTURE = join(import.meta.dirname, "..", "evals", "fixtures", "checkout-service.fmea.json");
+const fixture = (): FmeaDocument => JSON.parse(readFileSync(FIXTURE, "utf8")) as FmeaDocument;
+
+/** The item of the action `actionId` on the chain `chainId` of `doc`. */
+function itemAt(doc: FmeaDocument, chainId: string, actionId: string): TrackedItem {
+  const ref = actionRefs(doc).find((r) => r.chain.id === chainId && r.action.id === actionId);
+  assert.ok(ref, `${chainId}/${actionId}`);
+  return buildItem(doc, config, ref);
+}
+
+const fixtureItem = (doc: FmeaDocument = fixture()): TrackedItem => itemAt(doc, "ch-2", "act-1");
+
+function sectionOf(item: TrackedItem, heading: string): Section {
+  const found = item.content.sections.find((s) => s.heading === heading);
+  assert.ok(found, heading);
+  return found;
+}
+
+/** The fact or list block labelled `label` in the section, or undefined. */
+function blockOf(item: TrackedItem, heading: string, label: string): Block | undefined {
+  return sectionOf(item, heading).blocks.find((b) => b.kind !== "text" && b.label === label);
+}
+
+function factOf(item: TrackedItem, heading: string, label: string): string | undefined {
+  const b = blockOf(item, heading, label);
+  return b?.kind === "fact" ? b.value : undefined;
+}
+
+function listOf(item: TrackedItem, heading: string, label: string): string[] | undefined {
+  const b = blockOf(item, heading, label);
+  return b?.kind === "list" ? b.items : undefined;
+}
+
+const labelsOf = (item: TrackedItem, heading: string): string[] =>
+  sectionOf(item, heading).blocks.map((b) => (b.kind === "text" ? `text:${b.text}` : b.label));
+
+// The item has six sections: the five the builder holds, in this order, and the reference each
+// renderer writes from the origin.
+const HEADINGS = ["Where", "The failure", "Priority", "This action", "Done when"];
+
+test("the builder's sections are the five before the reference, in order, with the exact headings", () => {
+  assert.deepEqual(fixtureItem().content.sections.map((s) => s.heading), HEADINGS);
+  assert.deepEqual(itemOf(docWith("do it")).content.sections.map((s) => s.heading), HEADINGS);
+});
+
+test("Where on the fixture: the element with kind and boundary, the function, two conditions and for whom", () => {
+  const item = fixtureItem();
+  assert.deepEqual(labelsOf(item, "Where"), ["Element", "Function", "For whom", "Conditions"]);
+  assert.equal(factOf(item, "Where", "Element"), "Checkout service (service, in scope)");
+  assert.equal(factOf(item, "Where", "Function"), "Turn a submitted cart into a confirmed order exactly once");
+  assert.deepEqual(listOf(item, "Where", "Conditions"), ["under promotion traffic", "while a dependency is degraded"]);
+  assert.equal(factOf(item, "Where", "For whom"), "signed-in shoppers");
+});
+
+test("Where appends security-relevant when the flag is set, prints enum ids with spaces, and leaves out empty conditions", () => {
+  const doc = docWith("do it");
+  doc.elements[0] = { ...doc.elements[0], kind: "event_stream", boundary: "third_party", security_relevant: true };
+  const item = itemOf(doc);
+  assert.equal(factOf(item, "Where", "Element"), "Service (event stream, third party, security-relevant)");
+  assert.deepEqual(labelsOf(item, "Where"), ["Element", "Function", "For whom"]);
+  doc.elements[0].boundary = "owned_outside";
+  assert.equal(factOf(itemOf(doc), "Where", "Element"), "Service (event stream, owned outside, security-relevant)");
+});
+
+test("Where prints the id when the function or the element is missing, leaves out the dependent blocks, and has no element id to print without the function", () => {
+  const noElement = docWith("do it");
+  noElement.functions[0].element = "gone";
+  noElement.functions[0].conditions = ["c"];
+  const a = itemOf(noElement);
+  assert.deepEqual(labelsOf(a, "Where"), ["Element", "Function", "For whom", "Conditions"]);
+  assert.equal(factOf(a, "Where", "Element"), "gone");
+  const noFunction = docWith("do it");
+  noFunction.chains[0].function = "fn-gone";
+  const b = itemOf(noFunction);
+  assert.deepEqual(labelsOf(b, "Where"), ["Function"]);
+  assert.equal(factOf(b, "Where", "Function"), "fn-gone");
+});
+
+test("The failure on the fixture: mode, trigger, three effects, causes with origins and two controls", () => {
+  const item = fixtureItem();
+  const chain = fixture().chains.find((c) => c.id === "ch-2");
+  assert.ok(chain);
+  assert.deepEqual(labelsOf(item, "The failure"), ["Failure mode", "Trigger", "Local effect", "Next-level effect", "End effect", "Causes", "Controls"]);
+  assert.equal(factOf(item, "The failure", "Failure mode"), chain.failure_mode);
+  assert.equal(factOf(item, "The failure", "Trigger"), chain.trigger);
+  assert.equal(factOf(item, "The failure", "Local effect"), chain.effects.local);
+  assert.equal(factOf(item, "The failure", "Next-level effect"), chain.effects.next_level);
+  assert.equal(factOf(item, "The failure", "End effect"), chain.effects.end);
+  assert.deepEqual(listOf(item, "The failure", "Causes"), [`${chain.causes[0].text} (origin: design)`, `${chain.causes[1].text} (origin: code)`]);
+  assert.deepEqual(listOf(item, "The failure", "Controls"), [
+    "prevention, existing: Idempotency keys on submissions, deduplicating a retried cart (evidence: test result, idempotency contract suite)",
+    "compensating, existing: Fallback to the last quoted price held in the cart when pricing does not answer (evidence: test result, pricing-fallback integration suite)",
+  ]);
+});
+
+test("The failure: no trigger, the four cause suffixes, the three control evidence forms and the no-control text", () => {
+  const doc = docWith("do it");
+  doc.chains[0].causes = [
+    { text: "a", origin: "specification", adversarial: true },
+    { text: "b", adversarial: true },
+    { text: "c" },
+    { text: "d", origin: "code", adversarial: false },
+  ];
+  const bare = itemOf(doc);
+  assert.deepEqual(labelsOf(bare, "The failure"), ["Failure mode", "Local effect", "Next-level effect", "End effect", "Causes", "text:The chain records no control."]);
+  assert.deepEqual(listOf(bare, "The failure", "Causes"), ["a (origin: specification, adversarial)", "b (adversarial)", "c", "d (origin: code)"]);
+  doc.chains[0].controls = [
+    { kind: "detection", description: "alert", status: "planned", evidence: { kind: "observed_incident", ref: "INC-1" } },
+    { kind: "prevention", description: "guard", status: "existing", evidence: { kind: "estimate" } },
+    { kind: "compensating", description: "fallback", status: "existing", evidence: { kind: "none" } },
+  ];
+  const controlled = itemOf(doc);
+  assert.deepEqual(listOf(controlled, "The failure", "Controls"), [
+    "detection, planned: alert (evidence: observed incident, INC-1)",
+    "prevention, existing: guard (evidence: estimate)",
+    "compensating, existing: fallback (no evidence)",
+  ]);
+  assert.ok(!labelsOf(controlled, "The failure").includes("text:The chain records no control."));
+});
+
+test("Priority: the chain priority, the table and the three ratings with rationale, evidence and review", () => {
+  const item = fixtureItem();
+  const chain = fixture().chains.find((c) => c.id === "ch-2");
+  assert.ok(chain);
+  assert.deepEqual(labelsOf(item, "Priority"), ["Chain priority", "Table", "S 10", "O 8", "D 4"]);
+  assert.equal(factOf(item, "Priority", "Chain priority"), "H (S 10, O 8, D 4), resting on provisional ratings");
+  assert.equal(factOf(item, "Priority", "Table"), "priority-fmea-software-v1");
+  assert.equal(factOf(item, "Priority", "S 10"), `${chain.ratings.S.rationale} (evidence: estimate; provisional)`);
+  assert.equal(factOf(item, "Priority", "O 8"), `${chain.ratings.O.rationale} (evidence: estimate; provisional)`);
+  assert.equal(factOf(item, "Priority", "D 4"), `${chain.ratings.D.rationale} (evidence: estimate; provisional)`);
+});
+
+test("the chain priority says it rests on provisional ratings when any of the three is provisional, and not otherwise", () => {
+  const doc = docWith("do it");
+  assert.equal(factOf(itemOf(doc), "Priority", "Chain priority"), "M (S 8, O 3, D 4)");
+  doc.chains[0].ratings.O = rating(3, "provisional");
+  assert.equal(factOf(itemOf(doc), "Priority", "Chain priority"), "M (S 8, O 3, D 4), resting on provisional ratings");
+});
+
+test("Priority: the re-scored by X on D, the bare re-scored, and the authored forms, with an evidence ref", () => {
+  const doc = docWith("do it");
+  doc.chains[0].ratings.S = { value: 8, rationale: "r", evidence_kind: "test_result", evidence_ref: "suite-1", review: { status: "rescored", by: "A", date: "2026-09-03" } };
+  doc.chains[0].ratings.O = { value: 3, rationale: "r", evidence_kind: "observed_incident", review: { status: "rescored" } };
+  doc.chains[0].ratings.D = { value: 4, rationale: "r", evidence_kind: "estimate", review: { status: "authored", by: "B" } };
+  const item = itemOf(doc);
+  assert.equal(factOf(item, "Priority", "S 8"), "r (evidence: test result, suite-1; re-scored by A on 2026-09-03)");
+  assert.equal(factOf(item, "Priority", "O 3"), "r (evidence: observed incident; re-scored)");
+  assert.equal(factOf(item, "Priority", "D 4"), "r (evidence: estimate; authored by B)");
+  doc.chains[0].ratings.D.review = { status: "authored", date: "2026-09-04" };
+  assert.equal(factOf(itemOf(doc), "Priority", "D 4"), "r (evidence: estimate; authored on 2026-09-04)");
+});
+
+test("This action: owner, target date and status, with no optional block on a bare chain", () => {
+  const item = itemOf(docWith("do it"));
+  assert.deepEqual(labelsOf(item, "This action"), ["Owner", "Target date", "Status when created"]);
+  assert.equal(factOf(item, "This action", "Owner"), "A. Owner");
+  assert.equal(factOf(item, "This action", "Target date"), "2026-11-01");
+  assert.equal(factOf(item, "This action", "Status when created"), "Open");
+});
+
+test("This action: the other actions on the chain, in document order, only when there is another", () => {
+  const doc = docWith("first");
+  doc.chains[0].actions.push({ ...action("act-2", "second"), status: "Decision pending" }, { ...action("act-3", "third"), status: "Completed" });
+  const second = buildItem(doc, config, actionRefs(doc)[1]);
+  assert.deepEqual(listOf(second, "This action", "Other actions on this chain"), ["act-1: Open", "act-3: Completed"]);
+  assert.deepEqual(labelsOf(second, "This action"), ["Owner", "Target date", "Status when created", "Other actions on this chain"]);
+  assert.equal(listOf(itemOf(docWith("alone")), "This action", "Other actions on this chain"), undefined);
+});
+
+test("This action: the handoff, the stale flag in its three forms, and the source incident", () => {
+  const doc = docWith("do it");
+  const chain = doc.chains[0];
+  chain.handoff = { to: "threat-model", reason: "an adversary can drive it", adversary_cause: "x" };
+  chain.stale = { flag: true, reason: "element-changed", since_version: 3 };
+  chain.source_incident = "INC-chain";
+  chain.actions[0].source_incident = "INC-action";
+  assert.deepEqual(labelsOf(itemOf(doc), "This action"), ["Owner", "Target date", "Status when created", "Threat-model handoff", "Stale", "Source incident"]);
+  chain.actions.push(action("act-2", "second"));
+  const full = itemOf(doc);
+  assert.deepEqual(labelsOf(full, "This action"), ["Owner", "Target date", "Status when created", "Threat-model handoff", "Stale", "Source incident", "Other actions on this chain"]);
+  assert.equal(factOf(full, "This action", "Threat-model handoff"), "an adversary can drive it");
+  assert.equal(factOf(full, "This action", "Stale"), "element-changed since version 3");
+  assert.equal(factOf(full, "This action", "Source incident"), "INC-action");
+  chain.stale = { flag: true };
+  delete chain.actions[0].source_incident;
+  assert.equal(factOf(itemOf(doc), "This action", "Stale"), "flagged");
+  assert.equal(factOf(itemOf(doc), "This action", "Source incident"), "INC-chain");
+  chain.stale = { flag: true, reason: "control-removed" };
+  assert.equal(factOf(itemOf(doc), "This action", "Stale"), "control-removed");
+  chain.stale = { flag: false, reason: "control-removed" };
+  delete chain.source_incident;
+  delete chain.handoff;
+  assert.deepEqual(labelsOf(itemOf(doc), "This action"), ["Owner", "Target date", "Status when created", "Other actions on this chain"]);
+});
+
+test("Done when: the decision passage on a Decision pending action, the other passage on an Open one, the close passage second", () => {
+  assert.deepEqual(sectionOf(fixtureItem(), "Done when").blocks, [{ kind: "text", text: DONE_DECISION }, { kind: "text", text: DONE_CLOSE }]);
+  assert.deepEqual(sectionOf(itemOf(docWith("do it")), "Done when").blocks, [{ kind: "text", text: DONE_OTHER }, { kind: "text", text: DONE_CLOSE }]);
+  assert.equal(DONE_DECISION, "This action is a decision. It is done when the decision is recorded where the action says. Then close this item.");
+  assert.equal(DONE_OTHER, "Carry out the action above, then close this item.");
+  assert.equal(DONE_CLOSE, "A close as done proposes Completed in the analysis. A close as not done proposes Not Implemented. A person confirms each proposal. After a Completed, the chain can be rated again.");
+});
+
+test("every text block is a done passage or the no-control sentence, so analysis text never enters a text block", () => {
+  const allowed = new Set([DONE_DECISION, DONE_OTHER, DONE_CLOSE, "The chain records no control."]);
+  const doc = fixture();
+  const items = [...actionRefs(doc).map((ref) => buildItem(doc, config, ref)), itemOf(docWith("do it"))];
+  let seen = 0;
+  for (const item of items) for (const section of item.content.sections) for (const block of section.blocks) {
+    if (block.kind !== "text") continue;
+    seen += 1;
+    assert.ok(allowed.has(block.text), block.text);
+  }
+  assert.ok(seen >= items.length * 2);
 });

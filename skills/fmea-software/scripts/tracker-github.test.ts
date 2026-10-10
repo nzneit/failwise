@@ -52,7 +52,7 @@ const labelAnswer = answer(200, { name: "failwise", color: "6e7781" });
 function item(title = "Add a retry budget"): TrackedItem {
   return {
     key: "fmea-min/ch-1/act-1", text: "0123456789ab", label: "failwise", due: "2026-11-01",
-    content: { title, action: "Add a retry budget to the client", facts: [{ label: "Owner", value: "A. Owner" }], origin: { analysis: "Checkout", chain: "ch-1", action: "act-1" } },
+    content: { title, action: "Add a retry budget to the client", sections: [{ heading: "This action", blocks: [{ kind: "fact", label: "Owner", value: "A. Owner" }] }], origin: { analysis: "Checkout", version: 1, chain: "ch-1", action: "act-1" } },
   };
 }
 

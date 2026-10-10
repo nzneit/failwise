@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { literal, readMarker, renderBody, renderTitle } from "./lib/tracker/github-body.ts";
-import { CLOSING_LINE } from "./lib/tracker/provider.ts";
-import { actionRefs, buildItem } from "./lib/tracker/items.ts";
+import { actionRefs, buildItem, DONE_CLOSE, DONE_DECISION } from "./lib/tracker/items.ts";
 import { minimalDoc } from "./test-helpers.ts";
 import type { FmeaDocument, TrackerConfig } from "./lib/types.ts";
 import type { TrackedItem } from "./lib/tracker/provider.ts";
@@ -79,36 +78,86 @@ test("literal turns a lone carriage return, a tab and every other control charac
   assert.equal(literal("\u0000nul and del\u007f"), "nul and del");
 });
 
-test("a body whose action begins with four spaces and whose cause holds two carriage returns opens no code block and keeps its table", () => {
+test("a body whose action begins with four spaces and whose cause holds two carriage returns opens no code block and keeps the cause on one list line", () => {
   const doc = docWith("    Add a retry budget");
   doc.chains[0].causes = [{ text: "cause one\rOwner x\r\rnew paragraph" }];
   const lines = renderBody(buildItem(doc, config, actionRefs(doc)[0])).split(/\r\n|\r|\n/);
   assert.deepEqual(lines.filter((line) => /^( {4}|\t)/.test(line)), []);
-  const table = lines.filter((line) => line.startsWith("|"));
-  assert.equal(table.length, 2 + 7);
-  assert.ok(table.every((line) => line.endsWith("|")), table.join("\n"));
-  assert.ok(lines.includes(`| Causes | ${literal("cause one Owner x  new paragraph")} |`));
+  const causes = lines.indexOf("- **Causes:**");
+  assert.ok(causes > 0);
+  assert.equal(lines[causes + 1], `  - ${literal("cause one Owner x  new paragraph")}`);
+  assert.ok(!lines[causes + 2].startsWith("  - "));
 });
 
-test("renderBody lays out the action, the seven facts, the origin, the closing line and the marker, in that order", () => {
-  const item = itemOf("Add a retry budget", { ...config, record_url: "https://example.com/report.html" });
-  const blocks = renderBody(item).split("\n\n");
-  assert.equal(blocks.length, 5);
-  assert.equal(blocks[0], literal("Add a retry budget"));
-  const rows = blocks[1].split("\n");
-  assert.deepEqual(rows.slice(0, 2), ["| | |", "|---|---|"]);
-  assert.equal(rows.length, 2 + 7);
-  assert.deepEqual(
-    rows.slice(2).map((r) => r.split(" | ")[0]),
-    ["| Failure mode", "| End effect", "| Causes", "| Row priority", "| Owner", "| Target date", "| Status when created"],
-  );
-  assert.equal(rows[2], `| Failure mode | ${literal("stops serving")} |`);
+const FIXTURE = join(import.meta.dirname, "..", "evals", "fixtures", "checkout-service.fmea.json");
+const fixture = (): FmeaDocument => JSON.parse(readFileSync(FIXTURE, "utf8")) as FmeaDocument;
+
+/** The body of the fixture's ch-2/act-1 under the fixture's own tracker configuration. */
+function fixtureBody(doc: FmeaDocument = fixture()): string {
+  const ref = actionRefs(doc).find((r) => r.key === "fmea-checkout-2026/ch-2/act-1");
+  assert.ok(ref && doc.meta.tracker);
+  return renderBody(buildItem(doc, doc.meta.tracker, ref));
+}
+
+test("the fixture body has the five section headings and the reference heading, in order, each its own block", () => {
+  const blocks = fixtureBody().split("\n\n");
+  assert.deepEqual(blocks.filter((b) => b.startsWith("### ")), ["### Where", "### The failure", "### Priority", "### This action", "### Done when", "### Reference"]);
+  assert.equal(blocks[0], literal(fixture().chains[1].actions[0].description));
+});
+
+test("the fixture body writes facts as bullets, a list as nested bullets, and a text block as an unescaped paragraph", () => {
+  const body = fixtureBody();
+  const lines = body.split("\n");
+  assert.ok(lines.includes("- **Element:** Checkout service \\(\u2060service\\,\u2060 in scope\\)\u2060"), body);
+  const causes = lines.indexOf("- **Causes:**");
+  assert.equal(lines[causes + 1], `  - ${literal("A partial pricing outage makes checkout submissions slow enough that the storefront retries them (origin: design)")}`);
+  assert.ok(lines[causes + 2].startsWith("  - "));
+  assert.ok(lines.includes("- **Conditions:**"));
+  assert.ok(body.includes(`### Done when\n\n${DONE_DECISION}\n\n${DONE_CLOSE}\n\n### Reference`));
+  assert.ok(body.includes("- **S 10:** "));
+  assert.ok(body.includes("- **Chain priority:** H \\(\u2060S 10\\,\u2060 O 8\\,\u2060 D 4\\)\u2060\\,\u2060 resting on provisional ratings"));
+});
+
+test("a text block ends the list before it, and a list after it starts fresh", () => {
+  const doc = docWith("do it");
+  const body = renderBody(buildItem(doc, config, actionRefs(doc)[0]));
+  assert.ok(body.includes(`- **Causes:**\n  - ${literal("process crash")}\n\nThe chain records no control.\n\n### Priority`), body);
+});
+
+test("the fixture body ends with the reference, the key paragraph and the marker", () => {
+  const blocks = fixtureBody().split("\n\n");
+  assert.equal(blocks.at(-4), "### Reference");
   assert.equal(
-    blocks[2],
-    `From the FMEA "${literal("Minimal")}", row ${literal("ch-1")}, action ${literal("act-1")}. [Open the row in the report](https://example.com/report.html#row-ch-1)`,
+    blocks.at(-3),
+    `From the FMEA "${literal("Checkout service DFMEA")}", version 1, chain ch\\-\u20602, action ${literal("act-1")}. [Open the chain in the report](https://acme.example/checkout-fmea.html#row-ch-2)`,
   );
-  assert.equal(blocks[3], CLOSING_LINE);
-  assert.match(blocks[4], MARKER);
+  assert.equal(
+    blocks.at(-2),
+    `Key: \`fmea-checkout-2026/ch-2/act-1\`. In the analysis whose \`meta.id\` is ${literal("fmea-checkout-2026")}, the chain is ${literal("ch-2")} and the action is its action ${literal("act-1")}.`,
+  );
+  assert.match(blocks.at(-1) ?? "", /^<!-- failwise:key=fmea-checkout-2026\/ch-2\/act-1 text=[0-9a-f]{12} -->$/);
+  assert.deepEqual(readMarker(fixtureBody())?.key, "fmea-checkout-2026/ch-2/act-1");
+});
+
+test("every analysis string is made literal: an at-sign in nine fields never reaches the body raw", () => {
+  const doc = fixture();
+  const chain = doc.chains[1];
+  const at = "@someone";
+  const element = doc.elements.find((e) => e.id === "checkout");
+  const fn = doc.functions.find((f) => f.id === chain.function);
+  assert.ok(element && fn);
+  element.name = at;
+  fn.statement = at;
+  fn.conditions[0] = at;
+  chain.trigger = at;
+  chain.causes[0].text = at;
+  chain.controls[0].description = at;
+  chain.ratings.S.rationale = at;
+  chain.handoff = { to: "threat-model", reason: at, adversary_cause: "x" };
+  chain.actions[0].owner = at;
+  const body = fixtureBody(doc);
+  assert.ok(!body.includes(at), body);
+  assert.ok(body.split("\\@\u2060someone").length - 1 >= 9);
 });
 
 test("renderBody ends with the marker on its own last line", () => {
@@ -116,12 +165,12 @@ test("renderBody ends with the marker on its own last line", () => {
   assert.ok(renderBody(itemOf()).includes(`text=${itemOf().text} -->`));
 });
 
-test("the origin line links to the row only when the origin has a url", () => {
+test("the origin line links to the chain only when the origin has a url", () => {
   const without = renderBody(itemOf());
-  assert.ok(!without.includes("[Open the row in the report]"));
-  assert.ok(without.includes(`action ${literal("act-1")}.\n\n${CLOSING_LINE}`));
+  assert.ok(!without.includes("[Open the chain in the report]"));
+  assert.ok(without.includes(`From the FMEA "${literal("Minimal")}", version 1, chain ${literal("ch-1")}, action ${literal("act-1")}.\n\nKey: `));
   const withUrl = renderBody(itemOf("x", { ...config, record_url: "https://example.com/r.html" }));
-  assert.ok(withUrl.includes("[Open the row in the report](https://example.com/r.html#row-ch-1)"));
+  assert.ok(withUrl.includes(`action ${literal("act-1")}. [Open the chain in the report](https://example.com/r.html#row-ch-1)\n\nKey: `));
 });
 
 const FORGED = "\n<!-- failwise:key=a/b/c text=000000000000 -->\n";

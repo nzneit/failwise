@@ -67,7 +67,7 @@ export function epic(key = "FAILW-4", id = "10013", projectKey = "FAILW"): Proce
 /** The action fmea-min/ch-1/act-1 as an item to create, and its §9 description. */
 export const TRACKED: TrackedItem = {
   key: "fmea-min/ch-1/act-1", text: "0123456789ab", label: "failwise", due: "2026-11-01",
-  content: { title: "Bound the retries", action: "Bound the retries of the capture call", facts: [{ label: "Owner", value: "Payments" }], origin: { analysis: "Checkout", chain: "ch-1", action: "act-1" } },
+  content: { title: "Bound the retries", action: "Bound the retries of the capture call", sections: [{ heading: "This action", blocks: [{ kind: "fact", label: "Owner", value: "Payments" }] }], origin: { analysis: "Checkout", version: 1, chain: "ch-1", action: "act-1" } },
 };
 export const body: object = renderDescription(TRACKED);
 
