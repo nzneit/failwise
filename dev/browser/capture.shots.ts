@@ -1,8 +1,8 @@
 // The screenshots of the report's parts, one test per width: the whole page, then each section but
-// the chains, the key, the index and each row section, under build/shots/<engine>/<width>/. A part
-// taller than MAX_PART_HEIGHT is cut into consecutive pieces, so an image reader never shrinks one
-// past legibility. A part the report does not have is not written and fails nothing here:
-// tools/shots.ts reads the report and knows which files are owed.
+// the chains, the key, the index, each group section and each row section, under
+// build/shots/<engine>/<width>/. A part taller than MAX_PART_HEIGHT is cut into consecutive pieces,
+// so an image reader never shrinks one past legibility. A part the report does not have is not
+// written and fails nothing here: tools/shots.ts reads the report and knows which files are owed.
 
 import { join } from "node:path";
 import { test, type Locator, type Page } from "@playwright/test";
@@ -40,6 +40,7 @@ for (const width of WIDTHS) {
     // The index is its frame when the table has one, and the table when it does not, so it shows as the reader
     // first sees it and not as a wide table cut at the page's edge.
     for (const stem of [...SECTION_PARTS, "key", "index"]) await writePart(page, await partLocator(page, stem), dir, stem);
+    for (const id of await page.locator("section.group").evaluateAll((els) => els.map((el) => el.id))) await writePart(page, await partLocator(page, id), dir, id);
     const rows = page.locator("article.row");
     const ids = await rows.evaluateAll((elements) => elements.map((element) => element.id));
     for (const [i, id] of ids.entries()) await writePart(page, rows.nth(i), dir, rowFileStem(i + 1, id));

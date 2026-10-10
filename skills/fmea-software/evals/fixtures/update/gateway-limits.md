@@ -35,7 +35,7 @@ Synthetic inputs for the fmea-software evals. Nothing here describes a real syst
 
 ## SLAs and limits
 
-- checkout.payment-gateway: 99.95% monthly availability; 50 rps per merchant, enforced by the gateway with HTTP 429.
+- checkout.payment-gateway: 99.95% monthly availability; 25 rps per merchant, enforced by the gateway with HTTP 429.
 - pricing: 99.9% monthly availability.
 - checkout.order-store: 99.99% monthly availability; no published request ceiling.
 

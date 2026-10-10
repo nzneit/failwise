@@ -7,16 +7,18 @@
 // `bun tools/shots.ts` works as well. It takes the gate's --engines and --report (not --fetch:
 // tools/check-browser.ts fetches the browsers) and runs Playwright's test runner with
 // dev/browser/shots.config.ts. Under build/shots/<engine>/<width>/ it writes page.png, one image
-// per part of the report (each section but the chains, the key, the index, each row section),
-// none taller than 1,600 px, a taller part in pieces <stem>-p1.png, <stem>-p2.png and so on; and
-// build/shots/chromium/print.pdf. build/shots is removed first, so an earlier run's files cannot
-// stand in. The command reads from the report which files it owes and exits 1 with an
-// `error UNVERIFIED: build/shots/<folder>/ lacks <stem>` line for each one missing; otherwise it
-// prints how many files it found. Its other coded lines are the gate's (tools/lib/browser.ts).
+// per part of the report (each section but the chains, the key, the index, each group section,
+// each row section), none taller than 1,600 px, a taller part in pieces <stem>-p1.png,
+// <stem>-p2.png and so on; and build/shots/chromium/print.pdf. build/shots is removed first, so
+// an earlier run's files cannot stand in. The command reads from the report which files it owes
+// and exits 1 with an `error UNVERIFIED: build/shots/<folder>/ lacks <stem>` line for each one
+// missing; otherwise it prints how many files it found. Its other coded lines are the gate's
+// (tools/lib/browser.ts).
 
 import { join } from "node:path";
 import { isEntry } from "./lib/entry.ts";
 import { defaultMachine, runBrowser, type Machine, type Run } from "./lib/browser.ts";
+import { groupStems } from "./lib/compare-views.ts";
 import { rowFileStem, SECTION_PARTS, WIDTHS, type Engine } from "../dev/browser/matrix.ts";
 
 const SHOTS = "build/shots";
@@ -30,7 +32,7 @@ interface Owed {
 
 function owedBy(html: string): Owed {
   const chains = html.includes('<table class="index"') ? ["key", "index"] : [];
-  return { parts: [...SECTION_PARTS, ...chains], rows: html.split('<article class="row" id="').length - 1 };
+  return { parts: [...SECTION_PARTS, ...chains, ...groupStems(html)], rows: html.split('<article class="row" id="').length - 1 };
 }
 
 /** The names in a folder, or none when it cannot be listed, so everything owed there is missing. */

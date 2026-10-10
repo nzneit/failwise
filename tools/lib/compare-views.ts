@@ -12,9 +12,10 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 
 /** The parts of a rendered report, in report order: each name of SECTION_PARTS with a `<section id="<name>"`,
  *  then "key" and "index" when the report contains `<table class="index"` (a prefix, so a table that carries
- *  further attributes counts), then one rowStem per `<article class="row" id="...">`, its id entity-decoded
- *  (&lt; &gt; &quot; &#39;, then &amp;) before it is reduced. `rows` maps each row stem to the decoded ids
- *  that reduce to it, a repeated id listed each time. */
+ *  further attributes counts), then the decoded id of each `<section class="group" id="...">` in document order,
+ *  not reduced, then one rowStem per `<article class="row" id="...">`, its id entity-decoded (&lt; &gt; &quot;
+ *  &#39;, then &amp;) before it is reduced. `rows` maps each row stem to the decoded ids that reduce to it, a
+ *  repeated id listed each time; a group stem never enters it. */
 export interface Parts {
   stems: string[];
   rows: Map<string, string[]>;
@@ -30,6 +31,11 @@ function decoded(value: string): string {
     .replaceAll("&amp;", "&");
 }
 
+/** The decoded id of each `<section class="group" id="...">` of a rendered report, in document order. */
+export function groupStems(html: string): string[] {
+  return [...html.matchAll(/<section class="group" id="([^"]*)"/g)].map((m) => decoded(m[1]));
+}
+
 export function partsOf(html: string): Parts {
   const sections = SECTION_PARTS.filter((name) => html.includes(`<section id="${name}"`));
   const chains = html.includes('<table class="index"') ? ["key", "index"] : [];
@@ -39,7 +45,7 @@ export function partsOf(html: string): Parts {
     const stem = rowStem(id);
     rows.set(stem, [...(rows.get(stem) ?? []), id]);
   }
-  return { stems: [...sections, ...chains, ...ids.map(rowStem)], rows };
+  return { stems: [...sections, ...chains, ...groupStems(html), ...ids.map(rowStem)], rows };
 }
 
 export interface PartPlan {

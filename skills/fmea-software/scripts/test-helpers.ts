@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import type { FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus } from "./lib/types.ts";
+import type { Chain, CitedOccurrence, DependencyEdge, Element, FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus, Strength } from "./lib/types.ts";
 import { computePriority } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 
@@ -45,11 +45,16 @@ export function bandTable(bySBand: [string, string, string]): PriorityTable {
   return { id: "priority-test-properties", vocabulary: ["H", "M", "L"], bands: { S: bands, O: clone(bands), D: clone(bands) }, cells };
 }
 
+/** Writes `value` as indented JSON with a final newline to `name` in `dir`, and returns the path. */
+export function writeJson(dir: string, name: string, value: unknown): string {
+  const path = join(dir, name);
+  writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
+  return path;
+}
+
 /** Writes `table` to table.json in `dir`, as a --table-file, and returns the path. */
 export function writeTable(dir: string, table: PriorityTable): string {
-  const path = join(dir, "table.json");
-  writeFileSync(path, JSON.stringify(table, null, 2) + "\n");
-  return path;
+  return writeJson(dir, "table.json", table);
 }
 
 /** minimalDoc as priority.ts --write leaves it under `table`: the table recorded, the row priced by it. */
@@ -111,24 +116,55 @@ export function changedMessage(path: string): string {
   return `${path} changed after this command last read or wrote it, so it was not replaced and holds the other writer's change: run the command again on the file as it now is`;
 }
 
-/** One way a v1 document reaches a script: a name, the change that turns the checkout fixture into
- *  it, and the pointer of the KIND_LEGACY line that refuses it. validate.ts, render.ts and track.ts
- *  are each run over the whole list. */
-export interface LegacyTrigger { name: string; mutate: (doc: FmeaDocument) => void; pointer: string }
+/** One way a v1 or v2 document reaches a script: a name, the change that turns the checkout fixture
+ *  into it, and the pointer and code of the KIND_LEGACY or DEPENDENCY_LEGACY line that refuses it.
+ *  validate.ts, render.ts and track.ts are each run over the whole list. */
+export interface LegacyTrigger { name: string; mutate: (doc: FmeaDocument) => void; pointer: string; code: "KIND_LEGACY" | "DEPENDENCY_LEGACY" }
+
+const LEGACY_MESSAGE_PREFIXES: Record<LegacyTrigger["code"], string> = { KIND_LEGACY: "document predates schema v2 (", DEPENDENCY_LEGACY: "document predates schema v3 (" };
 
 const element = (doc: FmeaDocument, i: number): Record<string, unknown> => doc.elements[i] as unknown as Record<string, unknown>;
 
 export const LEGACY_TRIGGERS: LegacyTrigger[] = [
   { name: "a v1 document with no boundary is KIND_LEGACY, pointing at the element, before the schema runs",
-    mutate: (doc) => { delete element(doc, 0).boundary; }, pointer: "/elements/0" },
+    mutate: (doc) => { delete element(doc, 0).boundary; }, pointer: "/elements/0", code: "KIND_LEGACY" },
   { name: "a v1 document with no security_relevant is KIND_LEGACY",
-    mutate: (doc) => { delete element(doc, 0).security_relevant; }, pointer: "/elements/0" },
+    mutate: (doc) => { delete element(doc, 0).security_relevant; }, pointer: "/elements/0", code: "KIND_LEGACY" },
   { name: "a removed kind is KIND_LEGACY, pointing at the kind",
-    mutate: (doc) => { element(doc, 2).kind = "external_dependency"; }, pointer: "/elements/2/kind" },
+    mutate: (doc) => { element(doc, 2).kind = "external_dependency"; }, pointer: "/elements/2/kind", code: "KIND_LEGACY" },
   { name: "a legacy row id in catalog_refs is KIND_LEGACY, pointing at the id",
-    mutate: (doc) => { doc.chains[0].catalog_refs[0].id = "cat-external_dependency-01"; }, pointer: "/chains/0/catalog_refs/0/id" },
+    mutate: (doc) => { doc.chains[0].catalog_refs[0].id = "cat-external_dependency-01"; }, pointer: "/chains/0/catalog_refs/0/id", code: "KIND_LEGACY" },
   { name: "a legacy row id that survives only in a catalog source is KIND_LEGACY, pointing at the ref",
-    mutate: (doc) => { doc.elements[2].sources[1].ref = "cat-security_component-01"; }, pointer: "/elements/2/sources/1/ref" },
+    mutate: (doc) => { doc.elements[2].sources[1].ref = "cat-security_component-01"; }, pointer: "/elements/2/sources/1/ref", code: "KIND_LEGACY" },
+];
+
+/** Turns a v3 document back into its v2 shape: each edge becomes a dependency block on the first
+ *  element whose id is the edge's `to`, and the top-level dependencies array goes. */
+export function moveEdgesIntoBlocks(doc: FmeaDocument): void {
+  for (const edge of doc.dependencies) {
+    const target = doc.elements.find((e) => e.id === edge.to);
+    if (target === undefined) continue;
+    const block: Record<string, unknown> = { strength: edge.strength };
+    if (edge.sla !== undefined) block.sla = edge.sla;
+    if (edge.limits !== undefined) block.limits = edge.limits;
+    (target as unknown as Record<string, unknown>).dependency = block;
+  }
+  delete (doc as unknown as Record<string, unknown>).dependencies;
+}
+
+export const V2_TRIGGERS: LegacyTrigger[] = [
+  { name: "a document with no top-level dependencies array is DEPENDENCY_LEGACY at /dependencies, before the schema runs",
+    mutate: (doc) => { delete (doc as unknown as Record<string, unknown>).dependencies; }, pointer: "/dependencies", code: "DEPENDENCY_LEGACY" },
+  { name: "an element with a dependency block is DEPENDENCY_LEGACY, pointing at the block",
+    mutate: (doc) => { element(doc, 2).dependency = { strength: "strong" }; }, pointer: "/elements/2/dependency", code: "DEPENDENCY_LEGACY" },
+  { name: "blocks on two elements are one DEPENDENCY_LEGACY line, at the earlier block",
+    mutate: (doc) => { element(doc, 2).dependency = { strength: "strong" }; element(doc, 5).dependency = { strength: "weak" }; }, pointer: "/elements/2/dependency", code: "DEPENDENCY_LEGACY" },
+  { name: "no top-level array and a block are one DEPENDENCY_LEGACY line, at /dependencies",
+    mutate: (doc) => { delete (doc as unknown as Record<string, unknown>).dependencies; element(doc, 2).dependency = { strength: "strong" }; }, pointer: "/dependencies", code: "DEPENDENCY_LEGACY" },
+  { name: "a v1 trait beside a missing dependencies array is KIND_LEGACY alone",
+    mutate: (doc) => { delete element(doc, 0).boundary; delete (doc as unknown as Record<string, unknown>).dependencies; }, pointer: "/elements/0", code: "KIND_LEGACY" },
+  { name: "a whole v2 document, every edge moved back into a block on its to element, is DEPENDENCY_LEGACY at /dependencies",
+    mutate: moveEdgesIntoBlocks, pointer: "/dependencies", code: "DEPENDENCY_LEGACY" },
 ];
 
 /** Writes the checkout fixture, changed by `trigger`, to analysis.json in `dir` and returns the path. */
@@ -140,11 +176,11 @@ export function writeLegacy(dir: string, trigger: LegacyTrigger): string {
   return path;
 }
 
-/** A script's run refused the document with exit 2 and one KIND_LEGACY line at `pointer`, and the
- *  schema stage never ran. */
-export function assertLegacyRefused(r: { status: number; stderr: string }, pointer: string): void {
+/** A script's run refused the document with exit 2 and one `code` line at `pointer` whose message
+ *  starts with `prefix`, and the schema stage never ran. */
+export function assertLegacyRefused(r: { status: number; stderr: string }, pointer: string, code: LegacyTrigger["code"] = "KIND_LEGACY", prefix: string = LEGACY_MESSAGE_PREFIXES[code]): void {
   assert.equal(r.status, 2, r.stderr);
-  assert.match(r.stderr, /^error KIND_LEGACY: format-legacy: document predates schema v2 \(/m);
+  assert.ok(r.stderr.startsWith(`error ${code}: format-legacy: ${prefix}`), r.stderr);
   assert.ok(r.stderr.endsWith(` at ${pointer}\n`), r.stderr);
   assert.equal(r.stderr.split("\n").length, 2, r.stderr);
   assert.ok(!r.stderr.includes("error SCHEMA:"), r.stderr);
@@ -189,6 +225,7 @@ export function minimalDoc(): FmeaDocument {
     functions: [
       { id: "fn-1", element: "svc", statement: "serve requests", conditions: [], for_whom: "clients" },
     ],
+    dependencies: [],
     chains: [
       {
         id: "ch-1",
@@ -206,4 +243,55 @@ export function minimalDoc(): FmeaDocument {
       },
     ],
   };
+}
+
+/** An in-scope service named `id`, its parent `id` without its last dotted segment (null at depth
+ *  1), changed by `overrides`. */
+export function newElement(id: string, overrides: Partial<Element> = {}): Element {
+  const dot = id.lastIndexOf(".");
+  return {
+    id, kind: "service", name: id, description: "", parent: dot === -1 ? null : id.slice(0, dot),
+    boundary: "in_scope", security_relevant: false, sources: [{ kind: "document", ref: "arch.md" }], ...overrides,
+  };
+}
+
+/** A dependency edge from `from` to `to`. */
+export function edge(from: string, to: string, strength: Strength = "strong", extra: { sla?: string; limits?: string } = {}): DependencyEdge {
+  return { from, to, strength, ...extra };
+}
+
+/** The provider's O as a linked cause cites it. */
+export function citeO(chain: Chain): CitedOccurrence {
+  const o = chain.ratings.O;
+  const cited: CitedOccurrence = { value: o.value, evidence_kind: o.evidence_kind };
+  if (o.evidence_ref !== undefined) cited.evidence_ref = o.evidence_ref;
+  return cited;
+}
+
+/** A multi-element document: the elements, by id or by id and overrides; the edges; chains as
+ *  [chain id, element id]; links as [consumer chain id, provider chain id]. */
+interface GraphSpec {
+  elements: (string | (Partial<Element> & { id: string }))[];
+  edges?: DependencyEdge[];
+  chains?: [chainId: string, elementId: string][];
+  links?: [consumer: string, provider: string][];
+}
+
+/** minimalDoc's meta over the spec's graph: one function `fn-<element id>` per element, each chain a
+ *  copy of minimalDoc's chain on its element's function, and each link written into the consumer's
+ *  first cause with the provider's O cited. */
+export function graphDoc(spec: GraphSpec): FmeaDocument {
+  const base = minimalDoc();
+  const elements = spec.elements.map((e) => (typeof e === "string" ? newElement(e) : newElement(e.id, e)));
+  const functions = elements.map((el) => ({ id: `fn-${el.id}`, element: el.id, statement: "serve requests", conditions: [], for_whom: "clients" }));
+  const chains = (spec.chains ?? []).map(([id, elementId]) => ({ ...clone(base.chains[0]), id, function: `fn-${elementId}` }));
+  const doc: FmeaDocument = { meta: base.meta, elements, functions, dependencies: spec.edges ?? [], chains };
+  for (const [consumerId, providerId] of spec.links ?? []) {
+    const consumer = chains.find((c) => c.id === consumerId);
+    const provider = chains.find((c) => c.id === providerId);
+    if (consumer === undefined || provider === undefined) continue;
+    consumer.causes[0].chain = providerId;
+    consumer.causes[0].cited_o = citeO(provider);
+  }
+  return doc;
 }

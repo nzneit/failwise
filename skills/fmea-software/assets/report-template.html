@@ -29,13 +29,11 @@ ul.tree ul.tree { margin-left:.3rem; padding-left:.95rem; border-left:2px solid 
 .el-security { color:var(--hi); padding:0 .3rem; border:1px solid currentColor; border-radius:3px; }
 .el-desc { margin:0; max-width:84ch; }
 .el-rationale { margin:.2rem 0 0; max-width:84ch; color:var(--muted); }
+.el-codebase { color:var(--muted); font-size:.9em; }
 .vocabulary { margin:.25rem 0 .75rem; padding:.5rem .8rem; border:1px solid var(--line); border-radius:4px; background:#fafbfc; font-size:.93em; }
 .vocabulary dl { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:.2rem .9rem; margin:0; }
 .vocabulary dt { font-weight:600; white-space:nowrap; }
 .vocabulary dd { margin:0; max-width:84ch; }
-.el-facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:0 .8rem; margin:.3rem 0 0; max-width:84ch; font-size:.93em; }
-.el-facts dt { color:var(--muted); font-weight:600; }
-.el-facts dd { margin:0; }
 dl.header { display:grid; grid-template-columns:max-content 1fr; gap:.25rem 1rem; margin:.75rem 0 0; }
 dl.header dt { font-weight:600; color:#4a5157; }
 dl.header dd { margin:0; }
@@ -97,8 +95,9 @@ tr.done td { color:var(--muted); }
 /* row sections */
 article.row { margin-top:1.5rem; border-top:2px solid var(--ink); padding-top:.5rem; }
 article.row > header { display:flex; gap:.7rem; align-items:flex-start; margin-bottom:.6rem; }
-article.row > header h3 { flex:1; font-size:1.05rem; }
+article.row > header h4 { flex:1; font-size:1.05rem; margin:0; }
 article.row > header .meta { white-space:nowrap; font-size:.9rem; text-align:right; }
+section.group > h3 { margin:2rem 0 .5rem; }
 .finding { margin:0 0 .6rem; padding:.3rem .6rem; border-left:4px solid var(--hi); background:#fbf3f3; }
 .finding.warn { border-left-color:#d9a45b; background:#fff9ec; }
 .grid { display:grid; grid-template-columns:minmax(0,1fr); gap:.7rem; }
@@ -131,10 +130,9 @@ article.row > header .meta .pri { height:1.2rem; min-width:1.2rem; font-size:.75
   .fx { grid-template-columns:1fr; }
   .fx .arrow { justify-self:center; transform:rotate(90deg); }
   .el { grid-template-columns:minmax(0,1fr); row-gap:.2rem; }
-  .el-facts { grid-template-columns:fit-content(50%) minmax(0,1fr); }
   .two { grid-template-columns:1fr; }
   article.row > header { flex-wrap:wrap; }
-  article.row > header h3 { flex-basis:calc(100% - 2.5rem); }
+  article.row > header h4 { flex-basis:calc(100% - 2.5rem); }
   article.row > header .meta { white-space:normal; text-align:left; flex-basis:100%; }
   main { overflow-wrap:anywhere; }
   .frame { overflow-wrap:normal; }

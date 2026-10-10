@@ -5,16 +5,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runCompare } from "./compare.ts";
 import { rowFileStem, rowStem, SECTION_PARTS, VIEWS } from "../dev/browser/matrix.ts";
-import { fakeMachine, MERGE_BASE, viewReport, type FakeOptions, type ViewTest } from "./lib/fake-machine.ts";
+import { FAKE_REPORT, fakeMachine, MERGE_BASE, viewReport, type FakeOptions, type ViewTest } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
 const NODE = "/opt/node/bin/node";
 const PW = "dev/node_modules/.bin/playwright";
 const SHORT = MERGE_BASE.slice(0, 7);
-const PARTS = [...SECTION_PARTS, "key", "index", "row-ch-1", "row-ch-2"];
-const HTML = SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join("") +
-  '<section id="chains"><div class="key"></div><table class="index"></table>' +
-  '<article class="row" id="row-ch-1"></article><article class="row" id="row-ch-2"></article></section>';
+const PARTS = [...SECTION_PARTS, "key", "index", "group-checkout", "row-ch-1", "row-ch-2"];
+const HTML = FAKE_REPORT;
 const N = PARTS.length * VIEWS.length; // views owed on one engine
 /** Bytes the after report adds by default: no part, so the two reports differ in bytes and have the same parts. */
 const TAIL = "<p>the working tree</p>";
@@ -440,4 +438,14 @@ test("two reports that differ in bytes and in no view: the plain no-change line,
   assert.equal(result.status, 0);
   assert.equal(result.lines.at(-2), `## compare: no view of ${N} changed against ${SHORT}`);
   assert.equal(result.calls.filter((call) => call.startsWith(`${PW} test`)).length, 2);
+});
+
+test("a group section on the after side only is named as added and is not photographed", () => {
+  const after = HTML.replace('<section class="group" id="group-checkout">', '<section class="group" id="group-pricing"></section><section class="group" id="group-checkout">');
+  const result = run([], { rendered: { before: HTML, after } });
+  assert.equal(result.status, 0);
+  assert.ok((result.read("/repo/build/compare/summary.md") ?? "").includes("## Parts added\n\n- group-pricing\n"));
+  const envs = result.env.filter((one) => one.FAILWISE_COMPARE_PASS !== undefined);
+  assert.ok(envs.length > 0, "no comparison pass was started");
+  for (const env of envs) assert.equal(env.FAILWISE_COMPARE_PARTS, PARTS.join(","));
 });

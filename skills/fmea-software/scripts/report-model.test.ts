@@ -4,8 +4,8 @@ import { buildReportModel, sortChains } from "./lib/report-model.ts";
 import { sortChains as renderSortChains } from "./render.ts";
 import { computePriority, loadTable } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
-import { clone, loadFixture, minimalDoc, rating, withoutTracker } from "./test-helpers.ts";
-import type { Action, ActionStatus, Chain, FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
+import { clone, edge, graphDoc, loadFixture, minimalDoc, rating, withoutTracker } from "./test-helpers.ts";
+import type { Action, ActionStatus, Chain, Codebase, FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
 const fixture = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
@@ -34,18 +34,18 @@ const chainsWithPriorities = (values: string[]): FmeaDocument =>
   docOf(...values.map((value) => ({ priority: { value, table: table.id, rpn: 96 } })));
 
 test("sortChains, moved to the model, sorts the checkout fixture and is the function render.ts exports", () => {
-  assert.deepEqual(sortChains(fixture(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(fixture(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
   assert.equal(renderSortChains, sortChains);
 });
 
 test("the tiles for the checkout fixture", () => {
   assert.deepEqual(modelOf(fixture()).tiles, {
-    priorities: [{ value: "H", style: "top", count: 4 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
-    chainsLine: "8 failure chains",
-    ratings: { provisional: 8, total: 27, line: "provisional, in 3 rows" },
-    checks: { blockers: "1 blocker", warnings: "10 warnings", alert: true },
+    priorities: [{ value: "H", style: "top", count: 5 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
+    chainsLine: "9 failure chains",
+    ratings: { provisional: 11, total: 30, line: "provisional, in 4 rows" },
+    checks: { blockers: "1 blocker", warnings: "13 warnings", alert: true },
     actions: { headline: "8 open", of: "of 9", line: "next due 2026-10-09" },
-    qualityScore: 88,
+    qualityScore: 89,
   });
 });
 
@@ -163,7 +163,7 @@ test("a row finding is labelled by where its pointer lies within the row", () =>
   ]);
 });
 
-test("the fixture's findings form four groups, blockers first, rating-provisional as one group over three rows", () => {
+test("the fixture's findings form four groups, blockers first, rating-provisional as one group over four rows", () => {
   const S = { text: "S", raw: false };
   const O = { text: "O", raw: false };
   const D = { text: "D", raw: false };
@@ -172,10 +172,11 @@ test("the fixture's findings form four groups, blockers first, rating-provisiona
       count: 1, locations: [{ kind: "row", chainId: "ch-7", labels: [D] }] },
     { severity: "warning", rule: "occurrence-estimate-without-trigger", message: "Occurrence is 7 or more on an estimate with no trigger recorded",
       count: 1, locations: [{ kind: "row", chainId: "ch-6", labels: [O] }] },
-    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 8, locations: [
+    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 11, locations: [
       { kind: "row", chainId: "ch-2", labels: [S, O, D] },
       { kind: "row", chainId: "ch-4", labels: [O, D] },
       { kind: "row", chainId: "ch-8", labels: [S, O, D] },
+      { kind: "row", chainId: "ch-9", labels: [S, O, D] },
     ] },
     { severity: "warning", rule: "seeded-action-without-incident", message: "action on a chain seeded from INC-2026-0314 carries no source_incident",
       count: 1, locations: [{ kind: "row", chainId: "ch-8", labels: [{ text: "act-2", raw: false }] }] },
@@ -210,6 +211,7 @@ test("the fixture's rows carry their element, statement and badge styles in the 
     ["ch-1", "checkout.payment-gateway", "top", null],
     ["ch-5", "checkout.session-auth", "top", null],
     ["ch-7", "checkout", "top", null],
+    ["ch-9", "checkout", "top", null],
     ["ch-4", "checkout.order-store", "mid", null],
     ["ch-8", "checkout.payment-gateway", "mid", null],
     ["ch-6", "checkout.api", "mid", null],
@@ -218,9 +220,9 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
 });
 
-test("the fixture's row marks: provisional on ch-2, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
+test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
   assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
-    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]],
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
     ["ch-4", ["provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
   ]);
 });
@@ -502,8 +504,11 @@ test("attention: the checkout fixture's block", () => {
   });
   assert.equal(a.stale, null);
   assert.deepEqual(a.provisional, {
-    label: "8 ratings not yet reviewed",
-    rows: [{ chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] }],
+    label: "11 ratings not yet reviewed",
+    rows: [
+      { chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-9", factors: ["S", "O", "D"] },
+      { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] },
+    ],
   });
   assert.deepEqual(a.handoffs, {
     label: "1 row passed to threat modelling",
@@ -545,4 +550,147 @@ test("a url that does not begin https:// gives a null url", () => {
     assert.equal(tracker?.url, null, url);
     assert.equal(tracker?.key, "acme/checkout#12");
   }
+});
+
+const cb = (id: string): Codebase => ({ id, name: `${id} codebase`, repo: `acme/${id}` });
+function chainOf(doc: FmeaDocument, id: string): Chain {
+  const chain = doc.chains.find((c) => c.id === id);
+  assert.ok(chain, `no chain ${id}`);
+  return chain;
+}
+const CH1_MODE = "The authorization call exceeds its timeout budget and returns no decision";
+
+test("roots: the checkout fixture's two top-level elements, every count rolling up the subtree", () => {
+  assert.deepEqual(modelOf(fixture()).roots, [
+    { id: "checkout", name: "Checkout service", codebase: "Checkout service", chains: 8, top: { value: "H", count: 5 }, provisional: 4, openActions: 7 },
+    { id: "pricing", name: "Pricing service", codebase: "owned outside", chains: 1, top: { value: "H", count: 0 }, provisional: 0, openActions: 1 },
+  ]);
+});
+
+test("roots: ordered by the best priority rank in the subtree, ties by id, an out-of-vocabulary value after L, chainless roots last by id", () => {
+  const doc = graphDoc({
+    elements: ["e", "c", "b", "a", "a.x", "x", "y", "d"],
+    chains: [["ch-a", "a"], ["ch-ax", "a.x"], ["ch-b", "b"], ["ch-c", "c"], ["ch-x", "x"], ["ch-y", "y"]],
+  });
+  chainOf(doc, "ch-ax").priority.value = "H";
+  chainOf(doc, "ch-x").priority.value = "Z";
+  chainOf(doc, "ch-y").priority.value = "L";
+  assert.deepEqual(modelOf(doc).roots.map((r) => [r.id, r.chains, r.top.count]), [
+    ["a", 2, 1], ["b", 1, 0], ["c", 1, 0], ["y", 1, 0], ["x", 1, 0], ["d", 0, 0], ["e", 0, 0],
+  ]);
+});
+
+test("roots: two top-level elements sharing an id give one row and one section, for the first", () => {
+  const model = modelOf(graphDoc({ elements: ["a", { id: "a", name: "second" }], chains: [["ch-1", "a"]] }));
+  assert.deepEqual(model.roots.map((r) => [r.id, r.name, r.chains]), [["a", "a", 1]]);
+  assert.deepEqual(model.sections.map((s) => s.root), [{ id: "a", name: "a" }]);
+});
+
+test("sections: one per root with chains in the roots' order, rows in index order, then the rootless tail", () => {
+  assert.deepEqual(modelOf(fixture()).sections.map((s) => [s.root?.id ?? null, s.rows.map((r) => r.chain.id)]), [
+    ["checkout", ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6"]],
+    ["pricing", ["ch-3"]],
+  ]);
+  const doc = graphDoc({
+    elements: ["a", "b.c", { id: "m", parent: "n" }, { id: "n", parent: "m" }],
+    chains: [["ch-1", "a"], ["ch-2", "b.c"], ["ch-3", "m"], ["ch-4", "a"]],
+  });
+  chainOf(doc, "ch-4").function = "fn-missing";
+  assert.deepEqual(modelOf(doc).sections.map((s) => [s.root?.id ?? null, s.rows.map((r) => r.chain.id)]), [
+    ["a", ["ch-1"]],
+    [null, ["ch-2", "ch-3", "ch-4"]],
+  ]);
+});
+
+test("codebases: overrides, an outside element that never inherits, in-scope children under it inheriting nothing, and a codebase that names no entry", () => {
+  const doc = graphDoc({
+    elements: [
+      { id: "r", codebase: "main" },
+      { id: "r.lib", codebase: "lib" },
+      "r.lib.util",
+      { id: "r.gw", boundary: "third_party" },
+      "r.gw.adapter",
+      { id: "r.ext", boundary: "owned_outside", codebase: "ext" },
+      "r.ext.adapter",
+      { id: "r.ext.own", codebase: "own" },
+      "r.ext.own.kid",
+      { id: "solo", codebase: "missing" },
+      "solo.kid",
+      { id: "vendor", boundary: "third_party" },
+      { id: "partner", boundary: "owned_outside" },
+      { id: "platform", boundary: "owned_outside", codebase: "ext" },
+    ],
+  });
+  doc.meta.codebases = ["main", "lib", "ext", "own"].map(cb);
+  const model = modelOf(doc);
+  assert.deepEqual(model.codebases, doc.meta.codebases);
+  assert.deepEqual(model.treeLabels, [
+    "main codebase", "lib codebase", "lib codebase", null, "none", "ext codebase", "none",
+    "own codebase", "own codebase", "none", "none", null, null, "ext codebase",
+  ]);
+  assert.deepEqual(model.roots.map((r) => [r.id, r.codebase]), [
+    ["partner", "owned outside"], ["platform", "ext codebase"], ["r", "main codebase"], ["solo", "none"], ["vendor", "third party"],
+  ]);
+});
+
+test("codebases: a document without meta.codebases has no codebase text on a root or a tree line", () => {
+  const model = modelOf(graphDoc({ elements: ["a", { id: "a.gw", boundary: "third_party" }, { id: "b", boundary: "owned_outside" }] }));
+  assert.deepEqual(model.codebases, []);
+  assert.deepEqual(model.treeLabels, [null, null, null]);
+  assert.deepEqual(model.roots.map((r) => r.codebase), [null, null]);
+});
+
+test("roots: the provisional count counts chains, not ratings, post-action ratings included, and open actions follow isOpen", () => {
+  const doc = graphDoc({ elements: ["a"], chains: [["ch-1", "a"], ["ch-2", "a"], ["ch-3", "a"]] });
+  chainOf(doc, "ch-1").ratings = { S: rating(8, "provisional"), O: rating(3, "provisional"), D: rating(4, "provisional") };
+  chainOf(doc, "ch-2").post_ratings = { S: rating(8), O: rating(3, "provisional"), D: rating(4) };
+  chainOf(doc, "ch-3").actions = [action("act-1", "Open", "2026-10-01"), action("act-2", "Completed", "2026-10-02"),
+    action("act-3", "Not Implemented", "2026-10-03"), action("act-4", "Implementation pending", "2026-10-04")];
+  assert.deepEqual(modelOf(doc).roots.map((r) => [r.provisional, r.openActions]), [[2, 2]]);
+});
+
+test("roots: the top count is taken against the first value of the table the report is rendered with", () => {
+  assert.deepEqual(buildReportModel(fixture(), withVocabulary(["M", "H", "L"])).roots.map((r) => [r.id, r.top]), [
+    ["checkout", { value: "M", count: 3 }],
+    ["pricing", { value: "M", count: 1 }],
+  ]);
+});
+
+test("edges: every edge in document order, two consumers of one provider at different strengths included", () => {
+  const doc = graphDoc({ elements: ["a", "b", "p"], edges: [edge("b", "p", "weak", { sla: "99.9% monthly" }), edge("a", "p", "strong", { limits: "10 rps" })] });
+  const model = modelOf(doc);
+  assert.deepEqual(model.edges, doc.dependencies);
+  assert.deepEqual(model.edges.map((e) => [e.from, e.to, e.strength]), [["b", "p", "weak"], ["a", "p", "strong"]]);
+  assert.deepEqual(modelOf(fixture()).edges.map((e) => [e.from, e.to, e.strength]), [
+    ["checkout", "checkout.payment-gateway", "strong"], ["checkout", "pricing", "weak"], ["checkout", "checkout.order-store", "strong"],
+  ]);
+});
+
+test("cause links: one per resolved link that is not a self-link, the mode flagged when it differs from the cause text under trimming", () => {
+  const golden = modelOf(fixture());
+  assert.deepEqual(rowById(golden, "ch-9").causeLinks, [{ cause: 0, chainId: "ch-1", element: "checkout.payment-gateway", failureMode: CH1_MODE, differs: false }]);
+  assert.deepEqual(golden.rows.filter((r) => r.chain.id !== "ch-9").map((r) => r.causeLinks), golden.rows.slice(1).map(() => []));
+  const doc = graphDoc({ elements: ["p", "a"], chains: [["ch-p", "p"], ["ch-a", "a"]], links: [["ch-a", "ch-p"]] });
+  chainOf(doc, "ch-a").causes.push({ text: "x", chain: "ch-missing" }, { text: "y", chain: "ch-a" });
+  assert.deepEqual(rowById(modelOf(doc), "ch-a").causeLinks, [{ cause: 0, chainId: "ch-p", element: "p", failureMode: "stops serving", differs: true }]);
+  chainOf(doc, "ch-a").causes[0].text = "  stops serving ";
+  chainOf(doc, "ch-p").function = "fn-missing";
+  assert.deepEqual(rowById(modelOf(doc), "ch-a").causeLinks, [{ cause: 0, chainId: "ch-p", element: "", failureMode: "stops serving", differs: false }]);
+});
+
+test("propagates to: each consumer once, in index order, on the first chain of the provider's id only", () => {
+  assert.deepEqual(rowById(modelOf(fixture()), "ch-1").propagatesTo, [{ chainId: "ch-9", element: "checkout" }]);
+  const doc = graphDoc({ elements: ["p", "a", "b", "c"], chains: [["ch-p", "p"], ["ch-b", "b"], ["ch-a", "a"], ["ch-c", "c"]], links: [["ch-b", "ch-p"], ["ch-a", "ch-p"]] });
+  chainOf(doc, "ch-a").causes.push({ text: "a second cause", chain: "ch-p" });
+  chainOf(doc, "ch-c").causes[0].chain = "ch-p";
+  chainOf(doc, "ch-c").function = "fn-missing";
+  const fnB = doc.functions.find((f) => f.id === "fn-b");
+  assert.ok(fnB);
+  fnB.element = "ghost";
+  doc.chains.push(clone(chainOf(doc, "ch-p")));
+  const model = modelOf(doc);
+  assert.deepEqual(model.rows.filter((r) => r.chain.id === "ch-p").map((r) => r.propagatesTo), [
+    [{ chainId: "ch-a", element: "a" }, { chainId: "ch-b", element: "ghost" }, { chainId: "ch-c", element: "" }],
+    [],
+  ]);
 });

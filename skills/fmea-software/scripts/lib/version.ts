@@ -4,4 +4,4 @@
 // copy of that folder with no manifest above it. validate.test.ts fails when this value and the
 // manifest's version differ, so a release changes both.
 
-export const PLUGIN_VERSION: string = "0.5.0";
+export const PLUGIN_VERSION: string = "0.6.0";

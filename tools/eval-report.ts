@@ -4,6 +4,9 @@
 // the markdown summary docs/specs/2026-09-07-eval-results.md: one table per
 // prompt (model, run, total/max, musts at 2, pass), a stability table, an
 // overall table per (prompt, model), and the completeness critic's lists.
+// Two optional sections come before the critic when the results file carries
+// their fields: the session checks (session_checks) and the prompts not re-run
+// (not_rerun).
 //
 // Usage: node tools/eval-report.ts [--results build/evals/results.json] [--out docs/specs/2026-09-07-eval-results.md] [--title "Eval results, v1"]
 //
@@ -34,9 +37,9 @@ const ROOT_AT_BOUNDARY = new RegExp(
 export interface Criterion { id: string; must: boolean; prompts: number[]; rubric?: number }
 
 /**
- * The thirteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
- * c11 applies to prompt 6 only, c12 to prompt 7 only, and c13 to prompts 1 and 6
- * under rubric 2 only.
+ * The fifteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
+ * c11 applies to prompt 6 only, c12 to prompt 7 only, c13 to prompts 1 and 6
+ * from rubric 2, and c14 to prompts 1 and 6 and c15 to prompt 1 from rubric 3.
  */
 export const CRITERIA: Criterion[] = [
   { id: "c1-missing-inputs-asked", must: true, prompts: [1, 5, 6, 7] },
@@ -52,6 +55,8 @@ export const CRITERIA: Criterion[] = [
   { id: "c11-prompt6-conversion", must: true, prompts: [6] },
   { id: "c12-prompt7-update", must: true, prompts: [7] },
   { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 },
+  { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 },
+  { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 },
 ];
 
 /** Short titles for the four prompts, in the words of spec §10. */
@@ -504,7 +509,15 @@ export interface EvalResults {
   unverified?: UnverifiedUnit[];
   /** The criterion-scoped re-judgings applied since the evaluation ran; absent on a fresh file. */
   rejudged?: Rejudging[];
+  /** Checks made in a session against copies of the fixtures outside the repository; absent when none ran. */
+  session_checks?: SessionCheck[];
+  /** Prompts this round did not run, each with the reason; absent when every prompt ran. */
+  not_rerun?: { prompt: number; reason: string }[];
 }
+/** One clause of a session check and its outcome; `unverified` means it did not run or could not be judged. */
+export interface SessionClause { clause: string; outcome: "pass" | "fail" | "unverified"; detail?: string }
+/** A session check: its name, how it was run, and its clauses. */
+export interface SessionCheck { name: string; run: string; clauses: SessionClause[] }
 
 export interface RunSummary { total: number; max: number; mustsAt2: number; mustCount: number; pass: boolean }
 
@@ -687,6 +700,10 @@ export interface StaleCriticParts { answered: string[]; halfAnswered: boolean; p
  * the entry it is about rather than every part going with the first one.
  */
 export function staleCriticParts(results: EvalResults): StaleCriticParts {
+  // Rubric 3's critic is written with that rubric, so its lists predate none of
+  // the rulings; a substring match on an area such as c1-missing-inputs-asked
+  // would otherwise print the caveat. Below rubric 3 the parts stand as before.
+  if (rubricOf(results) >= 3) return { answered: [], halfAnswered: false, pairTally: false };
   const areas = results.critic.missing.map((m) => m.area);
   return {
     answered: STALE_CRITIC_ANSWERED.filter((e) => areas.some((a) => a.includes(e.area))).map((e) => e.text),
@@ -754,6 +771,8 @@ export function renderReport(results: EvalResults, options: ReportOptions = V1_O
     ...overallSection(results, prompts, capabilities),
     ...unverifiedUnitsSection(results),
     ...unevaluatedChecksSection(results),
+    ...sessionChecksSection(results),
+    ...notRerunSection(results),
     ...criticSection(results),
   ].join("\n");
 }
@@ -947,6 +966,46 @@ function unevaluatedChecksSection(results: EvalResults): string[] {
   return lines;
 }
 
+const SESSION_CHECKS_INTRO =
+  "Checks made in a session against copies of the fixtures outside the repository, each against its clauses. A clause marked UNVERIFIED did not run or could not be judged: it is a hole in the evidence, never a pass; the acceptance note rules on each one.";
+
+const NOT_RERUN_INTRO =
+  "Prompts this round did not run, each with the reason. No result of an earlier round stands in for them; the acceptance note rules on each one.";
+
+const SESSION_OUTCOME: Record<SessionClause["outcome"], string> = { pass: "pass", fail: "FAIL", unverified: "UNVERIFIED" };
+
+/** A table cell: one line, with its pipes escaped so they stay inside the cell. */
+function cell(s: string): string {
+  return oneLine(s).replaceAll("|", "\\|");
+}
+
+/** `## Session checks`: one table per check, or no lines when the file records none. */
+function sessionChecksSection(results: EvalResults): string[] {
+  const checks = results.session_checks;
+  if (checks === undefined) return [];
+  const lines: string[] = ["## Session checks", "", SESSION_CHECKS_INTRO, ""];
+  if (checks.length === 0) lines.push("None.", "");
+  for (const c of checks) {
+    lines.push(`### ${oneLine(c.name)} (${oneLine(c.run)})`, "", "| Clause | Outcome | Detail |", "|---|---|---|");
+    for (const k of c.clauses) {
+      lines.push(`| ${cell(k.clause)} | ${SESSION_OUTCOME[k.outcome]} | ${k.detail === undefined ? "\u2014" : cell(k.detail)} |`);
+    }
+    lines.push("");
+  }
+  return lines;
+}
+
+/** `## Prompts not re-run`: one bullet per prompt, or no lines when the file records none. */
+function notRerunSection(results: EvalResults): string[] {
+  const entries = results.not_rerun;
+  if (entries === undefined) return [];
+  const lines: string[] = ["## Prompts not re-run", "", NOT_RERUN_INTRO, ""];
+  if (entries.length === 0) lines.push("None.");
+  for (const e of entries) lines.push(`- Prompt ${e.prompt}: ${oneLine(e.reason)}`);
+  lines.push("");
+  return lines;
+}
+
 /** `## Completeness critic`: its four subsections in order. */
 function criticSection(results: EvalResults): string[] {
   return [
@@ -1063,6 +1122,8 @@ type ResultsShape = {
   unverified?: unknown;
   rejudged?: unknown;
   rubric?: unknown;
+  session_checks?: unknown;
+  not_rerun?: unknown;
 };
 
 // The top-level shape: runs and stability are lists and critic is an object.
@@ -1193,6 +1254,51 @@ function rejudgedProblem(rejudged: unknown): string | null {
   return null;
 }
 
+const SESSION_OUTCOMES: readonly unknown[] = ["pass", "fail", "unverified"];
+
+function clauseProblem(k: unknown, i: number, j: number): string | null {
+  if (
+    !isObject(k) || typeof k.clause !== "string" || !SESSION_OUTCOMES.includes(k.outcome) ||
+    (k.detail !== undefined && typeof k.detail !== "string")
+  ) {
+    return `has a session_checks[${i}].clauses[${j}] that is not {clause, outcome, detail?} with outcome pass, fail or unverified`;
+  }
+  return null;
+}
+
+function sessionCheckProblem(c: unknown, i: number): string | null {
+  if (!isObject(c) || typeof c.name !== "string" || typeof c.run !== "string" || !Array.isArray(c.clauses)) {
+    return `has a session_checks[${i}] that is not {name, run, clauses}`;
+  }
+  for (let j = 0; j < c.clauses.length; j++) {
+    const problem = clauseProblem(c.clauses[j], i, j);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
+function sessionChecksProblem(checks: unknown): string | null {
+  if (checks === undefined) return null;
+  if (!Array.isArray(checks)) return "has a session_checks that is not a list";
+  for (let i = 0; i < checks.length; i++) {
+    const problem = sessionCheckProblem(checks[i], i);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
+function notRerunProblem(notRerun: unknown): string | null {
+  if (notRerun === undefined) return null;
+  if (!Array.isArray(notRerun)) return "has a not_rerun that is not a list";
+  for (let i = 0; i < notRerun.length; i++) {
+    const e = notRerun[i];
+    if (!isObject(e) || !Number.isInteger(e.prompt) || typeof e.reason !== "string") {
+      return `has a not_rerun[${i}] that is not {prompt, reason}`;
+    }
+  }
+  return null;
+}
+
 /**
  * Why the parsed value is not a usable results file, phrased to finish the
  * sentence `<path> …`, or null when it is one. The file is judge output that
@@ -1216,7 +1322,9 @@ function resultsProblem(v: unknown): string | null {
     ?? criticEntriesProblem(critic.missing as unknown[], critic.blocking_candidates as unknown[])
     ?? unverifiedProblem(results.unverified)
     ?? rejudgedProblem(results.rejudged)
-    ?? rubricProblem(results.rubric);
+    ?? rubricProblem(results.rubric)
+    ?? sessionChecksProblem(results.session_checks)
+    ?? notRerunProblem(results.not_rerun);
 }
 
 /**

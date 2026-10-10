@@ -140,10 +140,10 @@ const RUNS = [1, 2]
 
 // The rubric version this file judges against, written into results.json as
 // `rubric`. A criterion without a `rubric` field belongs to version 1.
-const RUBRIC = 2
+const RUBRIC = 3
 
-// The thirteen rubric criteria (plan reference §I; c13 added by rubric 2).
-// c5 does not apply to prompt 6; c13 applies to prompts 1 and 6 only.
+// The fifteen rubric criteria (plan reference §I; c13 added by rubric 2, c14 and c15 by rubric 3).
+// c5 does not apply to prompt 6; c13 and c14 apply to prompts 1 and 6 only, c15 to prompt 1 only.
 // Kept in sync by hand with tools/eval-report.ts CRITERIA; workflow scripts
 // cannot import.
 const CRITERIA = [
@@ -160,6 +160,8 @@ const CRITERIA = [
   { id: 'c11-prompt6-conversion', must: true, prompts: [6] },
   { id: 'c12-prompt7-update', must: true, prompts: [7] },
   { id: 'c13-element-typing', must: false, prompts: [1, 6], rubric: 2 },
+  { id: 'c14-edges-and-codebases', must: false, prompts: [1, 6], rubric: 3 },
+  { id: 'c15-cross-service-trace', must: false, prompts: [1], rubric: 3 },
 ]
 
 const EXPECTED_FILES = {
@@ -289,6 +291,9 @@ function judgePrompt(item) {
   const expected = EXPECTED_FILES[item.prompt]
     ? `\n- The expected document for this prompt: ${EXPECTED_FILES[item.prompt]} (compare the run's analysis.json against it clause by clause for ${item.prompt === 6 ? 'c11-prompt6-conversion' : 'c12-prompt7-update'}).`
     : ''
+  const checker = item.prompt === 7
+    ? `\n- The update checker, for c12-prompt7-update: run \`cd ${ROOT} && node ${SKILL}/scripts/update-check.ts ${SKILL}/evals/fixtures/update/before.fmea.json ${item.dir}/analysis.json\` under Node 24.2 or later (where Node is installed only through nvm, run \`source ~/.nvm/nvm.sh\` first, in the same shell call), and read the stale set it prints beside ${EXPECTED_FILES[7]}; a refusal, a non-zero exit with error lines, is the checker's verdict on the run's analysis.json, so quote it in the evidence and score c12 on the document as the rubric says.`
+    : ''
   return `You are the judge for one unattended eval run of the fmea-software skill.
 
 Run: prompt ${item.prompt}, model capability ${item.model_capability}, run ${item.run}. Run directory: ${item.dir}
@@ -298,7 +303,7 @@ Read, in full, before scoring:
 - The prompt and its preamble: ${SKILL}/evals/prompts.json, the entry with id ${item.prompt}.
 - The run's inputs: every file under ${item.dir}/inputs/.
 - The run's outputs: ${item.dir}/analysis.json, ${item.dir}/report.html, ${item.dir}/validate.json (the validator's stdout for analysis.json), the "result" field of ${item.dir}/transcript.json (the run's final message; one small JSON object, read it in full), and ${item.dir}/transcript.jsonl (the run's message stream, one JSON object per line). Do not read transcript.jsonl in full: it is large. Grep it for "priority.ts", "validate.ts" and "render.ts" and read only the matching lines. A match counts as an invocation only when it sits inside a tool_use block: a line of type "assistant" whose content holds {"type":"tool_use","name":"Bash","input":{"command":"..."}} with the script in the command. A match inside a text block, a tool_result, or a file the run was reading is narration or file content, not an invocation. Those tool_use blocks are the only record of which of the skill's scripts the run actually ran, and they are the evidence the rubric requires for c6-priority-by-script and c8-html-renders; transcript.json carries no tool call and is never evidence that a script ran. A criterion whose rubric text asks for a script invocation scores at most 1 when transcript.jsonl holds no matching tool_use block; say so in the evidence rather than inferring the invocation from the artifacts.
-- The catalog, for c9: ${SKILL}/references/design-failure-catalog.md (each row id and its provenance tag).${expected}
+- The catalog, for c9: ${SKILL}/references/design-failure-catalog.md (each row id and its provenance tag).${expected}${checker}
 
 Score exactly these criteria of rubric version ${RUBRIC}, by id: ${ids}. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json is missing or unparsable, score every criterion that reads it 0 and say so.
 
@@ -322,7 +327,7 @@ It prints {jaccard, maxRows, countDiffs, bound, pass, typing}; countDiffs has on
 function criticPrompt(runs, stabilityResults, unverifiedUnits) {
   return `You are the completeness critic for the fmea-software v1 eval gate (spec §10, §11 phase 6).
 
-Everything below was produced by judges and the stability check. Your job is to say what is missing, not to re-score: an eval prompt whose runs both failed a must, a criterion every judge scored below 2 for the same reason, a stability failure, a judge whose evidence does not support its score, a run that produced no analysis.json, a rubric criterion no judge could assess, and anything the §10 eval design asked for that these results do not show. Read ${SKILL}/evals/rubric.md and the design's §10 and §15 in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md first; open any run directory under ${ROOT}/${EVALS_DIR}/ where a score needs checking.
+Everything below was produced by judges and the stability check. Your job is to say what is missing, not to re-score: an eval prompt whose runs both failed a must, a criterion every judge scored below 2 for the same reason, a stability failure, a judge whose evidence does not support its score, a run that produced no analysis.json, a rubric criterion no judge could assess, and anything the §10 eval design asked for that these results do not show. Read ${SKILL}/evals/rubric.md, the design's §10 and §15 in ${ROOT}/docs/specs/2026-09-07-fmea-software-design.md, and §16 of ${ROOT}/docs/specs/2026-10-08-multi-codebase-design.md first; the migration check, the consumer-side stale check, the outside-element update check and the coverage check of that §16 are made in a session after this file is written and are recorded in the results note, so they are not missing from this file; open any run directory under ${ROOT}/${EVALS_DIR}/ where a score needs checking.
 
 This file covers prompts ${PROMPTS.join(', ')} at model capabilities ${MODEL_CAPABILITIES.join(', ')} only, judged against rubric version ${RUBRIC}, with runs ${RUNS.join(' and ')} of each. A prompt or model capability outside that roster was never attempted by this file: do not report it as a missing run.
 

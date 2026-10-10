@@ -21,14 +21,16 @@ import {
   type EvalResults,
   type RunResult,
   type RunScore,
+  type SessionCheck,
+  type SessionClause,
 } from "./eval-report.ts";
 
-function allTwo(prompt: number, except: Record<string, number> = {}): RunScore[] {
-  return criteriaFor(prompt).map((c) => ({ id: c.id, score: except[c.id] ?? 2, evidence: "ok" }));
+function allTwo(prompt: number, except: Record<string, number> = {}, rubric = 1): RunScore[] {
+  return criteriaFor(prompt, rubric).map((c) => ({ id: c.id, score: except[c.id] ?? 2, evidence: "ok" }));
 }
 
-test("thirteen criteria; under rubric 1 prompts 1, 5 and 6 have 10 applicable with 8 musts, prompt 7 has 11 with 9", () => {
-  assert.equal(CRITERIA.length, 13);
+test("fifteen criteria; under rubric 1 prompts 1, 5 and 6 have 10 applicable with 8 musts, prompt 7 has 11 with 9", () => {
+  assert.equal(CRITERIA.length, 15);
   for (const p of [1, 5, 6]) {
     assert.equal(criteriaFor(p).length, 10);
     assert.equal(criteriaFor(p).filter((c) => c.must).length, 8);
@@ -64,6 +66,35 @@ test("under rubric 2 prompts 1 and 6 score out of 22, prompt 5 out of 20, and th
   // Without the rubric argument a c13 score is ignored, as on the v1 results.
   const withC13 = [...allTwo(1), { id: "c13-element-typing", score: 0, evidence: "" }];
   assert.deepEqual(summarizeRun(1, withC13), { total: 20, max: 20, mustsAt2: 8, mustCount: 8, pass: true });
+});
+
+test("rubric 3 adds c14 and c15 to prompt 1 and c14 to prompt 6, scoring prompts 1, 6 and 7 out of 26, 24 and 22", () => {
+  assert.deepEqual(criteriaFor(1, 3).map((c) => c.id).slice(-3), ["c13-element-typing", "c14-edges-and-codebases", "c15-cross-service-trace"]);
+  assert.deepEqual(criteriaFor(6, 3).map((c) => c.id).slice(-2), ["c13-element-typing", "c14-edges-and-codebases"]);
+  for (const p of [1, 6]) assert.equal(criteriaFor(p, 3).filter((c) => c.must).length, 8);
+  for (const p of [5, 7]) assert.deepEqual(criteriaFor(p, 3), criteriaFor(p));
+  assert.equal(summarizeRun(1, allTwo(1, {}, 3), 3).max, 26);
+  assert.equal(summarizeRun(6, allTwo(6, {}, 3), 3).max, 24);
+  assert.equal(summarizeRun(7, allTwo(7, {}, 3), 3).max, 22);
+});
+
+test("under rubric 3 the musts total 16, so prompt 1 needs 21 of 26 and prompt 6 needs 20 of 24", () => {
+  const zero = (p: number) => Object.fromEntries(criteriaFor(p, 3).filter((c) => !c.must).map((c) => [c.id, 0]));
+  assert.deepEqual(summarizeRun(1, allTwo(1, zero(1), 3), 3), { total: 16, max: 26, mustsAt2: 8, mustCount: 8, pass: false });
+  assert.deepEqual(summarizeRun(6, allTwo(6, zero(6), 3), 3), { total: 16, max: 24, mustsAt2: 8, mustCount: 8, pass: false });
+  const p1 = { ...zero(1), "c3-chain-completeness": 2, "c8-html-renders": 2 };
+  assert.equal(summarizeRun(1, allTwo(1, { ...p1, "c13-element-typing": 1 }, 3), 3).pass, true); // 21 of 26
+  assert.equal(summarizeRun(1, allTwo(1, p1, 3), 3).pass, false); // 20 of 26
+  const p6 = { ...zero(6), "c3-chain-completeness": 2, "c8-html-renders": 2 };
+  assert.equal(summarizeRun(6, allTwo(6, p6, 3), 3).pass, true); // 20 of 24
+  assert.equal(summarizeRun(6, allTwo(6, { ...p6, "c8-html-renders": 1 }, 3), 3).pass, false); // 19 of 24
+});
+
+test("a rubric-2 file reads c14 and c15 scores as absent: prompts 1, 6 and 7 still score out of 22", () => {
+  for (const p of [1, 6]) {
+    assert.deepEqual(summarizeRun(p, allTwo(p, {}, 3), 2), { total: 22, max: 22, mustsAt2: 8, mustCount: 8, pass: true });
+  }
+  assert.equal(summarizeRun(7, allTwo(7, {}, 3), 2).max, 22);
 });
 
 test("a perfect run scores max and passes", () => {
@@ -218,6 +249,20 @@ test("a results file with rubric 2 scores prompt 1 on c13 out of 22; one without
   assert.doesNotMatch(one, /c13-element-typing/);
 });
 
+test("a results file with rubric 3 scores prompt 1 out of 26 and lists a c15 below 2; read as rubric 2 it scores out of 22", () => {
+  const r = sampleResults();
+  r.runs = r.runs.map((run, i) => ({ ...run, scores: allTwo(1, i === 0 ? { "c15-cross-service-trace": 1 } : {}, 3) }));
+  r.rubric = 3;
+  const three = renderReport(r);
+  assert.match(three, /\| high \| 1 \| 25 \/ 26 \| 8 \/ 8 \| pass \|/);
+  assert.match(three, /\| high \| 2 \| 26 \/ 26 \| 8 \/ 8 \| pass \|/);
+  assert.match(three, /- high run 1, c15-cross-service-trace = 1: ok/);
+  r.rubric = 2;
+  const two = renderReport(r);
+  assert.match(two, /\| high \| 1 \| 22 \/ 22 \| 8 \/ 8 \| pass \|/);
+  assert.doesNotMatch(two, /c15-cross-service-trace/);
+});
+
 test("the stability table gains a Typing column only when an entry carries typing", () => {
   const plain = renderReport(sampleResults());
   assert.match(plain, /^\| Prompt \| Model capability \| Jaccard \| Max rows \| Bound \| Count diffs \| Pass \|$/m);
@@ -254,15 +299,26 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /prompt 6 on c1 to c4 and c6 to c11 \(maximum 20, 8 musts\)/);
   assert.match(rubric, /prompt 7 on c1 to c10 and c12 \(maximum 22, 9 musts\)/);
   assert.match(rubric, /Under rubric 2, prompts 1 and 6 add c13 \(maximum 22, 8 musts\)\./);
-  assert.match(rubric, /^\*\*Rubric version\.\*\* This is rubric 2, dated 2026-10-07: it adds c13\./m);
+  assert.match(rubric, /^\*\*Rubric version\.\*\* This is rubric 3, dated 2026-10-09: it adds c14 and c15\./m);
+  assert.match(rubric, /rubric 2, dated 2026-10-07, which added c13, and is read without c14 and c15/);
   assert.match(rubric, /^### c13-element-typing \(prompts 1 and 6; rubric 2\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c13-element-typing"), { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 });
   // c5 carries its applicability on its heading the way c11 and c12 do; the
   // heading, the paragraph above, and both CRITERIA copies have to agree.
   assert.match(rubric, /^### c5-provisional-rescore \(must, not prompt 6\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c5-provisional-rescore")?.prompts, [1, 5, 7]);
+  assert.match(rubric, /Under rubric 3, prompt 1 adds c14 and c15 \(maximum 26, 8 musts\) and prompt 6 adds c14 \(maximum 24, 8 musts\); prompt 7 is unchanged \(maximum 22, 9 musts\)\./);
+  assert.match(rubric, /^### c14-edges-and-codebases \(prompts 1 and 6; rubric 3\)$/m);
+  assert.match(rubric, /^### c15-cross-service-trace \(prompt 1; rubric 3\)$/m);
+  assert.match(rubric, /only c3, c8, c13, c14 and c15 are not musts/);
+  assert.match(rubric, /21 of 26, since 20\.8 rounds up/);
+  assert.match(rubric, /20 of 24, since 19\.2 rounds up/);
+  assert.deepEqual(CRITERIA.find((c) => c.id === "c14-edges-and-codebases"), { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 });
+  assert.deepEqual(CRITERIA.find((c) => c.id === "c15-cross-service-trace"), { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 });
   const workflow = readFileSync(join(import.meta.dirname, "workflows", "evals.js"), "utf8");
-  const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (2))? \}/g)]
+  assert.match(workflow, /^const RUBRIC = 3$/m);
+  assert.match(workflow, /node \$\{SKILL\}\/scripts\/update-check\.ts \$\{SKILL\}\/evals\/fixtures\/update\/before\.fmea\.json \$\{item\.dir\}\/analysis\.json/);
+  const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (\d+))? \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]), rubric: m[4] === undefined ? undefined : Number(m[4]) }));
   assert.deepEqual(fromWorkflow, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts, rubric: c.rubric })));
 });
@@ -1138,4 +1194,84 @@ test("a rejudged entry with no date, or a rejudged that is not a list, is one co
   const ok = JSON.parse(JSON.stringify(sampleResults()));
   ok.rejudged = [rejudging("c1-missing-inputs-asked", "2026-09-15", 8, 0)];
   assert.equal(reportOn(JSON.stringify(ok), "eval-report-rejudged-").status, 0);
+});
+
+const MIGRATION_CLAUSES: SessionClause[] = [
+  { clause: "validate.ts returns ok: true", outcome: "pass" },
+  { clause: "exactly one assumption is added, naming ch-5", outcome: "fail", detail: "two assumptions were added" },
+  { clause: "the final message names ch-5", outcome: "unverified", detail: "the run's final message was not kept" },
+];
+
+function withSessionChecks(): EvalResults {
+  const r = sampleResults();
+  const check: SessionCheck = { name: "Migration check", run: "before.fmea.json at the merge base, attended", clauses: MIGRATION_CLAUSES };
+  r.session_checks = [check];
+  r.not_rerun = [{ prompt: 5, reason: "it adds no criterion of this round" }];
+  return r;
+}
+
+test("session checks print one table per check, between the unevaluated checks and the critic, an unverified clause as UNVERIFIED", () => {
+  const md = renderReport(withSessionChecks());
+  assert.ok(md.includes(
+    "## Session checks\n\nChecks made in a session against copies of the fixtures outside the repository, each against its clauses. A clause marked UNVERIFIED did not run or could not be judged: it is a hole in the evidence, never a pass; the acceptance note rules on each one.\n\n" +
+    "### Migration check (before.fmea.json at the merge base, attended)\n\n| Clause | Outcome | Detail |\n|---|---|---|\n" +
+    "| validate.ts returns ok: true | pass | — |\n| exactly one assumption is added, naming ch-5 | FAIL | two assumptions were added |\n" +
+    "| the final message names ch-5 | UNVERIFIED | the run's final message was not kept |\n\n"), md);
+  assert.doesNotMatch(md, /\| the final message names ch-5 \| pass/);
+  const at = (h: string) => md.indexOf(h);
+  assert.ok(at("## Checks that could not be evaluated") >= 0);
+  assert.ok(at("## Checks that could not be evaluated") < at("## Session checks"));
+  assert.ok(at("## Session checks") < at("## Prompts not re-run"));
+  assert.ok(at("## Prompts not re-run") < at("## Completeness critic"));
+});
+
+test("prompts not re-run print one bullet each, with the reason", () => {
+  assert.ok(renderReport(withSessionChecks()).includes(
+    "## Prompts not re-run\n\nPrompts this round did not run, each with the reason. No result of an earlier round stands in for them; the acceptance note rules on each one.\n\n- Prompt 5: it adds no criterion of this round\n\n## Completeness critic"));
+});
+
+test("a results file without session_checks or not_rerun renders exactly as before", () => {
+  const plain = renderReport(sampleResults());
+  assert.doesNotMatch(plain, /## Session checks|## Prompts not re-run/);
+  assert.equal(renderReport({ ...withSessionChecks(), session_checks: undefined, not_rerun: undefined }), plain);
+  assert.doesNotMatch(renderReport(staleShapedResults()), /## Session checks|## Prompts not re-run/);
+});
+
+test("an empty session_checks prints None. and a pipe in a clause is escaped", () => {
+  const empty = sampleResults();
+  empty.session_checks = [];
+  assert.match(renderReport(empty), /## Session checks\n\n[^\n]+\n\nNone\.\n/);
+  const piped = withSessionChecks();
+  piped.session_checks = [{ name: "x", run: "y", clauses: [{ clause: "a | b", outcome: "pass" }] }];
+  assert.ok(renderReport(piped).includes("| a \\| b | pass | — |"));
+});
+
+test("malformed session_checks or not_rerun are one coded IO_READ line each", () => {
+  const cases: [unknown, unknown, RegExp][] = [
+    [{ a: 1 }, undefined, /has a session_checks that is not a list/],
+    [[{ name: "x", run: "y" }], undefined, /has a session_checks\[0\] that is not \{name, run, clauses\}/],
+    [[{ name: "x", run: "y", clauses: [MIGRATION_CLAUSES[0], { clause: "c", outcome: "passed" }] }], undefined,
+      /has a session_checks\[0\]\.clauses\[1\] that is not \{clause, outcome, detail\?\} with outcome pass, fail or unverified/],
+    [undefined, { prompt: 5 }, /has a not_rerun that is not a list/],
+    [undefined, [{ prompt: "5", reason: "r" }], /has a not_rerun\[0\] that is not \{prompt, reason\}/],
+  ];
+  for (const [sessionChecks, notRerun, message] of cases) {
+    const r = JSON.parse(JSON.stringify(sampleResults()));
+    r.session_checks = sessionChecks;
+    r.not_rerun = notRerun;
+    const out = reportOn(JSON.stringify(r), "eval-report-session-");
+    assert.equal(out.status, 3, out.stderr);
+    assert.equal(out.stderr.trimEnd().split("\n").length, 1, out.stderr);
+    assert.match(out.stderr, /^error IO_READ: /);
+    assert.match(out.stderr, message);
+  }
+  assert.equal(reportOn(JSON.stringify(withSessionChecks()), "eval-report-session-").status, 0);
+});
+
+test("under rubric 3 a critic area naming c1-missing-inputs-asked prints no stale-critic caveat", () => {
+  const r = sampleResults();
+  r.rubric = 3;
+  r.critic.missing = [{ area: "c1-missing-inputs-asked (must)", detail: "the run asked no question on the planted gap" }];
+  assert.deepEqual(staleCriticParts(r), { answered: [], halfAnswered: false, pairTally: false });
+  assert.doesNotMatch(renderReport(r), /### What the critic's lists predate/);
 });

@@ -110,7 +110,7 @@ test("formatError escapes a bidi control and a C1 control in the pointer", () =>
   assert.equal(line, "error SCHEMA: unexpected property at /meta/a\\u202eb\\u0085c");
 });
 
-test("CODES holds exactly the twenty-two codes of the closed list", () => {
+test("CODES holds exactly the twenty-five codes of the closed list", () => {
   assert.deepEqual(Object.keys(CODES), [
     "USAGE",
     "NODE",
@@ -118,6 +118,9 @@ test("CODES holds exactly the twenty-two codes of the closed list", () => {
     "TRACKER_PUBLIC",
     "SCHEMA",
     "KIND_LEGACY",
+    "DEPENDENCY_LEGACY",
+    "UPDATE_BASELINE",
+    "UPDATE_MISMATCH",
     "INVARIANT",
     "PRIORITY_MISMATCH",
     "TABLE_ID_MISMATCH",
@@ -142,6 +145,9 @@ test("exitStatus maps every code to 1 usage, 2 validation, or 3 I/O", () => {
   assert.equal(exitStatus("NODE"), 1);
   assert.equal(exitStatus("SCHEMA"), 2);
   assert.equal(exitStatus("KIND_LEGACY"), 2);
+  assert.equal(exitStatus("DEPENDENCY_LEGACY"), 2);
+  assert.equal(exitStatus("UPDATE_BASELINE"), 2);
+  assert.equal(exitStatus("UPDATE_MISMATCH"), 2);
   assert.equal(exitStatus("INVARIANT"), 2);
   assert.equal(exitStatus("PRIORITY_MISMATCH"), 2);
   assert.equal(exitStatus("TABLE_ID_MISMATCH"), 2);
@@ -199,11 +205,13 @@ test("a provisional rating carries no by or date", () => {
   });
 });
 
-test("minimalDoc is one element, one function, one chain priced M with rpn 96", () => {
+test("minimalDoc is one element, one function, no edge and one chain priced M with rpn 96", () => {
   const doc = minimalDoc();
   assert.equal(doc.elements.length, 1);
   assert.equal(doc.functions.length, 1);
+  assert.deepEqual(doc.dependencies, []);
   assert.equal(doc.chains.length, 1);
+  assert.deepEqual(Object.keys(doc), ["meta", "elements", "functions", "dependencies", "chains"]);
   assert.deepEqual(doc.chains[0].priority, { value: "M", table: "priority-fmea-software-v1", rpn: 96 });
   assert.equal(doc.chains[0].ratings.S.value * doc.chains[0].ratings.O.value * doc.chains[0].ratings.D.value, 96);
   assert.equal(doc.meta.scales.priority_table, "priority-fmea-software-v1");
@@ -335,7 +343,7 @@ test("a CLI on a runtime without import.meta.main exits 1 with the NODE line and
 });
 
 test("every shipped CLI ends with the isEntry guard, never a bare import.meta.main check", () => {
-  for (const name of ["validate.ts", "priority.ts", "render.ts", "track.ts"]) {
+  for (const name of ["validate.ts", "priority.ts", "render.ts", "track.ts", "update-check.ts"]) {
     const src = readFileSync(join(SKILL_ROOT, "scripts", name), "utf8");
     assert.ok(src.endsWith("\nif (isEntry(import.meta)) run(main);\n"), `${name} must end with the isEntry guard`);
     assert.ok(!src.includes("if (import.meta.main)"), `${name} reads import.meta.main without the guard`);
@@ -361,7 +369,7 @@ test("the import scan sees a from clause, a side-effect import and a dynamic imp
 });
 
 test("no shipped CLI imports another, so a command on a runtime without import.meta.main prints one NODE line, not two", () => {
-  const clis = ["validate.ts", "priority.ts", "render.ts", "track.ts"];
+  const clis = ["validate.ts", "priority.ts", "render.ts", "track.ts", "update-check.ts"];
   for (const name of clis) {
     const src = readFileSync(join(SKILL_ROOT, "scripts", name), "utf8");
     assert.deepEqual(siblingImports(src).filter((spec) => clis.includes(spec)), [], `${name} imports another CLI, whose isEntry guard then runs too`);
@@ -379,7 +387,7 @@ const TYPE_NAMES = [
   "ElementKind", "ElementBoundary", "SourceKind", "ControlKind", "ControlStatus", "ControlEvidenceKind",
   "RatingEvidenceKind", "ReviewStatus", "ActionStatus", "CauseOrigin", "StaleReason",
   "AssumptionStatus", "Strength", "Factor", "Severity", "HistoryEntry", "Assumption",
-  "Review", "Boundary", "Scales", "Meta", "Dependency", "Source", "Element", "Fn", "Cause",
+  "Review", "Boundary", "Scales", "Meta", "Codebase", "DependencyEdge", "CitedOccurrence", "Source", "Element", "Fn", "Cause",
   "ControlEvidence", "Control", "RatingReview", "Rating", "Ratings", "Priority", "Action",
   "Handoff", "CatalogRef", "Stale", "Effects", "Chain", "Lint", "Computed", "FmeaDocument",
 ];

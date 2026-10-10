@@ -11,8 +11,8 @@ import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import { loadVocabulary } from "./lib/vocabulary.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
-import { SKILL_ROOT, bandTable, fixturePath, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
-import { LEGACY_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
+import { SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
+import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
 const table = loadTable();
@@ -48,11 +48,11 @@ function staleRows(): FmeaDocument {
   return doc;
 }
 
-// The free-text fields: every string the report prints that no schema pattern, format, or enum constrains.
+// The free-text fields: every string the report prints that no schema pattern, format or enum keeps free of markup (codebases[].repo has a pattern, but it admits < > & " ').
 const FREE_TEXT_KEYS = new Set([
   "name", "scope", "security", "outcome", "description", "statement", "for_whom", "failure_mode",
   "local", "next_level", "end", "text", "rationale", "owner", "trigger", "message", "reason",
-  "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident",
+  "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident", "repo", "path",
 ]);
 const FREE_TEXT_ARRAYS = new Set(["ground_rules", "included", "excluded", "reviewers", "conditions"]);
 
@@ -76,6 +76,7 @@ function poisonedDocument(): FmeaDocument {
   const next = (): string => vectors[i++ % vectors.length];
   const doc = golden();
   doc.chains[0].history.push({ version: 1, date: "2026-09-07", change: "seed" });
+  doc.meta.codebases![0].path = "services/checkout";
   return poison(doc, null, next) as FmeaDocument;
 }
 
@@ -119,6 +120,20 @@ const indexTable = (html: string): string => between(html, '<table class="index"
 const rowSection = (html: string, id: string): string => between(html, `<article class="row" id="row-${id}">`, "</article>");
 const lint = (severity: Severity, rule: string, pointer: string, message: string): Lint => ({ rule, severity, pointer, message });
 const stripTags = (html: string): string => html.replace(/<[^>]+>/g, "");
+
+const CH1_MODE = "The authorization call exceeds its timeout budget and returns no decision";
+const LINK_TO_CH1 = '<span class="cause-link">the failure mode of <a href="#row-ch-1"><code>ch-1</code> on <code>checkout.payment-gateway</code></a>';
+
+// Two top-level elements sharing one id: one group section, for the first.
+const twinRoots = (): FmeaDocument => graphDoc({ elements: ["svc", { id: "svc", name: "Twin" }], chains: [["ch-1", "svc"]] });
+
+// minimalDoc with a second top-level element that has no chain.
+function idleRoot(): FmeaDocument {
+  const doc = minimalDoc();
+  doc.elements.push({ ...doc.elements[0], id: "idle", name: "Idle" });
+  return doc;
+}
+
 /** The sections whose row ids are links (§4.3, §4.4, §4.5), each with the id of the section after it. */
 const LINKED_SECTIONS: [string, string][] = [["actions", "lints"], ["lints", "provenance"], ["provenance", "fmea-data"]];
 
@@ -198,8 +213,8 @@ test("the automated checks section explains the checks, states the score and gro
   assert.ok(checks.includes("<h2>Automated checks and quality score</h2>"));
   const text = stripTags(checks);
   assert.ok(text.includes(escapeHtml("Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A blocker must be fixed before the row it names, or the analysis as a whole, can be relied on. A warning is for a reviewer to judge and may be acceptable as it stands.")));
-  assert.ok(text.includes(escapeHtml("Quality score: 88 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
-  assert.ok(checks.includes("<strong>Quality score: 88 of 100</strong>"));
+  assert.ok(text.includes(escapeHtml("Quality score: 89 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
+  assert.ok(checks.includes("<strong>Quality score: 89 of 100</strong>"));
   // the intro's two marks, then one per group: one blocker group and three warning groups
   assert.equal(occurrences(checks, 'class="mark mark-blocker"'), 2);
   assert.equal(occurrences(checks, 'class="mark mark-warning"'), 4);
@@ -210,9 +225,9 @@ test("the automated checks section explains the checks, states the score and gro
     .map((rule) => checks.indexOf(`<code>${rule}</code>`));
   assert.ok(order.every((at) => at !== -1));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×8</span>'));
+  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×11</span>'));
   assert.equal(occurrences(checks, "×"), 1, "a group of one finding shows no count");
-  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D'));
+  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D<br><a href="#row-ch-9"><code>ch-9</code></a> S, O, D'));
   assert.ok(checks.includes("<td>The rating is still provisional and needs re-scoring</td>"));
   assert.ok(checks.includes('<a href="#row-ch-7"><code>ch-7</code></a> D</td><td>Detection is 1 with no existing detection control carrying evidence</td>'));
   assert.ok(checks.includes('<a href="#row-ch-8"><code>ch-8</code></a> act-2</td>'));
@@ -261,7 +276,7 @@ test("the header carries every field section 9 requires, and the provisional cou
   ]) {
     assert.ok(header.includes(pair), `the header is missing ${pair}`);
   }
-  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">8 <small>of 27</small></span><span class="sub">provisional, in 3 rows</span>'), "the header is missing the provisional tile");
+  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span>'), "the header is missing the provisional tile");
   assert.ok(!header.includes("ratings provisional"), "the old provisional line is still printed");
 });
 
@@ -282,11 +297,11 @@ test("the header shows the five tiles, each linking to its section", () => {
   const header = headerOf(golden());
   assert.equal(occurrences(header, '<a class="tile'), 5);
   for (const tile of [
-    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>4</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">8 failure chains</span></a>',
-    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">8 <small>of 27</small></span><span class="sub">provisional, in 3 rows</span></a>',
-    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">10 warnings</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>5</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span></a>',
+    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">13 warnings</span></a>',
     '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
-    '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">88 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
+    '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">89 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
   ]) {
     assert.ok(header.includes(tile), `the header is missing the tile ${tile}`);
   }
@@ -322,8 +337,8 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
     attnItem(`1 row fails an automated check<br>${mark("blocker")}`,
       '<a href="#row-ch-7"><code>ch-7</code></a> D &mdash; Detection is 1 with no existing detection control carrying evidence',
       "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again."),
-    attnItem(`8 ratings not yet reviewed<br>${mark("provisional")}`,
-      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
+    attnItem(`11 ratings not yet reviewed<br>${mark("provisional")}`,
+      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
       "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does."),
     attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
@@ -396,10 +411,10 @@ test("the contents line wraps between its links, and each link is at least 24 px
   assert.ok(!template.includes(".toc a { margin-right"));
 });
 
-test("row marks: one handoff, three provisional rows, no stale row", () => {
+test("row marks: one handoff, four provisional rows, no stale row", () => {
   const index = indexTable(renderHtml(golden(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
-  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 3);
+  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 4);
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
 });
 
@@ -412,10 +427,10 @@ test("a flagged row carries the stale mark; a cleared row carries none", () => {
 });
 
 test("chains sort by priority, then by severity descending, then by id", () => {
-  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
   const html = renderHtml(golden(), table, template, vocabulary);
   const table_start = html.indexOf('id="chains"');
-  const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
+  const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
@@ -427,17 +442,19 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   const labels = [...html.matchAll(FRAME)].map((match) => match[1]);
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
-    "Index of failure chains",
-    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
+    "By top-level element", "Dependencies", "Index of failure chains",
+    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);
   assert.equal(new Set(labels).size, labels.length);
 });
 
-test("no table carries a caption; each of the three that had one is named by the paragraph above its frame", () => {
+test("no table carries a caption; each of the five captioned tables is named by the paragraph above its frame", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
   assert.equal(occurrences(html, "<caption"), 0);
   const named: [string, string, string, string][] = [
+    ["roots-caption", "One row per top-level element; every count covers the element and everything under it, and a name links to its chain rows below.", "By top-level element", '<table aria-labelledby="roots-caption">'],
+    ["dependencies-caption", "One row per dependency, in the order the analysis lists them: the consumer depends on the provider.", "Dependencies", '<table aria-labelledby="dependencies-caption">'],
     ["index-caption", INDEX_CAPTION_TEXT, "Index of failure chains", '<table class="index" aria-labelledby="index-caption">'],
     ["actions-caption", "Open actions first, by target date; closed actions last.", "Actions", '<table aria-labelledby="actions-caption">'],
     ["checks-caption", "Blockers first. Findings with the same rule and message share a line; each row location links to its row.", "Automated checks", '<table aria-labelledby="checks-caption">'],
@@ -519,7 +536,7 @@ test("a row section carries its parts in order on a row that has every part", ()
   const article = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   const post = doc.chains[0].post_priority!;
   const parts = [
-    `<header><span class="pri pri-mid">M</span><h3><code>ch-1</code>&nbsp; stops serving</h3><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
+    `<header><span class="pri pri-mid">M</span><h4><code>ch-1</code>&nbsp; stops serving</h4><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
     `<p class="finding">${mark("blocker")} &nbsp;D &mdash; Detection is 1 with no existing detection control carrying evidence <span class="muted"><code>detection-1-without-evidenced-control</code></span></p>`,
     `<p class="finding warn">${mark("warning")} &nbsp;post-action O &mdash; post-action finding <span class="muted"><code>occurrence-estimate-without-trigger</code></span></p>`,
     '<p class="stale-notice">Stale since version 2: its element changed.</p>',
@@ -592,7 +609,7 @@ test("renderHtml still renders a chain with no function and two chains with one 
   twins.chains.push({ ...twins.chains[0], failure_mode: "second" });
   const both = renderHtml(twins, table, template, vocabulary);
   assert.equal(occurrences(both, '<article class="row" id="row-ch-1">'), 2);
-  assert.ok(both.includes("second</h3>"));
+  assert.ok(both.includes("second</h4>"));
 });
 
 test("a three-value and a one-value supplied table get the rank styles of section 4.7", () => {
@@ -602,12 +619,12 @@ test("a three-value and a one-value supplied table get the rank styles of sectio
   const index = indexTable(html);
   for (const [style, value, id] of [["top", "L", "ch-1"], ["low", "H", "ch-2"], ["mid", "M", "ch-3"]]) {
     assert.ok(index.includes(`<tr><td><span class="pri pri-${style}">${value}</span></td><td class="nw"><a href="#row-${id}">`), `index row ${id}`);
-    assert.ok(rowSection(html, id).includes(`<header><span class="pri pri-${style}">${value}</span><h3>`), `row header ${id}`);
+    assert.ok(rowSection(html, id).includes(`<header><span class="pri pri-${style}">${value}</span><h4>`), `row header ${id}`);
   }
   const one = renderHtml(priced(minimalDoc(), 0, "P"), suppliedTable(["P"]), template, vocabulary);
   assert.ok(one.includes('<dt><span class="pri pri-top">P</span></dt>'));
   assert.ok(indexTable(one).includes('<tr><td><span class="pri pri-top">P</span></td>'));
-  assert.ok(rowSection(one, "ch-1").includes('<header><span class="pri pri-top">P</span><h3>'));
+  assert.ok(rowSection(one, "ch-1").includes('<header><span class="pri pri-top">P</span><h4>'));
 });
 
 test("a supplied table's vocabulary values are escaped in every badge", () => {
@@ -634,9 +651,9 @@ test("a post_priority does not move a row in the sort order", () => {
   const ch3 = doc.chains.find((c) => c.id === "ch-3");
   assert.ok(ch3 && ch3.post_ratings, "ch-3 is the fixture's one post-action row");
   ch3.post_priority = computePriority(table, ch3.post_ratings);
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
   ch3.post_priority = { value: table.vocabulary[0], table: table.id, rpn: 1000 };
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-4", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
 });
 
 test("the provenance appendix names the catalog row, its tag, and the record the tag carries", () => {
@@ -699,6 +716,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
   ]) {
     assert.ok(print.includes(rule), `the print block is missing: ${rule}`);
   }
+  assert.ok(!print.includes(".group"), "no group rule in the print block");
 });
 
 test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the structure's name column", () => {
@@ -732,7 +750,7 @@ test("the CLI writes the report and exits 0", () => {
     const r = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out]);
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">8 <small>of 27</small></span>'));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
   });
 });
 
@@ -748,11 +766,11 @@ test("a document with no computed block is refused at /computed with exit 2", ()
   });
 });
 
-for (const trigger of LEGACY_TRIGGERS) {
+for (const trigger of [...LEGACY_TRIGGERS, ...V2_TRIGGERS]) {
   test(`render.ts: ${trigger.name}, and writes no report`, () => {
     withTempDir((dir) => {
       const out = join(dir, "report.html");
-      assertLegacyRefused(runCli("render.ts", [writeLegacy(dir, trigger), "--out", out]), trigger.pointer);
+      assertLegacyRefused(runCli("render.ts", [writeLegacy(dir, trigger), "--out", out]), trigger.pointer, trigger.code);
       assert.equal(existsSync(out), false);
     });
   });
@@ -768,7 +786,7 @@ test("an existing output needs --force", () => {
     assert.equal(readFileSync(out, "utf8"), "old report\n");
     const forced = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out, "--force"]);
     assert.equal(forced.status, 0);
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">8 <small>of 27</small></span>'));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
   });
 });
 
@@ -830,8 +848,8 @@ test("a computed block left stale by priority.ts --write is refused with COMPUTE
     assert.equal(render.status, 2);
     assert.equal(render.stdout, "");
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.quality_score is 88 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
+      "error COMPUTED_STALE: computed-stale: computed.quality_score is 89 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -904,7 +922,7 @@ test("a computed block whose lints hold the right findings in another order is r
     const { render, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
     assert.equal(existsSync(out), false);
   });
 });
@@ -917,7 +935,7 @@ test("a stored lint whose message alone differs from the validator's is refused,
     const { render, path, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.1.0, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
+      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -942,17 +960,18 @@ function idOf(block: string): string {
   return m === null ? "" : m[1].replace(/<span class="el-prefix">(.*?)<\/span>/, "$1");
 }
 
-// A document whose elements cover what the checkout fixture lacks: a grandchild, a dependency with
+// A document whose elements cover what the checkout fixture lacks: a grandchild, an edge with
 // neither SLA nor limits, and an element whose id does not extend its parent's.
 function structureDoc(): FmeaDocument {
   const doc = minimalDoc();
   const src = doc.elements[0].sources;
   doc.elements = [
     { id: "svc", kind: "service", name: "Service", description: "", parent: null, boundary: "in_scope", security_relevant: false, sources: src },
-    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", boundary: "in_scope", security_relevant: false, dependency: { strength: "weak" }, sources: src },
-    { id: "svc.db.shard", kind: "datastore", name: "Shard", description: "One shard.", parent: "svc.db", boundary: "third_party", security_relevant: false, dependency: { strength: "strong", limits: "10 rps" }, sources: src },
+    { id: "svc.db", kind: "datastore", name: "Store", description: "Holds rows.", parent: "svc", boundary: "in_scope", security_relevant: false, sources: src },
+    { id: "svc.db.shard", kind: "datastore", name: "Shard", description: "One shard.", parent: "svc.db", boundary: "third_party", security_relevant: false, sources: src },
     { id: "elsewhere", kind: "component", name: "Stray", description: "Named apart.", parent: "svc", boundary: "in_scope", security_relevant: true, security_rationale: "holds the signing key", sources: src },
   ];
+  doc.dependencies = [{ from: "svc", to: "svc.db", strength: "weak" }, { from: "svc.db", to: "svc.db.shard", strength: "strong", limits: "10 rps" }];
   return doc;
 }
 
@@ -1012,16 +1031,13 @@ test("each element's block carries its depth in the tree", () => {
   assert.ok(golden_.includes('<li><div class="el" style="--el-depth:0"><div class="el-who"><span class="el-name">'), "a root's block is not shaped as specified");
 });
 
-test("the facts list appears only for a dependency, and holds SLA and limits only when they are set", () => {
-  const golden_ = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
-  assert.ok(elBlock(golden_, "checkout.payment-gateway").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>SLA</dt><dd>99.95% monthly</dd><dt>Limits</dt><dd>50 rps per merchant</dd></dl>'));
-  assert.ok(elBlock(golden_, "pricing").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd><dt>SLA</dt><dd>99.9% monthly</dd></dl>'));
-  for (const id of ["checkout", "checkout.api", "checkout.order-store", "checkout.session-auth"]) {
-    assert.ok(!elBlock(golden_, id).includes("el-facts"), `${id} has no dependency but prints a facts list`);
+test("no element's block prints a facts list, and the template carries no .el-facts rule", () => {
+  for (const doc of [golden(), structureDoc()]) {
+    const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+    assert.ok(!structure.includes("el-facts"), "an element prints a facts list");
+    assert.ok(!structure.includes("<dt>Dependency</dt>"), "an element prints a dependency line");
   }
-  const structure = sectionOf(renderHtml(structureDoc(), table, template, vocabulary), "structure", "chains");
-  assert.ok(elBlock(structure, "svc.db").includes('<dl class="el-facts"><dt>Dependency</dt><dd>weak</dd></dl>'));
-  assert.ok(elBlock(structure, "svc.db.shard").includes('<dl class="el-facts"><dt>Dependency</dt><dd>strong</dd><dt>Limits</dt><dd>10 rps</dd></dl>'));
+  assert.ok(!template.includes(".el-facts"), "the template keeps an .el-facts rule");
 });
 
 test("every string in the structure section is entity-escaped", () => {
@@ -1030,9 +1046,9 @@ test("every string in the structure section is entity-escaped", () => {
   const shard = doc.elements[2];
   shard.name = `name ${bad}`;
   shard.description = `desc ${bad}`;
-  shard.dependency = { strength: "strong", sla: `sla ${bad}`, limits: `limits ${bad}` };
   shard.id = `svc.db.${bad}`;
   doc.elements[3].id = `else${bad}`;
+  doc.dependencies.push({ from: doc.elements[0].id, to: shard.id, strength: "strong", sla: `sla ${bad}`, limits: `limits ${bad}` });
   const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
   const safe = escapeHtml(bad);
   for (const text of [`name ${safe}`, `desc ${safe}`, `sla ${safe}`, `limits ${safe}`, `<span class="el-prefix">svc.db.</span>${safe}</code>`, `<code class="el-id">else${safe}</code>`]) {
@@ -1078,11 +1094,14 @@ test("a rationale is escaped, and one recorded on a false flag is printed withou
   assert.ok(elBlock(structure, "elsewhere").includes('<span class="el-security">security-relevant</span>'));
 });
 
-test("the structure section opens with the vocabulary, each role, boundary and the flag with its test, then the tree", () => {
+test("the structure section opens with the top-level table, then the vocabulary, the tree and the Dependencies table", () => {
   const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   const afterHeading = structure.slice(structure.indexOf("<h2>Structure</h2>") + "<h2>Structure</h2>".length).trimStart();
-  assert.ok(afterHeading.startsWith('<section class="vocabulary">'), "the vocabulary is not the heading's first follower");
-  const block = afterHeading.slice(0, afterHeading.indexOf("</section>") + "</section>".length);
+  assert.ok(afterHeading.startsWith('<p class="caption" id="roots-caption">'), "the top-level table is not the heading's first follower");
+  assert.ok(afterHeading.includes('</table></div><section class="vocabulary">'), "the vocabulary does not follow the top-level table");
+  const start = afterHeading.indexOf('<section class="vocabulary">');
+  const end = afterHeading.indexOf("</section>", start) + "</section>".length;
+  const block = afterHeading.slice(start, end);
   const pairs = [...vocabulary.roles, ...vocabulary.boundaries, vocabulary.security].map((x) => `<dt>${escapeHtml(x.label)}</dt><dd>${escapeHtml(x.test)}</dd>`);
   assert.equal(occurrences(block, "<dt>"), pairs.length, "the vocabulary holds a different number of terms than roles, boundaries and the flag");
   let at = 0;
@@ -1092,7 +1111,8 @@ test("the structure section opens with the vocabulary, each role, boundary and t
     at = next;
   }
   for (const label of ["Service", "In scope", "Security-relevant"]) assert.ok(block.includes(`<dt>${label}</dt>`), `the vocabulary does not list ${label}`);
-  assert.ok(afterHeading.slice(block.length).startsWith('<ul class="tree">'), "the tree does not follow the vocabulary");
+  assert.ok(afterHeading.slice(end).startsWith('<ul class="tree">'), "the tree does not follow the vocabulary");
+  assert.ok(structure.indexOf('<ul class="tree">') < structure.indexOf('id="dependencies-caption"'), "the Dependencies table does not follow the tree");
 });
 
 // render.ts run from a copy of the skill folder whose vocabulary file is changed by `alter`: it
@@ -1123,7 +1143,75 @@ test("render.ts with a malformed vocabulary file exits 3 with one VOCABULARY_REA
 test("a document with no elements prints the empty state", () => {
   const doc = minimalDoc();
   doc.elements = [];
-  assert.ok(sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains").includes('<p class="empty">No elements.</p>'));
+  const structure = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes('<p class="empty">No elements.</p>'));
+  assert.ok(!structure.includes("roots-caption"));
+});
+
+const ROOTS_HEAD = '<thead><tr><th>Top-level element</th><th>Codebase</th><th class="num">Chains</th><th class="num">H</th><th class="num">Provisional</th><th class="num">Open actions</th></tr></thead>';
+const DEPENDENCIES_HEAD = "<thead><tr><th>Consumer</th><th>Provider</th><th>Strength</th><th>SLA</th><th>Limits</th></tr></thead>";
+
+test("the header lists the codebases after Security boundary, each with its repository and its path when set", () => {
+  const doc = golden();
+  doc.meta.codebases![1].path = "packages/auth";
+  assert.ok(headerOf(doc).includes(
+    `<dt>Security boundary</dt><dd>${escapeHtml(doc.meta.boundary.security)}</dd><dt>Codebases</dt><dd>Checkout service, <code>acme/checkout</code><br>` +
+    "Session authentication library, <code>acme/session-auth</code>, <code>packages/auth</code></dd><dt>Scales version</dt><dd>1</dd>"));
+});
+
+test("the top-level table rolls up each root, links a name to its group, and heads its count with the table's first value", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes(`<table aria-labelledby="roots-caption">${ROOTS_HEAD}<tbody>` +
+    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">5</td><td class="num">4</td><td class="num">7</td></tr>' +
+    '<tr><td><a href="#group-pricing">Pricing service</a></td><td>owned outside</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr></tbody></table>'));
+  const idle = sectionOf(renderHtml(idleRoot(), table, template, vocabulary), "structure", "chains");
+  assert.ok(idle.includes("<tr><td>Idle</td>"), "a root with no chains is not linked");
+  assert.ok(!idle.includes('href="#group-idle"'));
+});
+
+test("the Dependencies table lists every edge in order, an absent SLA or limits as an empty cell, and escapes ids", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes(`<table aria-labelledby="dependencies-caption">${DEPENDENCIES_HEAD}<tbody>` +
+    "<tr><td><code>checkout</code></td><td><code>checkout.payment-gateway</code></td><td>strong</td><td>99.95% monthly</td><td>50 rps per merchant</td></tr>" +
+    "<tr><td><code>checkout</code></td><td><code>pricing</code></td><td>weak</td><td>99.9% monthly</td><td></td></tr>" +
+    "<tr><td><code>checkout</code></td><td><code>checkout.order-store</code></td><td>strong</td><td>99.99% monthly</td><td></td></tr></tbody></table>"));
+  const doc = minimalDoc();
+  doc.dependencies = [{ from: "gh<o>st", to: "svc", strength: "weak" }];
+  const escaped = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  assert.ok(escaped.includes(`<tr><td><code>${escapeHtml("gh<o>st")}</code></td><td><code>svc</code></td><td>weak</td><td></td><td></td></tr>`));
+  assert.ok(!escaped.includes("gh<o>st"), "a raw id reached the Dependencies table");
+});
+
+test("with no edges the Structure section prints No dependencies.", () => {
+  const structure = sectionOf(renderHtml(minimalDoc(), table, template, vocabulary), "structure", "chains");
+  assert.ok(structure.includes('<p class="empty">No dependencies.</p>'));
+  assert.ok(!structure.includes("dependencies-caption"));
+});
+
+test("without codebases there is no Codebases row, no codebase column and no tree codebase", () => {
+  const html = renderHtml(minimalDoc(), table, template, vocabulary);
+  assert.ok(!headerOf(minimalDoc()).includes("<dt>Codebases</dt>"));
+  const structure = sectionOf(html, "structure", "chains");
+  assert.ok(structure.includes('<thead><tr><th>Top-level element</th><th class="num">Chains</th>'));
+  assert.ok(!structure.includes("<th>Codebase</th>"));
+  assert.ok(!structure.includes('class="el-codebase"'));
+});
+
+test("tree lines name the effective codebase, none for an in-scope element without one, nothing for an outside element without one", () => {
+  const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
+  assert.ok(elBlock(structure, "checkout").includes('<span class="el-boundary">in scope</span></span><span class="el-codebase">Checkout service</span></div>'));
+  assert.ok(elBlock(structure, "checkout.api").includes('<span class="el-codebase">Checkout service</span>'));
+  assert.ok(elBlock(structure, "checkout.session-auth").includes('security-relevant</span></span><span class="el-codebase">Session authentication library</span></div>'));
+  for (const id of ["checkout.payment-gateway", "pricing"]) assert.ok(!elBlock(structure, id).includes("el-codebase"), id);
+  const doc = minimalDoc();
+  doc.meta.codebases = [{ id: "lib", name: "Library", repo: "acme/lib" }];
+  const own = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
+  assert.ok(elBlock(own, "svc").includes('<span class="el-codebase">none</span>'));
+  assert.ok(own.includes('<tr><td><a href="#group-svc">Service</a></td><td>none</td>'));
+});
+
+test("the template styles the tree's codebase label", () => {
+  assert.ok(template.includes(".el-codebase { color:var(--muted); font-size:.9em; }"));
 });
 
 test("the actions table carries the document's rows", () => {
@@ -1166,7 +1254,7 @@ test("the provenance appendix has a head row, and a chain named like a section k
 });
 
 test("every href in the report resolves to exactly one id, and the actions, checks and provenance sections link every row id", () => {
-  for (const doc of [golden(), staleRows()]) {
+  for (const doc of [golden(), staleRows(), twinRoots(), idleRoot()]) {
     const html = renderHtml(doc, table, template, vocabulary);
     const targets = new Set([...html.matchAll(/href="#([^"]*)"/g)].map((m) => m[1]));
     assert.ok(targets.size > 0);
@@ -1178,6 +1266,7 @@ test("every href in the report resolves to exactly one id, and the actions, chec
       }
     }
   }
+  assert.equal(occurrences(renderHtml(twinRoots(), table, template, vocabulary), 'id="group-svc"'), 1);
 });
 
 test("a chain id holding an injection vector is escaped in the row's id and in every href that targets it", () => {
@@ -1273,4 +1362,97 @@ test("a document validated under a --table-file that breaks a priority property 
     const checks = sectionOf(readFileSync(out, "utf8"), "lints", "provenance");
     assert.ok(checks.includes(escapeHtml('table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)')), checks);
   });
+});
+
+test("group sections: one per top-level element with chains, each an h3 with name and id, then its rows in index order", () => {
+  const chains = sectionOf(renderHtml(golden(), table, template, vocabulary), "chains", "actions");
+  assert.equal(occurrences(chains, '<section class="group"'), 2);
+  assert.ok(chains.includes('<section class="group" id="group-checkout"><h3>Checkout service <code>checkout</code></h3><article class="row" id="row-ch-2">'));
+  assert.ok(chains.includes('</article></section><section class="group" id="group-pricing"><h3>Pricing service <code>pricing</code></h3><article class="row" id="row-ch-3">'));
+  const at = ["group-checkout", "row-ch-2", "row-ch-1", "row-ch-5", "row-ch-7", "row-ch-9", "row-ch-4", "row-ch-8", "row-ch-6", "group-pricing", "row-ch-3"]
+    .map((id) => chains.indexOf(`id="${id}"`));
+  assert.ok(at.every((i) => i !== -1), JSON.stringify(at));
+  assert.deepEqual(at, [...at].sort((a, b) => a - b));
+  assert.equal(occurrences(chains, "<h4>"), golden().chains.length);
+});
+
+test("a top-level element with no chains gets no group section, and chains that reach no root follow the last group with no heading", () => {
+  const doc = idleRoot();
+  doc.chains.push({ ...doc.chains[0], id: "ch-2", function: "fn-missing" });
+  const chains = sectionOf(renderHtml(doc, table, template, vocabulary), "chains", "actions");
+  assert.equal(occurrences(chains, 'id="group-idle"'), 0);
+  assert.equal(occurrences(chains, '<section class="group"'), 1);
+  assert.ok(chains.includes('</article></section><article class="row" id="row-ch-2">'), "the tail row follows the group, unwrapped");
+});
+
+test("the row anchors are unchanged: one article per chain, each the target of its index link", () => {
+  const doc = golden();
+  const html = renderHtml(doc, table, template, vocabulary);
+  for (const chain of doc.chains) {
+    assert.equal(occurrences(html, `<article class="row" id="row-${chain.id}">`), 1, chain.id);
+    assert.ok(indexTable(html).includes(`<a href="#row-${chain.id}"><code>${chain.id}</code></a>`), chain.id);
+  }
+});
+
+test("the template sets the row heading in h4 with no margin and spaces the group heading", () => {
+  for (const rule of [
+    "article.row > header h4 { flex:1; font-size:1.05rem; margin:0; }",
+    "  article.row > header h4 { flex-basis:calc(100% - 2.5rem); }",
+    "section.group > h3 { margin:2rem 0 .5rem; }",
+  ]) assert.ok(template.includes(rule), rule);
+  assert.ok(!template.includes("article.row > header h3"), "a rule still targets the old row heading");
+});
+
+test("a linked cause names the provider's row and element, and adds the provider's mode only when it differs", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  assert.ok(rowSection(html, "ch-9").includes(`<li>${CH1_MODE}, ${LINK_TO_CH1}</span></li>`));
+  const doc = golden();
+  doc.chains[8].causes[0].text = "The gateway call times out";
+  doc.chains[8].causes[0].origin = "design";
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-9").includes(
+    `<li>The gateway call times out, ${LINK_TO_CH1}: ${CH1_MODE}</span> <span class="muted">[design]</span></li>`));
+});
+
+test("a link whose chain does not resolve prints the cause text alone, and a provider without a function is named by its chain id", () => {
+  const lost = golden();
+  lost.chains[8].causes[0].chain = "ch-missing";
+  const row = rowSection(renderHtml(lost, table, template, vocabulary), "ch-9");
+  assert.ok(row.includes(`<li>${CH1_MODE}</li>`));
+  assert.ok(!row.includes("cause-link"));
+  const bare = golden();
+  bare.chains[0].function = "fn-missing";
+  assert.ok(rowSection(renderHtml(bare, table, template, vocabulary), "ch-9").includes('<a href="#row-ch-1"><code>ch-1</code></a></span></li>'));
+});
+
+test("a row that other chains link into prints Propagates to after its effects, each consumer once in index order", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const ch1 = rowSection(html, "ch-1");
+  const line = '<div><span class="lbl">Propagates to</span><a href="#row-ch-9"><code>ch-9</code> on <code>checkout</code></a></div>';
+  assert.ok(ch1.includes(line));
+  assert.ok(ch1.indexOf('<span class="lbl">Effects</span>') < ch1.indexOf(line) && ch1.indexOf(line) < ch1.indexOf('<span class="lbl">Trigger</span>'));
+  assert.ok(!rowSection(html, "ch-9").includes("Propagates to"));
+  const doc = golden();
+  doc.chains.push({ ...doc.chains[8], id: "ch-10" });
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-1").includes(
+    '<span class="lbl">Propagates to</span><a href="#row-ch-10"><code>ch-10</code> on <code>checkout</code></a>, <a href="#row-ch-9"><code>ch-9</code> on <code>checkout</code></a></div>'));
+});
+
+test("free text and a chain id holding markup are escaped in the cause link and in Propagates to", () => {
+  const [text, mode, id] = vectors;
+  assert.equal(new Set([text, mode, id]).size, 3);
+  const doc = golden();
+  doc.chains[8].causes[0].text = text;
+  doc.chains[0].failure_mode = mode;
+  doc.chains[8].id = id;
+  const html = renderHtml(doc, table, template, vocabulary);
+  for (const vector of [text, mode, id]) assert.ok(!html.includes(vector), `raw vector present: ${JSON.stringify(vector)}`);
+  assert.ok(rowSection(html, "ch-1").includes(`<a href="#row-${escapeHtml(id)}"><code>${escapeHtml(id)}</code> on <code>checkout</code></a>`));
+  assert.ok(rowSection(html, escapeHtml(id)).includes(`${escapeHtml(text)}, ${LINK_TO_CH1}: ${escapeHtml(mode)}</span>`));
+});
+
+test("a linked-cause-occurrence-drift finding on ch-9 renders on its row labelled O", () => {
+  const message = "cause 0 cites ch-1 at O 6 (observed_incident, INC-2026-0314); ch-1 now rates O 7 (observed_incident, INC-2026-0314)";
+  const doc = withComputed(golden(), [lint("warning", "linked-cause-occurrence-drift", "/chains/8/ratings/O", message)], 89);
+  assert.ok(rowSection(renderHtml(doc, table, template, vocabulary), "ch-9").includes(
+    `<p class="finding warn">${mark("warning")} &nbsp;O &mdash; ${escapeHtml(message)} <span class="muted"><code>linked-cause-occurrence-drift</code></span></p>`));
 });

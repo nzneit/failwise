@@ -3,17 +3,14 @@ import assert from "node:assert/strict";
 import { join, resolve } from "node:path";
 import { runShots } from "./shots.ts";
 import { rowFileStem, SECTION_PARTS, WIDTHS } from "../dev/browser/matrix.ts";
-import { fakeMachine, type FakeOptions } from "./lib/fake-machine.ts";
+import { FAKE_REPORT, fakeMachine, type FakeOptions } from "./lib/fake-machine.ts";
 
 const ROOT = "/repo";
 const SHOTS = "/repo/build/shots";
 const DRY_RUN = "browser: chromium version 1\n  Install location:    /cache/chromium-1\n  Download url:        https://example.invalid/c.zip\n";
 
-/** The default report: every section part, the key and the index, and two rows. */
-const HTML =
-  SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join("") +
-  '<section id="chains"><div class="key"></div><table class="index"></table>' +
-  '<article class="row" id="row-ch-1"></article><article class="row" id="row-ch-2"></article></section>';
+/** The default report: every section part, the key and the index, one group section and two rows. */
+const HTML = FAKE_REPORT;
 
 /** Everything the default report owes in one folder, with `structure` in two pieces. */
 const WRITTEN = [
@@ -21,6 +18,7 @@ const WRITTEN = [
   ...SECTION_PARTS.flatMap((id) => (id === "structure" ? ["structure-p1.png", "structure-p2.png"] : [`${id}.png`])),
   "key.png",
   "index.png",
+  "group-checkout.png",
   "row-01-ch-1.png",
   "row-02-ch-2.png",
 ];
@@ -61,7 +59,7 @@ function run(argv: string[], fake: Fake = {}): { status: number; lines: string[]
 test("everything owed is there, one part in two pieces: the count, exit 0", () => {
   const result = run([]);
   assert.equal(result.status, 0);
-  assert.equal(result.lines.at(-2), "## shots: 71 files under build/shots/"); // 5 widths × 14 files, and the PDF
+  assert.equal(result.lines.at(-2), "## shots: 76 files under build/shots/"); // 5 widths × 15 files, and the PDF
   assert.equal(result.lines.at(-1), "## not run here: firefox, webkit");
   assert.ok(!result.lines.some((line) => line.startsWith("## not asserted")), result.lines.join("\n"));
 });
@@ -100,9 +98,25 @@ test("results but no screenshot at all, over an earlier run's files: one UNVERIF
   const earlier = Object.fromEntries(shotFiles(["chromium"], WRITTEN).map((path) => [join(SHOTS, path), "old"]));
   const result = run([], { written: [], drop: ["chromium/print.pdf"], present: earlier });
   assert.equal(result.status, 1);
-  const owed = ["page", ...SECTION_PARTS, "key", "index", "row-01-", "row-02-"];
+  const owed = ["page", ...SECTION_PARTS, "key", "index", "group-checkout", "row-01-", "row-02-"];
   const expected = WIDTHS.flatMap((width) => owed.map((stem) => `error UNVERIFIED: build/shots/chromium/${width}/ lacks ${stem}`));
   assert.deepEqual(result.errors, [...expected, "error UNVERIFIED: build/shots/chromium/ lacks print.pdf"]);
+});
+
+test("a missing group image is UNVERIFIED, exit 1", () => {
+  const result = run([], { drop: ["chromium/320/group-checkout.png"] });
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, ["error UNVERIFIED: build/shots/chromium/320/ lacks group-checkout"]);
+});
+
+test("a tall group written in pieces is owed and found", () => {
+  const written = WRITTEN.flatMap((name) => (name === "group-checkout.png" ? ["group-checkout-p1.png", "group-checkout-p2.png"] : [name]));
+  assert.equal(run([], { written }).status, 0);
+});
+
+test("a tile-group section of the header owes no group image", () => {
+  const html = HTML.replace('<section id="header"></section>', '<section id="header"><section class="tile-group" aria-labelledby="strip-found"></section></section>');
+  assert.equal(run([], { html }).status, 0);
 });
 
 test("a report that cannot be read owes an unknown set: UNVERIFIED, exit 1", () => {

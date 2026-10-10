@@ -16,7 +16,7 @@ import { qualityScore } from "./quality.ts";
 
 export interface ValidateResult { ok: boolean; errors: Issue[]; lints: Lint[]; quality_score: number }
 
-/** The v1 gate, then the schema, then the invariants and the priority recomputation, then the lints:
+/** The v1 and v2 gates, then the schema, then the invariants and the priority recomputation, then the lints:
  *  the document's machine rules followed by one warning per property of §7 the loaded table breaks. */
 export function validateDocument(raw: unknown, table: PriorityTable, rules: MachineRule[] = MACHINE_RULES): ValidateResult {
   const legacy = legacyIssues(raw);
