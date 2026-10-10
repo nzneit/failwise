@@ -62,8 +62,8 @@ test("an open action with no link and no item of ours is create, and carries its
   assert.equal(a.link, undefined);
   assert.equal(a.item?.title, "Add a retry budget");
   assert.equal(a.item?.action, "Add a retry budget");
-  assert.equal(a.item?.facts.length, 7);
-  assert.deepEqual(a.item?.origin, { analysis: "Minimal", chain: "ch-1", action: "act-1" });
+  assert.deepEqual(a.item?.sections.map((section) => section.heading), ["Where", "The failure", "Priority", "This action", "Done when"]);
+  assert.deepEqual(a.item?.origin, { analysis: "Minimal", version: 1, chain: "ch-1", action: "act-1" });
   const full = plan.items.get(KEY1);
   assert.equal(full?.key, KEY1);
   assert.equal(full?.text, textHash("Add a retry budget"));
@@ -185,7 +185,7 @@ test("the digest is 64 hex characters and is stable for the same inputs", () => 
   assert.equal(computePlan(clone(doc), { ...target }, clone(listing)).digest, plan.digest);
 });
 
-test("the digest changes with the host, the project, the label, the visibility, a create's text, a fact, the origin URL, a create added and an adoption's item id", () => {
+test("the digest changes with the host, the project, the label, the visibility, a create's text, a section's value, the origin URL, a create added and an adoption's item id", () => {
   const { doc, listing } = digestCase();
   const base = computePlan(doc, target, listing).digest;
 
@@ -213,6 +213,24 @@ test("the digest changes with the host, the project, the label, the visibility, 
   const moved = clone(listing);
   moved[1].link.id = "I_40";
   assert.notEqual(computePlan(doc, target, moved).digest, base);
+});
+
+test("the digest changes when a control's description, a rating's rationale or meta.version changes", () => {
+  const { doc, listing } = digestCase();
+  doc.chains[0].controls = [{ kind: "detection", description: "an alert on errors", status: "existing", evidence: { kind: "none" } }];
+  const base = computePlan(doc, target, listing).digest;
+
+  const control = clone(doc);
+  control.chains[0].controls[0].description = "an alert on latency";
+  assert.notEqual(computePlan(control, target, listing).digest, base);
+
+  const rationale = clone(doc);
+  rationale.chains[0].ratings.S.rationale = "another rationale";
+  assert.notEqual(computePlan(rationale, target, listing).digest, base);
+
+  const version = clone(doc);
+  version.meta.version = 2;
+  assert.notEqual(computePlan(version, target, listing).digest, base);
 });
 
 test("the digest does not change when a linked action or a finding changes", () => {

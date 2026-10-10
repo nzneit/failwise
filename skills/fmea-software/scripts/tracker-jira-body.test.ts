@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { isAdfDocument, readMarker, renderDescription, renderSummary } from "./lib/tracker/jira-body.ts";
 import type { AdfDoc, AdfMark, AdfNode } from "./lib/tracker/jira-body.ts";
 import { plain } from "./lib/tracker/text.ts";
-import { CLOSING_LINE } from "./lib/tracker/provider.ts";
-import { actionRefs, buildItem } from "./lib/tracker/items.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { actionRefs, buildItem, DONE_CLOSE, DONE_DECISION } from "./lib/tracker/items.ts";
 import { minimalDoc } from "./test-helpers.ts";
 import type { FmeaDocument, TrackerConfig } from "./lib/types.ts";
 import type { TrackedItem } from "./lib/tracker/provider.ts";
@@ -45,37 +46,109 @@ const doc = (...content: AdfNode[]): AdfDoc => ({ version: 1, type: "doc", conte
 const MARKER_TEXT = "failwise:key=a/b/c text=0123456789ab";
 const EXPECTED = { key: "a/b/c", text: "0123456789ab" };
 
-test("the description is a doc of version 1 with the five parts in order, and only the node and mark types of §9", () => {
-  const description = renderDescription(itemOf("Add a retry budget", { ...config, record_url: "https://r.example/x" }));
+const FIXTURE = join(import.meta.dirname, "..", "evals", "fixtures", "checkout-service.fmea.json");
+
+/** The description of the fixture's ch-2/act-1 under its own tracker configuration, made a Jira one. */
+function fixtureDescription(): AdfDoc {
+  const fixture = JSON.parse(readFileSync(FIXTURE, "utf8")) as FmeaDocument;
+  const ref = actionRefs(fixture).find((r) => r.key === "fmea-checkout-2026/ch-2/act-1");
+  assert.ok(ref);
+  return renderDescription(buildItem(fixture, { ...config, record_url: "https://acme.example/checkout-fmea.html" }, ref));
+}
+
+const STRONG = [{ type: "strong" }];
+
+/** Fails on a node type or a mark outside the set the spike verified, and on a list nested in a list item. */
+function assertVerifiedNodes(nodes: AdfNode[], inItem = false): void {
+  for (const node of nodes) {
+    assert.ok(["paragraph", "bulletList", "listItem", "text"].includes(node.type), node.type);
+    assert.ok(!(inItem && node.type === "bulletList"), "a bulletList inside a listItem");
+    for (const mark of node.marks ?? []) assert.ok(["strong", "link", "code"].includes(mark.type), mark.type);
+    assertVerifiedNodes(node.content ?? [], inItem || node.type === "listItem");
+  }
+}
+
+test("the fixture description holds only paragraph, bulletList, listItem and text, the strong, link and code marks, and no nested list", () => {
+  const description = fixtureDescription();
   assert.equal(description.version, 1);
   assert.equal(description.type, "doc");
   assert.ok(isAdfDocument(description));
-  assert.deepEqual(description.content.map((node) => node.type), ["paragraph", "bulletList", "paragraph", "paragraph", "paragraph"]);
-  for (const node of nodesOf(description.content)) assert.ok(["paragraph", "bulletList", "listItem", "text"].includes(node.type), node.type);
-  for (const mark of marksOf(description)) assert.ok(["strong", "link", "code"].includes(mark.type), mark.type);
-  assert.deepEqual(description.content[0].content, [text("Add a retry budget")]);
-  const items = description.content[1].content ?? [];
-  assert.equal(items.length, 7);
-  assert.ok(items.every((item) => item.type === "listItem" && item.content?.length === 1 && item.content[0].type === "paragraph"));
-  assert.deepEqual(items[0].content?.[0].content, [text("Failure mode", [{ type: "strong" }]), text(": stops serving")]);
-  assert.deepEqual(
-    items.map((item) => item.content?.[0].content?.[0].text),
-    ["Failure mode", "End effect", "Causes", "Row priority", "Owner", "Target date", "Status when created"],
-  );
-  assert.deepEqual(description.content[3].content, [text(CLOSING_LINE)]);
+  assertVerifiedNodes(description.content);
 });
 
-test("the origin paragraph carries the link to the row only when the item has a url, and it is the only link", () => {
-  const withUrl = renderDescription(itemOf("x", { ...config, record_url: "https://r.example/x" }));
-  const origin = withUrl.content[2].content ?? [];
-  assert.deepEqual(origin, [
-    text('From the FMEA "Minimal", row ch-1, action act-1.'),
+/** The text of a paragraph that holds one strong text node, else null. */
+const headingOf = (node: AdfNode): string | null =>
+  node.type === "paragraph" && node.content?.length === 1 && node.content[0].marks?.[0]?.type === "strong" ? node.content[0].text ?? null : null;
+
+test("the heading paragraphs come in order, each a paragraph of one strong text node", () => {
+  const description = fixtureDescription();
+  const headings = description.content.map(headingOf).filter((h) => h !== null && ["Where", "The failure", "Priority", "This action", "Done when", "Reference"].includes(h));
+  assert.deepEqual(headings, ["Where", "The failure", "Priority", "This action", "Done when", "Reference"]);
+  assert.deepEqual(description.content[0].content, [text("Decide whether the storefront's retry budget or a server-side admission control is the right place to bound retried load, and record the decision in the interface contract")]);
+  assert.deepEqual(description.content[1], paragraph(text("Where", STRONG)));
+});
+
+test("a run of facts is one bullet list of label-and-value items, and a list block is a strong paragraph then a bullet list", () => {
+  const content = fixtureDescription().content;
+  const where = content.findIndex((n) => headingOf(n) === "Where");
+  const facts = content[where + 1];
+  assert.equal(facts.type, "bulletList");
+  assert.deepEqual(facts.content?.map((i) => i.content?.[0].content), [
+    [text("Element", STRONG), text(": Checkout service (service, in scope)")],
+    [text("Function", STRONG), text(": Turn a submitted cart into a confirmed order exactly once")],
+    [text("For whom", STRONG), text(": signed-in shoppers")],
+  ]);
+  assert.deepEqual(content[where + 2], paragraph(text("Conditions", STRONG)));
+  assert.deepEqual(content[where + 3], {
+    type: "bulletList",
+    content: [
+      { type: "listItem", content: [paragraph(text("under promotion traffic"))] },
+      { type: "listItem", content: [paragraph(text("while a dependency is degraded"))] },
+    ],
+  });
+  assert.deepEqual(content[where + 4], paragraph(text("The failure", STRONG)));
+});
+
+test("a text block is a plain paragraph, and the done passages are the two paragraphs after their heading", () => {
+  const content = fixtureDescription().content;
+  const done = content.findIndex((n) => headingOf(n) === "Done when");
+  assert.deepEqual(content[done + 1], paragraph(text(DONE_DECISION)));
+  assert.deepEqual(content[done + 2], paragraph(text(DONE_CLOSE)));
+  assert.equal(headingOf(content[done + 3]), "Reference");
+  const bare = renderDescription(itemOf()).content;
+  assert.ok(bare.some((n) => JSON.stringify(n) === JSON.stringify(paragraph(text("The chain records no control.")))));
+});
+
+test("the reference: the origin with version and chain, then the key with code marks on the key and on meta.id, then the marker", () => {
+  const content = fixtureDescription().content;
+  const reference = content.findIndex((n) => headingOf(n) === "Reference");
+  assert.deepEqual(content[reference + 1].content, [
+    text('From the FMEA "Checkout service DFMEA", version 1, chain ch-2, action act-1.'),
     text(" "),
-    text("Open the row in the report", [{ type: "link", attrs: { href: "https://r.example/x#row-ch-1" } }]),
+    text("Open the chain in the report", [{ type: "link", attrs: { href: "https://acme.example/checkout-fmea.html#row-ch-2" } }]),
+  ]);
+  assert.deepEqual(content[reference + 2].content, [
+    text("Key: "),
+    text("fmea-checkout-2026/ch-2/act-1", [{ type: "code" }]),
+    text(". In the analysis whose "),
+    text("meta.id", [{ type: "code" }]),
+    text(" is fmea-checkout-2026, the chain is ch-2 and the action is its action act-1."),
+  ]);
+  assert.equal(reference + 4, content.length);
+  assert.equal(readMarker(fixtureDescription())?.key, "fmea-checkout-2026/ch-2/act-1");
+});
+
+test("the origin paragraph carries the link to the chain only when the item has a url, and it is the only link", () => {
+  const withUrl = renderDescription(itemOf("x", { ...config, record_url: "https://r.example/x" }));
+  const origin = withUrl.content.at(-3)?.content ?? [];
+  assert.deepEqual(origin, [
+    text('From the FMEA "Minimal", version 1, chain ch-1, action act-1.'),
+    text(" "),
+    text("Open the chain in the report", [{ type: "link", attrs: { href: "https://r.example/x#row-ch-1" } }]),
   ]);
   assert.equal(marksOf(withUrl).filter((mark) => mark.type === "link").length, 1);
   const without = renderDescription(itemOf("x"));
-  assert.deepEqual(without.content[2].content, [text('From the FMEA "Minimal", row ch-1, action act-1.')]);
+  assert.deepEqual(without.content.at(-3)?.content, [text('From the FMEA "Minimal", version 1, chain ch-1, action act-1.')]);
   assert.equal(marksOf(without).filter((mark) => mark.type === "link").length, 0);
 });
 
@@ -153,7 +226,7 @@ test("readMarker ignores attrs, a trailing empty paragraph, and a trailing parag
 
 test("readMarker finds the marker after the recorded browser edit: localId on every paragraph and two hardBreak nodes after the marker in its paragraph", () => {
   const edited = doc(
-    { type: "paragraph", attrs: { localId: "afe9c307238a" }, content: [text(CLOSING_LINE)] },
+    { type: "paragraph", attrs: { localId: "afe9c307238a" }, content: [text(DONE_CLOSE)] },
     {
       type: "paragraph",
       attrs: { localId: "ebe19c2c611c" },
