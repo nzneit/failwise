@@ -4,7 +4,7 @@ Scoring guide for the skill evals of design §10. Each of prompts 1, 5, 6, and 7
 
 ## How a run is judged
 
-The judge reads the prompt and its preamble, the run's `inputs/`, `analysis.json`, `report.html`, `validate.json` (the validator's output for `analysis.json`), the final message in `transcript.json` (`result`), and the run's message stream `transcript.jsonl` (one JSON object per line; its assistant `tool_use` blocks are the only record of the commands the run ran — `transcript.json` holds the final message and cost metadata, never a tool call); for prompt 6 also `fixtures/legacy-rpn-sheet.expected.fmea.json`, for prompt 7 also `fixtures/update/expected-stale.json`. Every criterion is scored 0, 1, or 2 with one or two sentences of evidence naming the pointer, file, or transcript text relied on. A criterion marked **must** has to score 2 for the run to pass.
+The judge reads the prompt and its preamble, the run's `inputs/`, `analysis.json`, `report.html`, `validate.json` (the validator's output for `analysis.json`), the final message in `transcript.json` (`result`), and the run's message stream `transcript.jsonl` (one JSON object per line; its assistant `tool_use` blocks are the only record of the commands the run ran — `transcript.json` holds the final message and cost metadata, never a tool call), whose calls of the skill's scripts the judge reads from `invocations.json`, the record `tools/eval-invocations.ts` extracts from `transcript.jsonl` with each call's line, command and outcome, and a call whose outcome is `denied` was refused by the permission check, never ran, and is not evidence that a script ran (amended 2026-10-13 by the user's ruling at the flow-model round, after a grep of `transcript.jsonl` for the script names was measured at 0.56 to 1.45 MB per run, almost all of it file reads and thinking, and nine of that round's script calls were denied); for prompt 6 also `fixtures/legacy-rpn-sheet.expected.fmea.json`, for prompt 7 also `fixtures/update/expected-stale.json`. Every criterion is scored 0, 1, or 2 with one or two sentences of evidence naming the pointer, file, or transcript text relied on. A criterion marked **must** has to score 2 for the run to pass.
 
 Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts). Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts). Under rubric 3, prompt 1 adds c14 and c15 (maximum 26, 8 musts) and prompt 6 adds c14 (maximum 24, 8 musts); prompt 7 is unchanged (maximum 22, 9 musts). Under rubric 4, prompt 1 adds c16 (maximum 28, 8 musts); prompts 6 and 7 are unchanged (prompt 6 maximum 24, 8 musts; prompt 7 maximum 22, 9 musts).
 
@@ -70,7 +70,7 @@ Ratings are presented as provisional, the user is asked to re-score them, and pr
 
 ### c6-priority-by-script (must)
 
-Priority is computed by the script, not in prose. That covers `post_priority` as well as `priority`: a row with `post_ratings` carries a `post_priority` and a row without carries none, and the script writes both.
+Priority is computed by the script, not in prose. That covers `post_priority` as well as `priority`: a row with `post_ratings` carries a `post_priority` and a row without carries none, and the script writes both. A `tool_use` block the permission check denied never ran and is not a block that runs `priority.ts` (amended 2026-10-13 with the reading paragraph above).
 
 - **2** — `transcript.jsonl` holds a `tool_use` block whose command runs `priority.ts` with `--write` on the document; `validate.json` has no `priority-*` and no `post-priority-presence` error; and no priority value stated in the final message or report differs from the document.
 - **1** — The document's priorities are all right — `validate.json` has no `priority-*` and no `post-priority-presence` error — but one or both of band 2's other two clauses fails: `transcript.jsonl` holds no `tool_use` block running `priority.ts` with `--write` (every `chains[].priority` matches the table, so the values were written by hand and happen to agree), or it does hold that block but a priority stated in the final message or the report differs from the document. A `validate.ts` invocation is not evidence for band 2: `validate.ts` recomputes priorities to check them and never writes them.
@@ -86,7 +86,7 @@ Priority is computed by the script, not in prose. That covers `post_priority` as
 
 ### c8-html-renders
 
-`report.html` exists and was produced by `render.ts` from the validated document.
+`report.html` exists and was produced by `render.ts` from the validated document. A `tool_use` block the permission check denied never ran and is not a block that runs `render.ts` (amended 2026-10-13 with the reading paragraph above).
 
 - **2** — `report.html` exists, `transcript.jsonl` holds a `tool_use` block whose command runs `render.ts` with `--out report.html`, and it contains the sections in design §9 order (element ids `header`, `ground-rules`, `assumptions`, `reviews`, `structure`, `flows`, `chains`, `actions`, `lints`, `provenance`) and the `<script type="application/json" id="fmea-data">` block.
 - **1** — `report.html` exists but was written some other way, or lacks one of those sections.

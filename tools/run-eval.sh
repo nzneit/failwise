@@ -7,7 +7,9 @@
 # ./report.html are not denied (Claude Code refuses writes under a --plugin-dir
 # tree), saves the CLI's message stream as transcript.jsonl and its final result
 # object as transcript.json, runs the validator on analysis.json into
-# validate.json, copies the finished run into build/evals/p<id>/<capability>/run<n>/,
+# validate.json, extracts the skill's script calls from the stream into
+# invocations.json (tools/eval-invocations.ts), copies the finished run into
+# build/evals/p<id>/<capability>/run<n>/,
 # and prints one summary line:
 #   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n>
 #
@@ -301,6 +303,17 @@ set +e
 node "$VALIDATOR" analysis.json > validate.json 2> validate.stderr
 VALIDATE_EXIT=$?
 set -e
+
+# The skill's script calls, extracted from the stream into invocations.json for
+# the judge, who scores c6 and c8 on them: a grep of transcript.jsonl for the
+# script names returns megabytes of file reads and thinking that merely name a
+# script. A failed extraction leaves no invocations.json, and the judge then
+# leaves those two criteria unscored, so the run is recorded unverified.
+set +e
+node "$ROOT/tools/eval-invocations.ts" "$WORK" 2> invocations.stderr
+INVOCATIONS_EXIT=$?
+set -e
+[ "$INVOCATIONS_EXIT" -eq 0 ] || echo "p$PID $MODEL_CAPABILITY run$RUN: tools/eval-invocations.ts exited $INVOCATIONS_EXIT (see invocations.stderr)" >&2
 
 # Publish the run into the repository tree the rest of the plan reads.
 mkdir -p "$RUN_DIR"

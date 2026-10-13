@@ -152,6 +152,11 @@ test("the run gets a filtered plugin copy outside the repository, and the trap c
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
     assert.ok(existsSync(join(s.publish, "p1", "medium", "run1", "transcript.json")), "the run was not published under $FMEA_EVAL_PUBLISH_ROOT");
+    // The stub's stream holds one result line and no tool call, so the extracted
+    // record is published and lists no call.
+    const invocations = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "invocations.json"), "utf8")) as { scripts: string[]; calls: unknown[] };
+    assert.ok(invocations.scripts.includes("priority.ts"), "invocations.json searched for no priority.ts");
+    assert.deepEqual(invocations.calls, []);
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
     const pluginDir = argv[argv.indexOf("--plugin-dir") + 1];
