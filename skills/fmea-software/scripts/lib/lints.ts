@@ -1,4 +1,4 @@
-import type { Cause, Chain, CitedOccurrence, Codebase, Element, FmeaDocument, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
+import type { Cause, Chain, CitedOccurrence, Codebase, Element, FmeaDocument, Flow, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
 import { ptr } from "./pointer.ts";
 import type { PriorityTable } from "./table.ts";
 import { checkTableProperties } from "./table.ts";
@@ -148,6 +148,70 @@ function driftLint(doc: FmeaDocument, index: DocIndex, i: number, j: number): Li
   }
   if (sameCitation(cited, providerO)) return [];
   return [lint("linked-cause-occurrence-drift", "warning", at, `cause ${j} cites ${pid} at ${citedText(cited)}; ${pid} now rates ${citedText(providerO)}`)];
+}
+
+// The flows each chain names, resolved to the first flow with that id; a chain that names no
+// resolvable flow contributes no entry, because a name that resolves to nothing is
+// `chain-flow-resolves`' case and no lint's. Each entry keeps the name's position in the chain's
+// `flows[]` for the pointer and the flow's own document index for the pointers and messages.
+interface NamedFlow { position: number; index: number; flow: Flow }
+interface ChainFlows { chainIndex: number; chain: Chain; named: NamedFlow[] }
+
+function chainNamedFlows(doc: FmeaDocument): ChainFlows[] {
+  const flows = doc.flows ?? [];
+  const at = new Map<string, number>();
+  flows.forEach((f, i) => { if (!at.has(f.id)) at.set(f.id, i); });
+  const out: ChainFlows[] = [];
+  doc.chains.forEach((chain, chainIndex) => {
+    const named = (chain.flows ?? []).flatMap((id, position) => {
+      const index = at.get(id);
+      return index === undefined ? [] : [{ position, index, flow: flows[index] }];
+    });
+    if (named.length > 0) out.push({ chainIndex, chain, named });
+  });
+  return out;
+}
+
+// The first chain, by index, that names each flow, so a flow several chains name is reported once.
+function firstNamerOf(chainFlows: ChainFlows[]): Map<number, Chain> {
+  const out = new Map<number, Chain>();
+  for (const { chain, named } of chainFlows) {
+    for (const { index } of named) if (!out.has(index)) out.set(index, chain);
+  }
+  return out;
+}
+
+// A named flow whose non-empty steps omit the chain's function is the wrong flow, unless the flow
+// records itself partial; an empty steps is the no-steps rule's case.
+function stepMismatchLint(at: ChainFlows, name: NamedFlow): Lint[] {
+  const steps = name.flow.steps ?? [];
+  if (steps.length === 0 || name.flow.steps_partial === true || steps.includes(at.chain.function)) return [];
+  return [lint("chain-flow-step-mismatch", "warning", ptr("chains", at.chainIndex, "flows", name.position),
+    `chain ${at.chain.id} names flow ${name.flow.id}, whose steps do not include function ${at.chain.function}`)];
+}
+
+function noStepsLint(at: ChainFlows, name: NamedFlow): Lint[] {
+  if ((name.flow.steps ?? []).length > 0) return [];
+  return [lint("chain-flow-no-steps", "warning", ptr("chains", at.chainIndex, "flows", name.position),
+    `chain ${at.chain.id} names flow ${name.flow.id}, which records no steps`)];
+}
+
+// The maximal runs of the id grammar's characters; a whole token, so `flow-1` reads in `flow-1 dies`
+// and does not read inside `myflow-1x`.
+const ID_TOKEN = /[A-Za-z0-9._:-]+/g;
+
+function rationaleUnnamedLint(at: ChainFlows): Lint[] {
+  const tokens = new Set(at.chain.ratings.S.rationale.match(ID_TOKEN) ?? []);
+  if (at.named.some((name) => tokens.has(name.flow.id))) return [];
+  return [lint("chain-flow-rationale-unnamed", "warning", ptr("chains", at.chainIndex, "ratings", "S"),
+    `chain ${at.chain.id} names flow ${at.named[0].flow.id} and its Severity rationale names no flow id`)];
+}
+
+function flowUsersLint(flow: Flow, index: number, chain: Chain): Lint[] {
+  const review = flow.users?.review;
+  if (review !== undefined && review.status !== "provisional") return [];
+  return [lint("flow-users-provisional", "warning", ptr("flows", index, "users", "review"),
+    `flow ${flow.id} is named by chain ${chain.id} and its population is not yet re-scored by a named person`)];
 }
 
 export const MACHINE_RULES: MachineRule[] = [
@@ -358,6 +422,46 @@ export const MACHINE_RULES: MachineRule[] = [
     check(doc) {
       const index = indexDocument(doc);
       return doc.chains.flatMap((c, i) => c.causes.flatMap((_, j) => driftLint(doc, index, i, j)));
+    },
+  },
+  {
+    // A chain and the flow it names describe one journey; a flow whose steps omit the chain's
+    // function is the wrong flow, unless the flow records itself partial.
+    id: "chain-flow-step-mismatch",
+    severity: "warning",
+    check(doc) {
+      return chainNamedFlows(doc).flatMap((at) => at.named.flatMap((name) => stepMismatchLint(at, name)));
+    },
+  },
+  {
+    // A chain naming a flow that records no steps names a journey the flow does not describe; the
+    // partial prefix cannot stand in for the steps themselves.
+    id: "chain-flow-no-steps",
+    severity: "warning",
+    check(doc) {
+      return chainNamedFlows(doc).flatMap((at) => at.named.flatMap((name) => noStepsLint(at, name)));
+    },
+  },
+  {
+    // A chain that names flows ranks a Severity for them; a rationale that names none of them does
+    // not say why that S holds for those journeys.
+    id: "chain-flow-rationale-unnamed",
+    severity: "warning",
+    check(doc) {
+      return chainNamedFlows(doc).flatMap(rationaleUnnamedLint);
+    },
+  },
+  {
+    // A flow named by a chain carries a population; until a named person has re-scored it, the
+    // denominator the value priority rests on is nobody's reviewed view.
+    id: "flow-users-provisional",
+    severity: "warning",
+    check(doc) {
+      const namer = firstNamerOf(chainNamedFlows(doc));
+      return (doc.flows ?? []).flatMap((flow, index) => {
+        const chain = namer.get(index);
+        return chain === undefined ? [] : flowUsersLint(flow, index, chain);
+      });
     },
   },
 ];

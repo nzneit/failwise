@@ -46,6 +46,10 @@ test("MACHINE_RULES lists every rule with its severity, in order", () => {
     ["cause-chain-unlinked", "warning"],
     ["cause-chain-severity", "warning"],
     ["linked-cause-occurrence-drift", "warning"],
+    ["chain-flow-step-mismatch", "warning"],
+    ["chain-flow-no-steps", "warning"],
+    ["chain-flow-rationale-unnamed", "warning"],
+    ["flow-users-provisional", "warning"],
   ]);
 });
 
@@ -615,4 +619,54 @@ test("tablePropertyLints gives one priority-table-property warning per broken pr
 test("formatLintLine prints a finding as one line, severity and rule first, whatever its message holds", () => {
   const finding: Lint = { rule: "priority-table-property", severity: "warning", pointer: "/meta/scales/priority_table", message: 'table a\nb\u2028c breaks "x" at 1-1-1 (H)' };
   assert.equal(formatLintLine(finding), 'warning priority-table-property: table a b c breaks "x" at 1-1-1 (H)');
+});
+
+// ---- The four lints of the authored chain-to-flow link. Each pins the [pointer, message] pairs,
+// as the linked-cause tests do, `fired` returning whole findings.
+
+test("chain-flow-step-mismatch fires when a flow's steps omit the chain's function, unless a prefix is recorded", () => {
+  const doc = minimalDoc();
+  doc.functions.push({ id: "fn-2", element: "svc", statement: "settle an authorization", conditions: [], for_whom: "clients" });
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", steps: ["fn-2"] }];
+  doc.chains[0].flows = ["flow-1"];
+  assert.deepEqual(fired(doc, "chain-flow-step-mismatch").map((l) => [l.pointer, l.message]), [["/chains/0/flows/0", "chain ch-1 names flow flow-1, whose steps do not include function fn-1"]]);
+  doc.flows[0].steps_partial = true;
+  assert.deepEqual(fired(doc, "chain-flow-step-mismatch"), []);
+  doc.flows[0].steps = [];
+  assert.deepEqual(fired(doc, "chain-flow-step-mismatch"), []);
+});
+
+test("chain-flow-no-steps fires on a chain-named flow with empty steps whatever steps_partial says", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High" }];
+  doc.chains[0].flows = ["flow-1"];
+  const expected = [["/chains/0/flows/0", "chain ch-1 names flow flow-1, which records no steps"]];
+  assert.deepEqual(fired(doc, "chain-flow-no-steps").map((l) => [l.pointer, l.message]), expected);
+  doc.flows[0].steps = [];
+  doc.flows[0].steps_partial = true;
+  assert.deepEqual(fired(doc, "chain-flow-no-steps").map((l) => [l.pointer, l.message]), expected);
+  assert.deepEqual(fired(doc, "chain-flow-step-mismatch"), []);
+});
+
+test("chain-flow-rationale-unnamed reads ids out of the Severity rationale", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "Checkout submission", value_priority: "High" }];
+  doc.chains[0].flows = ["flow-1"];
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names no flow id"]]);
+  doc.chains[0].ratings.S.rationale = "the checkout journey dies, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names no flow id"]]);
+  doc.chains[0].ratings.S.rationale = "flow-1 dies at majority radius, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed"), []);
+});
+
+test("flow-users-provisional fires while a chain-named flow's users.review is absent or provisional", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } }];
+  doc.chains[0].flows = ["flow-1"];
+  const expected = [["/flows/0/users/review", "flow flow-1 is named by chain ch-1 and its population is not yet re-scored by a named person"]];
+  assert.deepEqual(fired(doc, "flow-users-provisional").map((l) => [l.pointer, l.message]), expected);
+  doc.flows[0].users!.review = { status: "provisional" };
+  assert.deepEqual(fired(doc, "flow-users-provisional").map((l) => [l.pointer, l.message]), expected);
+  doc.flows[0].users!.review = { status: "rescored", by: "R. Viewer", date: "2026-10-12" };
+  assert.deepEqual(fired(doc, "flow-users-provisional"), []);
 });
