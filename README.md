@@ -2,7 +2,7 @@
 
 failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report. You can read an [example report](https://nzneit.github.io/failwise/) before you install it.
 
-It is version 0.6.0, a pre-release: the skill did not pass its own evaluations, and the tracking of actions has none. Read [Status and limitations](#status-and-limitations) before relying on it.
+It is version 0.7.0, a pre-release: the skill did not pass its own evaluations, and the tracking of actions has none. Read [Status and limitations](#status-and-limitations) before relying on it.
 
 ## Install
 
@@ -67,6 +67,7 @@ At the end, Claude gives you the analysis and the rendered report. Claude then a
   - a summary strip and a "Needs attention" block, under the title and the scope
   - the ground rules, assumptions and review record
   - the structure of the system, with a table of its top-level elements and a table of its dependencies
+  - the flows, with their value priority and their users
   - an index of the failure chains, sorted by priority
   - one section per chain, grouped by top-level element
   - the actions
@@ -93,7 +94,7 @@ One failure mode, with its effects, causes and controls, is one failure chain, a
 
 ## Status and limitations
 
-0.6.0 is a pre-release. The full evaluation of its skill ran on version 0.1.0, and that version did not pass its own acceptance gate. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation. 0.6.0 also changes the format of the analysis to schema v3, so an analysis written with 0.3.x to 0.5.x needs a one-time migration, as [Compatibility between versions](docs/scripts.md#compatibility-between-versions) describes.
+0.7.0 is a pre-release. The full evaluation of its skill ran on version 0.1.0, and that version did not pass its own acceptance gate. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation. 0.6.0 also changes the format of the analysis to schema v3, so an analysis written with 0.3.x to 0.5.x needs a one-time migration, as [Compatibility between versions](docs/scripts.md#compatibility-between-versions) describes.
 
 The evaluation tested the skill on four prompts. It ran each prompt at two model capabilities, high and medium. glm-5.3 filled the high capability, and glm-5.3-flash filled the medium capability. Three of the eight combinations passed:
 

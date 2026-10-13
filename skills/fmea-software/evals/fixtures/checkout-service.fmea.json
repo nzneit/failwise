@@ -1291,7 +1291,7 @@
         "message": "flow flow-resume is named by chain ch-5 and its population is not yet re-scored by a named person"
       }
     ],
-    "validated_at": "2026-10-13T06:08:01.490Z",
-    "validator_version": "0.6.0"
+    "validated_at": "2026-10-13T08:01:07.873Z",
+    "validator_version": "0.7.0"
   }
 }
