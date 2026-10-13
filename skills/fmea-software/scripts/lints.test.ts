@@ -1,10 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { CASCADING_ROWS, MACHINE_RULES, formatLintLine, runLints, tablePropertyLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
 import { validateDocument } from "./lib/validation.ts";
-import { bandTable, citeO, edge, graphDoc, loadFixture, minimalDoc, rating } from "./test-helpers.ts";
+import { SKILL_ROOT, bandTable, citeO, edge, graphDoc, loadFixture, minimalDoc, rating, readingDoc } from "./test-helpers.ts";
 import type { Chain, Codebase, Control, FmeaDocument, Lint, Source, TrackerLink } from "./lib/types.ts";
+
+const REFERENCE = readFileSync(join(SKILL_ROOT, "references", "quality-and-lint.md"), "utf8");
 
 function ruleById(id: string) {
   const rule = MACHINE_RULES.find((r) => r.id === id);
@@ -669,4 +673,22 @@ test("flow-users-provisional fires while a chain-named flow's users.review is ab
   assert.deepEqual(fired(doc, "flow-users-provisional").map((l) => [l.pointer, l.message]), expected);
   doc.flows[0].users!.review = { status: "rescored", by: "R. Viewer", date: "2026-10-12" };
   assert.deepEqual(fired(doc, "flow-users-provisional"), []);
+});
+
+// The coupling half of the flow link is a reviewer judgement (§4.2, §4.4): two named flows whose
+// steps share a provider function can break together from one cause, and no machine rule can read
+// that. The test pins the documented reviewer row and that no machine lint fires on the pair.
+test("chain-flow-shared-provider is the reviewer rule for a chain naming two flows that share a provider, and no machine lint fires on the pair", () => {
+  const doc = readingDoc();
+  doc.functions.push({ id: "fn-2", element: "svc", statement: "settle an authorization", conditions: [], for_whom: "clients" });
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", sources: [{ kind: "document", ref: "flow-notes.md" }], users: { population: "all shoppers", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } }, steps: ["fn-1"] },
+    { id: "flow-b", name: "B", value_priority: "Medium", sources: [{ kind: "document", ref: "flow-notes.md" }], users: { population: "shoppers who retry", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } }, steps: ["fn-1", "fn-2"] },
+  ];
+  doc.chains[0].flows = ["flow-a", "flow-b"];
+  doc.chains[0].ratings.S.rationale = "flow-a and flow-b share fn-1; flow-a set the band";
+  const row = REFERENCE.split("\n").find((l) => l.startsWith("| `chain-flow-shared-provider` |"));
+  assert.ok(row, "quality-and-lint.md documents chain-flow-shared-provider");
+  assert.ok(row!.includes("| reviewer |"), "chain-flow-shared-provider is documented as a reviewer rule");
+  assert.deepEqual(runLints(doc).map((l) => l.rule), []);
 });

@@ -4,8 +4,10 @@ import { chmodSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import process from "node:process";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
+import { checkInvariants } from "./lib/invariants.ts";
+import { runLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
-import { bandTable, minimalDoc, minimalDocOn, rating, writeTable } from "./test-helpers.ts";
+import { DF3_READINGS, bandTable, minimalDoc, minimalDocOn, rating, readingDoc, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
 import { changedMessage, clone, fixturePath, loadFixture, runCli, runCliWithOtherWriter, withTempDir } from "./test-helpers.ts";
 import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
@@ -508,4 +510,31 @@ test("staleComputed points at the first stored lint past the validator's list wh
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/17",
       message: `computed.lints, written by validator ${PLUGIN_VERSION}, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again` },
   ]);
+});
+
+// The seven DF3 readings (§8.2; §11 criterion 7 miscounts them as five). Each fixture states the
+// band its reading produces. These assertions pin that the tool ACCEPTS the reading and that the
+// chain's invariants and lints are consistent with its band and its annotation; they do not assert
+// a computed Severity class, because no script computes one and the reading is the author's.
+for (const reading of DF3_READINGS) {
+  test(`validate.ts accepts the DF3 reading ${reading.name} and its stated band of ${reading.band}`, () => {
+    const doc = readingDoc();
+    reading.build(doc);
+    doc.chains[0].ratings.S.value = reading.band;
+    doc.chains[0].ratings.S.rationale = `flow-1 sets the band: ${reading.name}`;
+    assert.deepEqual(checkInvariants(doc), []);
+    assert.deepEqual(runLints(doc).map((l) => l.rule), []);
+  });
+}
+
+// §4.1: `population` is free text, so a bare count reaches it and passes every schema, invariant and
+// machine check; only the reviewer rule `flow-referent-unsourced` can catch it. This pins that the
+// tool cannot. The steps and the review are the flow's other lint-free requirements, not the point.
+test("a population that is a bare count validates, and it is the reviewer rule that must catch it", () => {
+  const doc = readingDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", users: { population: "5000 shoppers", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } }, sources: [{ kind: "document", ref: "checkout-inputs.md" }], steps: ["fn-1"] }];
+  doc.chains[0].flows = ["flow-1"];
+  doc.chains[0].ratings.S.rationale = "flow-1 sets the band";
+  assert.deepEqual(checkInvariants(doc), []);
+  assert.deepEqual(runLints(doc).map((l) => l.rule), []);
 });

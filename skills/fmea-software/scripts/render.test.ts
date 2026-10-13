@@ -12,7 +12,7 @@ import { loadVocabulary } from "./lib/vocabulary.ts";
 import { PLUGIN_VERSION } from "./lib/version.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
-import { SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
+import { DF3_READINGS, SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, readingDoc, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
 import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
@@ -247,6 +247,22 @@ test("the annotation marks the first named flow by position, whichever id it car
   assert.equal(later.match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0], '<code>flow-b</code> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
   assert.equal(occurrences(later, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when the later entry is the other flow, never every named flow");
 });
+
+// One case per DF3 reading that names flows (§8.2): the annotation prints the chosen flow, which
+// is the first entry, marked. A reading that named more than one flow would also carry the
+// disjointness note, and the loop asserts it whenever that happens.
+for (const reading of DF3_READINGS) {
+  const doc = readingDoc();
+  reading.build(doc);
+  const named = doc.chains[0].flows ?? [];
+  if (named.length === 0) continue;
+  test(`the DF3 reading ${reading.name} prints the chosen first flow at band ${reading.band}`, () => {
+    const row = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+    assert.ok(row.includes("breaks:"), "the row names the flows it breaks");
+    assert.ok(row.includes(`<code>${named[0]}</code> <span class="mark mark-chosen">`), "the first named flow is the one marked chosen");
+    if (named.length > 1) assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+  });
+}
 
 test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
   const doc = golden();
