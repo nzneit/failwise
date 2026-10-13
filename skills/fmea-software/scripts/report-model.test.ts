@@ -341,16 +341,18 @@ test("trigger: equal to two causes after trimming, empty after trimming, and tri
   ]);
 });
 
-test("stale notice: the four reasons in words", () => {
+test("stale notice: the five reasons in words", () => {
   const model = modelOf(docOf(
     { stale: { flag: true, reason: "element-changed", since_version: 2 } },
     { stale: { flag: true, reason: "function-changed", since_version: 3 } },
+    { stale: { flag: true, reason: "flow-changed", since_version: 2 } },
     { stale: { flag: true, reason: "control-removed", since_version: 2 } },
     { stale: { flag: true, reason: "scales-version", since_version: 2 } },
   ));
   assert.deepEqual(model.rows.map((r) => r.staleNotice), [
     "Stale since version 2: its element changed.",
     "Stale since version 3: its function changed.",
+    "Stale since version 2: a flow it names changed.",
     "Stale since version 2: a control it relied on was removed.",
     "Stale since version 2: the scales changed.",
   ]);

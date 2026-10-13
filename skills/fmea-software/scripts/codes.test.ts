@@ -387,7 +387,7 @@ const TYPE_NAMES = [
   "ElementKind", "ElementBoundary", "SourceKind", "ControlKind", "ControlStatus", "ControlEvidenceKind",
   "RatingEvidenceKind", "ReviewStatus", "ActionStatus", "CauseOrigin", "StaleReason",
   "AssumptionStatus", "Strength", "Factor", "Severity", "HistoryEntry", "Assumption",
-  "Review", "Boundary", "Scales", "Meta", "Codebase", "DependencyEdge", "CitedOccurrence", "Source", "Element", "Fn", "Cause",
+  "Review", "Boundary", "Scales", "Meta", "Codebase", "DependencyEdge", "CitedOccurrence", "Source", "ValuePriority", "FlowUsers", "Flow", "Element", "Fn", "Cause",
   "ControlEvidence", "Control", "RatingReview", "Rating", "Ratings", "Priority", "Action",
   "Handoff", "CatalogRef", "Stale", "Effects", "Chain", "Lint", "Computed", "FmeaDocument",
 ];

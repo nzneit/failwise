@@ -262,15 +262,44 @@ test("a chain may carry post_priority beside post_ratings, in the shape of prior
   assert.deepEqual(checkSchema(extra).map((i) => i.pointer), ["/chains/0/post_priority/weight"]);
 });
 
-test("the top level is five authored parts in order, with dependencies required between functions and chains and computed after them", () => {
+test("the top level is six authored parts in order, with flows optional between chains and computed", () => {
   const schema = loadSchema();
   assert.deepEqual(schema.required, ["meta", "elements", "functions", "dependencies", "chains"]);
-  assert.deepEqual(Object.keys(schema.properties as object), ["meta", "elements", "functions", "dependencies", "chains", "computed"]);
+  assert.deepEqual(Object.keys(schema.properties as object), ["meta", "elements", "functions", "dependencies", "chains", "flows", "computed"]);
   const doc = minimalDoc() as unknown as Record<string, unknown>;
-  delete doc.dependencies;
+  doc.flows = [];
   const issues = checkSchema(doc);
-  assert.deepEqual(issues.map((i) => i.pointer), [""]);
-  assert.match(issues[0].message, /missing required property "dependencies"/);
+  assert.deepEqual(issues.map((i) => i.pointer), ["/flows"]);
+  assert.equal(issues[0].message, "array has 0 item(s), fewer than the minimum 1");
+});
+
+test("a flow carries id, name and value_priority, rejects an undeclared key, and takes users, steps and steps_partial", () => {
+  const flow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: "flow-checkout", name: "Checkout submission", value_priority: "High", ...over });
+  const withFlows = (f: Record<string, unknown>): Record<string, unknown> => {
+    const doc = minimalDoc() as unknown as Record<string, unknown>;
+    doc.flows = [f];
+    return doc;
+  };
+  assert.deepEqual(checkSchema(withFlows(flow())), []);
+  assert.deepEqual(
+    checkSchema(withFlows(flow({ value_priority: "Critical" }))).map((i) => [i.pointer, i.message]),
+    [["/flows/0/value_priority", 'value "Critical" is not one of "High", "Medium", "Low"']],
+  );
+  assert.deepEqual(checkSchema(withFlows(flow({ steps: ["fn-1"], steps_partial: true, users: { population: "all shoppers at checkout", share: "a majority of checkouts in the incident", selecting_condition: "a locale", review: { status: "provisional" } }, sources: [{ kind: "document", ref: "checkout-inputs.md" }] }))), []);
+  assert.deepEqual(checkSchema(withFlows(flow({ users: { population: "all shoppers" }, extra: 1 }))).map((i) => i.message), ['unexpected property "extra"']);
+  assert.deepEqual(checkSchema(withFlows(flow({ value_priority: "High", users: { share: 0.4 } }))).map((i) => [i.pointer, i.message]), [["/flows/0/users", 'missing required property "population"'], ["/flows/0/users/share", "expected type string, got number"]]);
+  assert.deepEqual(checkSchema(withFlows({ id: "flow-x", name: "X" })).map((i) => i.message), ['missing required property "value_priority"']);
+});
+
+test("chains[].flows is an array of ids and is optional on every chain", () => {
+  const withChainFlows = (flows: unknown): Record<string, unknown> => {
+    const doc = minimalDoc() as unknown as Record<string, unknown>;
+    (doc.chains as Record<string, unknown>[])[0].flows = flows;
+    return doc;
+  };
+  assert.deepEqual(checkSchema(withChainFlows(["flow-checkout"])), []);
+  assert.deepEqual(checkSchema(withChainFlows([])), []);
+  assert.deepEqual(checkSchema(withChainFlows("flow-checkout")).map((i) => [i.pointer, i.message]), [["/chains/0/flows", "expected type array, got string"]]);
 });
 
 test("an element that carries a dependency key is refused at the key", () => {
@@ -383,8 +412,9 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(!text(defs.dependencyEdge).includes("analysed system"));
   assert.ok(text(defs.elementBoundary).endsWith("An element whose boundary is not in_scope is the `to` of at least one edge in dependencies[] (invariant element-dependency-required)."));
   assert.ok(text(props("element").parent).endsWith("Derivable from id; the report's tree and the ancestor walk of the lints read it."));
-  assert.ok(text(schema).includes("Five parts are authored (meta, elements, functions, dependencies, chains)"));
+  assert.ok(text(schema).includes("Six parts are authored (meta, elements, functions, dependencies, chains, flows)"));
   assert.ok(!text(schema).includes("fifth part"));
+  assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
 });
 
 // `minimalDoc()` plus a tracker target and one action carrying a link, in the shapes of the
@@ -595,6 +625,12 @@ function derivationDoc(): Record<string, unknown> {
   (doc.meta as unknown as Record<string, unknown>).codebases = [{ id: "svc-repo", name: "Service repository", repo: "acme/svc", path: "services/svc" }];
   doc.elements[0].codebase = "svc-repo";
   Object.assign(doc.chains[0].causes[0], { chain: "ch-2", cited_o: { value: 6, evidence_kind: "observed_incident", evidence_ref: "INC-1" } });
+  (doc as unknown as Record<string, unknown>).flows = [
+    { id: "flow-1", name: "Derived flow", value_priority: "Low", steps: ["fn-1"], steps_partial: true,
+      sources: [{ kind: "interview", ref: "the operations lead" }],
+      users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-09-07" } } },
+  ];
+  doc.chains[0].flows = ["flow-1"];
   return doc as unknown as Record<string, unknown>;
 }
 
@@ -739,8 +775,11 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // of step 3 adds 111 derivations: 12 from the two `meta.codebases` entries, 2 from the two
   // element `codebase` ids, 6 from the order-store edge, 70 from `ch-9` and 21 from its three
   // `rating-provisional` findings in `computed`. 20 of them are `minLength` (2 from the codebase
-  // names, 12 from `ch-9`, 6 from the findings). The total is 1,472, so the floor is 1,416.
-  assert.ok(derived >= 1416, `expected at least 1416 derived violations, ran ${derived}`);
+  // names, 12 from `ch-9`, 6 from the findings). The flow model's `flows[]` and `chains[].flows`
+  // add 18: the derivation document instantiates one flow carrying `sources`, `steps`, `users` and
+  // a `review`, and the golden reaches none of the new nodes. The total is 1,490, so the floor is
+  // 1,434.
+  assert.ok(derived >= 1434, `expected at least 1434 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -755,6 +794,7 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // `meta.codebases` entries, 2 from the two element `codebase` ids, 6 from the order-store edge,
   // 70 from `ch-9` and 21 from its three `rating-provisional` findings in `computed`. 20 of them
   // are `minLength` (2 from the codebase names, 12 from `ch-9`, 6 from the findings), so the total
-  // and the floor are 291.
-  assert.ok(minLengthDerived >= 291, `expected at least 291 derived minLength violations, ran ${minLengthDerived}`);
+  // and the floor are 291. The flow model adds four: the derived flow's name, its source ref, its
+  // users population and its review author. The total and the floor are 295.
+  assert.ok(minLengthDerived >= 295, `expected at least 295 derived minLength violations, ran ${minLengthDerived}`);
 });

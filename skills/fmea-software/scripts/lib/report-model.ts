@@ -308,6 +308,7 @@ function triggerMatch(chain: Chain): { trigger: string | null; triggerCauses: nu
 const STALE_REASON_WORDS: Record<StaleReason, string> = {
   "element-changed": "its element changed",
   "function-changed": "its function changed",
+  "flow-changed": "a flow it names changed",
   "control-removed": "a control it relied on was removed",
   "scales-version": "the scales changed",
 };

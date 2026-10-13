@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:fmea-software:schema:fmea:v3",
   "title": "fmea-software analysis document",
-  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Five parts are authored (meta, elements, functions, dependencies, chains): elements and functions are normalized and keyed by stable ids, dependencies are edges from a consumer element to a provider element, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print. A sixth part, computed, follows them and is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
+  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Six parts are authored (meta, elements, functions, dependencies, chains, flows): elements and functions are normalized and keyed by stable ids, dependencies are edges from a consumer element to a provider element, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print, and flows are the critical user and system flows a chain may name. A seventh part, computed, follows them and is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version.",
   "type": "object",
   "additionalProperties": false,
   "required": ["meta", "elements", "functions", "dependencies", "chains"],
@@ -37,6 +37,14 @@
       "description": "One denormalized row per failure chain, as the report's chain index and row sections read it. The file keeps authoring order; the report sorts by priority, then severity.",
       "items": {
         "$ref": "#/$defs/chain"
+      }
+    },
+    "flows": {
+      "type": "array",
+      "description": "The critical user and system flows this analysis follows: a use-case grouping of functions that a user-valued journey names. Absent when the run authors none, which is the only way to say so. A flow carries no rating; where a chain names one, it supplies the Severity blast-radius population, as references/scales-software.md states. Flows are structure and not a catalog.",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/flow"
       }
     },
     "computed": {
@@ -86,7 +94,7 @@
         },
         "change": {
           "$ref": "#/$defs/nonEmptyString",
-          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of elements and functions added, removed or changed and rows marked stale; each scales.version change; a change of the recorded priority table through priority.ts --write --change-table, naming the table replaced and the one now recorded; a person's answer on whether a loaded priority table breaks the priority properties on purpose. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
+          "description": "What changed, in prose. In meta.history: a conversion's column mapping, the fields it substituted with row counts, and its empty-trigger note; an update's summary of the elements, functions and flows added, removed or changed and the rows marked stale; each scales.version change; a change of the recorded priority table through priority.ts --write --change-table, naming the table replaced and the one now recorded; a person's answer on whether a loaded priority table breaks the priority properties on purpose. In chains[].history: the row's conversion, carrying the sheet's stated RPN where it differs from the computed one; a re-rating; the clearing of its stale flag, carrying the since_version it had."
         }
       }
     },
@@ -315,6 +323,74 @@
         "path": {
           "$ref": "#/$defs/nonEmptyString",
           "description": "Optional. A folder inside the repository, slashes allowed, for a codebase that is part of a monorepo. The report header prints it and nothing checks it."
+        }
+      }
+    },
+    "flow": {
+      "title": "Flow",
+      "description": "One critical user or system flow. It is not an operational phase or mode, not a function, not a failure condition and not a hazardous event; references/methodology.md states its role. A flow is not a rating and drives none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "value_priority"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/plainId",
+          "description": "Opaque identifier, unique in the document (invariant flow-id-unique) and compared byte for byte like an element or function id, so a rename is a removal and an addition."
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The flow's name, as the inputs give it."
+        },
+        "value_priority": {
+          "enum": ["High", "Medium", "Low"],
+          "description": "The flow's value-priority tier. It is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. Used for sort and filter only; the report's row order is presentational and ranks nothing."
+        },
+        "sources": {
+          "type": "array",
+          "description": "Where knowledge of the flow came from, in the shape elements[].sources uses. Any flow a chain names carries at least one entry whose kind is not catalog (invariant flow-sources-required): the Severity denominator must be evidence, and a catalog row alone does not ground a population.",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "users": {
+          "$ref": "#/$defs/flowUsers",
+          "description": "The referent population the Severity blast radius is read over. Required of any flow a chain names (invariant flow-users-required); absent on a flow no chain names."
+        },
+        "steps": {
+          "type": "array",
+          "description": "The functions the flow passes through, in order, best effort; a linear sequence, and each id resolves to a function (invariant flow-step-resolves).",
+          "items": {
+            "$ref": "#/$defs/plainId"
+          }
+        },
+        "steps_partial": {
+          "type": "boolean",
+          "description": "true while the recorded steps are a prefix and the flow continues past what is written. It records documentation extent only, never that the flow survives a failure, and it silences the mismatch warning only where a prefix is actually recorded."
+        }
+      }
+    },
+    "flowUsers": {
+      "title": "Flow referent population",
+      "description": "The population a flow's Severity blast radius is read over. Free text that moves a band, so it is a reviewable claim: its evidence is the flow's sources[], its status is review.status, and the reviewer rule flow-referent-unsourced fires where it is not grounded in what the run collected.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["population"],
+      "properties": {
+        "population": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "A label, never a number: for example all shoppers at checkout, or internal only: the reconciliation operators. A count stays in the incident record and only its fraction in share. A population named as one client, tenant or locale is this field, not selecting_condition, and a flow whose population is one named client reads the majority radius."
+        },
+        "share": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "A fraction an incident record states, naming what it is measured against. It raises the radius class and never lowers it; a bare count is not a share."
+        },
+        "selecting_condition": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The predicate the inputs quote, which selects part of this flow's own population rather than sizing it: a locale, a retried order, a session at expiry."
+        },
+        "review": {
+          "$ref": "#/$defs/ratingReview",
+          "description": "The same status vocabulary a rating's review uses. rescored and authored require by and date (invariant flow-users-review-by-date), so this field gates the denominator rather than gesturing at it; while the whole object is absent, or its status is provisional, the lint flow-users-provisional fires and the report marks the rows resting on this denominator provisional."
         }
       }
     },
@@ -819,11 +895,11 @@
       "properties": {
         "flag": {
           "type": "boolean",
-          "description": "true while the row's ratings predate a change to its element, its function, its control inventory or the scales."
+          "description": "true while the row's ratings predate a change to its element, its function, a flow it names, its control inventory or the scales."
         },
         "reason": {
-          "enum": ["element-changed", "function-changed", "control-removed", "scales-version"],
-          "description": "Present when flag is true (invariant stale-without-reason): the first rule that fired, in the order element-changed, function-changed, control-removed, scales-version."
+          "enum": ["element-changed", "function-changed", "flow-changed", "control-removed", "scales-version"],
+          "description": "Present when flag is true (invariant stale-without-reason): the first rule that fired, in the order element-changed, function-changed, flow-changed, control-removed, scales-version."
         },
         "since_version": {
           "type": "integer",
@@ -867,6 +943,13 @@
         "function": {
           "$ref": "#/$defs/plainId",
           "description": "A reference: the id of the function in functions[] whose loss this chain describes (invariant chain-function-resolves). The chain's element is reached only through it."
+        },
+        "flows": {
+          "type": "array",
+          "description": "The flows this chain breaks, in the author's order; the first is the one the Severity rationale names as having set the band. Each id resolves to a flow (invariant chain-flow-resolves) and no flow is named twice (invariant chain-flows-unique). Absent or empty means the chain names no flow and Severity's blast radius falls back to the function's users.",
+          "items": {
+            "$ref": "#/$defs/plainId"
+          }
         },
         "failure_mode": {
           "$ref": "#/$defs/nonEmptyString",
