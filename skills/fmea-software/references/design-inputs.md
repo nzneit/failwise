@@ -8,7 +8,7 @@ No input is a rating and no input is a chain; an input is evidence about the sys
 
 | # | Input | What to collect | Provenance |
 |---|---|---|---|
-| 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. | [paraphrased:C014] |
+| 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. In the document each flow is one entry of `flows[]`: `name` and `value_priority` are written as collected; `sources` records where knowledge of the flow came from; `users.population`, with the optional `users.share` and `users.selecting_condition`, states its referent population; `steps` lists the functions it passes through and `steps_partial` says whether that list is a prefix; and a chain names the flows it breaks in `chains[].flows`. | [paraphrased:C014] [skill-authored] |
 | 2 | Component inventory by type | The system decomposed by component type: ingress, networking, compute, data, storage, supporting services — identity, messaging, key and secret storage — and egress. | [paraphrased:C014] |
 | 3 | Dependency classification | Every dependency placed on two axes: internal or external by the element's boundary (`in_scope` against `owned_outside` or `third_party`), and strong or weak. | [paraphrased:C014] [skill-authored] |
 | 4 | Dependency reliability data | For every element that is the provider of an edge, whatever its boundary, the availability SLA and the scaling limits. | [paraphrased:C014] [skill-authored] |
@@ -28,6 +28,17 @@ Items 1 to 4 and 14 are the structure inputs and are wanted before step 2; items
 ## Flows, components and dependencies
 
 Flows come first: the analysis assumes user and system flows have already been identified and prioritised by criticality, and plans the components each critical flow needs against them. [paraphrased:C014]
+One flow is a user-valued journey named once, not a per-step slice of that journey. [skill-authored]
+A flow with no external user is not a defect: it is internal or machine-only, `users.population` names it (`internal only: the reconciliation operators`), and the structural test reads the internal-only class for it. [skill-authored]
+A population is a label and never a quantity: the count stays in the incident record and only its fraction goes in `share`. [skill-authored]
+Where the team knows only that one service publishes and another consumes, record what is known, name the end population in `users.population`, list the consumers that are known as `steps` or as an open assumption owned by `user`, and set `steps_partial: true`. [skill-authored]
+`value_priority` is the flow's value-priority tier: a three-level label the run records on each flow and reads for sort and filter only. [paraphrased:C201]
+Each criterion is a test a second rater can apply to one flow without reading the first rater's answer. [skill-authored]
+- **High** — losing this flow stops the business serving its external users at all: no path inside the flow delivers the outcome, and no existing evidenced control or stated procedure restores it inside the flow's own budget. [paraphrased:C201]
+- **Medium** — losing this flow degrades it while a stated alternative path still delivers the outcome, and restoring the flow needs a person. [paraphrased:C201]
+- **Low** — losing this flow is absorbed: it reaches no external user, or an existing evidenced control keeps the outcome delivered. [paraphrased:C201]
+The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. [skill-authored]
+The three criteria measure business impact and not safety, because `Severity` is a technical consequence class. [skill-authored]
 Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [skill-authored]
 A strong dependency is one the system cannot function or stay available without; a weak one, when absent, costs named features while the system as a whole keeps serving. [paraphrased:C014]
 The source states the reliability data — availability SLA, scaling limits — for internal dependencies. [paraphrased:C014]
