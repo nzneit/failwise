@@ -308,7 +308,7 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /^### c5-provisional-rescore \(must, not prompt 6\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c5-provisional-rescore")?.prompts, [1, 5, 7]);
   assert.match(rubric, /Under rubric 3, prompt 1 adds c14 and c15 \(maximum 26, 8 musts\) and prompt 6 adds c14 \(maximum 24, 8 musts\); prompt 7 is unchanged \(maximum 22, 9 musts\)\./);
-  assert.match(rubric, /Under rubric 4, prompt 1 adds c16 \(maximum 28, 8 musts\); prompts 6 and 7 are unchanged \(maximum 24 and 22, 9 musts\)\./);
+  assert.match(rubric, /Under rubric 4, prompt 1 adds c16 \(maximum 28, 8 musts\); prompts 6 and 7 are unchanged \(prompt 6 maximum 24, 8 musts; prompt 7 maximum 22, 9 musts\)\./);
   assert.match(rubric, /^### c14-edges-and-codebases \(prompts 1 and 6; rubric 3\)$/m);
   assert.match(rubric, /^### c15-cross-service-trace \(prompt 1; rubric 3\)$/m);
   assert.match(rubric, /^### c16-flows \(prompt 1; rubric 4\)$/m);
