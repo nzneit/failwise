@@ -702,3 +702,16 @@ test("propagates to: each consumer once, in index order, on the first chain of t
     [],
   ]);
 });
+
+test("model.flows is in the presentational order and marks the provisional and chain-named flows", () => {
+  const doc = docOf({}, {}, {});
+  doc.flows = [
+    { id: "flow-b", name: "B", value_priority: "Low" },
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers", review: { status: "provisional" } } },
+    { id: "flow-c", name: "C", value_priority: "High", users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } },
+  ];
+  doc.chains[0].flows = ["flow-a"];
+  const model = modelOf(doc);
+  assert.deepEqual(model.flows.map((f) => f.id), ["flow-a", "flow-c", "flow-b"]);
+  assert.deepEqual(model.flows.map((f) => [f.provisional, f.namedByChain]), [[true, true], [false, false], [false, false]]);
+});

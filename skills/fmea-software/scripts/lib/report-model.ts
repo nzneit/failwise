@@ -2,7 +2,7 @@
 // No HTML and no escaping here; `render.ts` emits and escapes. Chains are addressed by their
 // position in `chains[]`.
 
-import type { Action, Chain, Codebase, DependencyEdge, Element, Factor, FmeaDocument, Ratings, Severity, Stale, StaleReason } from "./types.ts";
+import type { Action, Chain, Codebase, DependencyEdge, Element, Factor, FmeaDocument, Ratings, Severity, Source, Stale, StaleReason, ValuePriority } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
 import { vocabularyRank } from "./table.ts";
 import { chainIndex } from "./pointer.ts";
@@ -95,10 +95,30 @@ export interface RootRow { id: string; name: string; codebase: string | null; ch
 // The index rows under one top-level element; `root` null for the rows whose chain reaches none.
 export interface GroupSection { root: { id: string; name: string } | null; rows: RowModel[] }
 
+// One flow of the document, for the Flows section (§5.3): its tier, its referent population and the
+// flags the legend and the provisional mark read. `steps` holds the function ids in order; `partial`
+// records a prefix; `provisional` is set when a chain names the flow and its `users.review` is absent
+// or `provisional`; `namedByChain` is set when any chain names it. The interface order is
+// presentational only and ranks nothing (DF4).
+export interface FlowRow {
+  id: string;
+  name: string;
+  valuePriority: ValuePriority;
+  population: string | null;
+  share: string | null;
+  selectingCondition: string | null;
+  sources: Source[];
+  steps: string[];
+  partial: boolean;
+  provisional: boolean;
+  namedByChain: boolean;
+}
+
 export interface ReportModel {
   tiles: Tiles;
   vocabulary: { value: string; style: RankStyle }[];   // the loaded table's vocabulary in order, for the key
   rows: RowModel[];                                    // the index order of sortChains
+  flows: FlowRow[];                                    // High first, then id; presentational, ranks nothing
   groups: CheckGroup[];                                // blocker groups first, then by first finding
   actions: ActionRow[];                                // open first, then by target date, ties in document order (§5.2)
   tracked: boolean;                                    // whether any action carries a link
@@ -529,6 +549,45 @@ function buildAttention(rows: RowModel[], actions: ActionRow[], provisionalRatin
   };
 }
 
+// The flow value-priority tiers in the report's fixed order: High, then Medium, then Low (DF4).
+const VALUE_PRIORITY_ORDER: ValuePriority[] = ["High", "Medium", "Low"];
+
+// A flow's steps as function ids, resolved through the function index; a step that names no function
+// is kept as it stands (invariant flow-step-resolves keeps a valid document's steps resolvable).
+function stepNames(doc: FmeaDocument, docIndex: DocIndex, steps: string[]): string[] {
+  return steps.map((step) => {
+    const at = docIndex.fn.get(step);
+    return at === undefined ? step : doc.functions[at].id;
+  });
+}
+
+// The flows in the report's fixed order — High first, then by id — a presentational order that ranks
+// nothing (§5.3, DF4). Each row carries the flags the legend and the provisional mark read.
+function flowRows(doc: FmeaDocument, docIndex: DocIndex): FlowRow[] {
+  const namedByChain = new Set(doc.chains.flatMap((c) => c.flows ?? []));
+  const rows = (doc.flows ?? []).map((flow): FlowRow => {
+    const users = flow.users;
+    const review = users?.review;
+    const named = namedByChain.has(flow.id);
+    return {
+      id: flow.id,
+      name: flow.name,
+      valuePriority: flow.value_priority,
+      population: users?.population ?? null,
+      share: users?.share ?? null,
+      selectingCondition: users?.selecting_condition ?? null,
+      sources: flow.sources ?? [],
+      steps: stepNames(doc, docIndex, flow.steps ?? []),
+      partial: flow.steps_partial === true,
+      provisional: named && (review === undefined || review.status === "provisional"),
+      namedByChain: named,
+    };
+  });
+  return rows.sort((a, b) =>
+    VALUE_PRIORITY_ORDER.indexOf(a.valuePriority) - VALUE_PRIORITY_ORDER.indexOf(b.valuePriority) ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 export function buildReportModel(doc: FmeaDocument, table: PriorityTable): ReportModel {
   const tiles: Tiles = {
     priorities: priorityCounts(doc, table.vocabulary),
@@ -550,6 +609,7 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     tiles,
     vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })),
     rows,
+    flows: flowRows(doc, docIndex),
     groups: groupFindings(located),
     actions,
     tracked: actions.some((a) => a.tracker !== null),

@@ -88,7 +88,7 @@ Priority is computed by the script, not in prose. That covers `post_priority` as
 
 `report.html` exists and was produced by `render.ts` from the validated document.
 
-- **2** — `report.html` exists, `transcript.jsonl` holds a `tool_use` block whose command runs `render.ts` with `--out report.html`, and it contains the sections in design §9 order (element ids `header`, `ground-rules`, `assumptions`, `reviews`, `structure`, `chains`, `actions`, `lints`, `provenance`) and the `<script type="application/json" id="fmea-data">` block.
+- **2** — `report.html` exists, `transcript.jsonl` holds a `tool_use` block whose command runs `render.ts` with `--out report.html`, and it contains the sections in design §9 order (element ids `header`, `ground-rules`, `assumptions`, `reviews`, `structure`, `flows`, `chains`, `actions`, `lints`, `provenance`) and the `<script type="application/json" id="fmea-data">` block.
 - **1** — `report.html` exists but was written some other way, or lacks one of those sections.
 - **0** — `report.html` is missing.
 

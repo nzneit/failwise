@@ -54,6 +54,7 @@ const FREE_TEXT_KEYS = new Set([
   "name", "scope", "security", "outcome", "description", "statement", "for_whom", "failure_mode",
   "local", "next_level", "end", "text", "rationale", "owner", "trigger", "message", "reason",
   "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident", "repo", "path",
+  "population", "share", "selecting_condition",
 ]);
 const FREE_TEXT_ARRAYS = new Set(["ground_rules", "included", "excluded", "reviewers", "conditions"]);
 
@@ -173,13 +174,38 @@ function everyPart(): FmeaDocument {
 
 test("the report carries every section id, in the order section 9 fixes", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
-  const ids = ["header", "ground-rules", "assumptions", "reviews", "structure", "chains", "actions", "lints", "provenance", "fmea-data"];
+  const ids = ["header", "ground-rules", "assumptions", "reviews", "structure", "flows", "chains", "actions", "lints", "provenance", "fmea-data"];
   const positions = ids.map((id) => {
     const at = html.indexOf(`id="${id}"`);
     assert.notEqual(at, -1, `section id ${id} is missing`);
     return at;
   });
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+});
+
+test("the Flows section prints one row per flow, High first then by id, with the legend's disclaimer verbatim", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const section = html.slice(html.indexOf('id="flows"'), html.indexOf('id="chains"'));
+  assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the legend prints DF4's sentence verbatim");
+  const ids = [...section.matchAll(/<code>(flow-[a-z-]+)<\/code>/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
+  assert.ok(section.includes("a starting point only; the recorded steps are a prefix") === false, "the golden fixture's flows are not partial");
+});
+
+test("the Flows section has its empty state, and a partial flow renders its phrase", () => {
+  const doc = minimalDoc();
+  assert.ok(renderHtml(doc, table, template, vocabulary).includes('<p class="empty">No flows recorded.</p>'));
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "Low", steps: ["fn-1"], steps_partial: true, users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } }];
+  assert.ok(renderHtml(doc, table, template, vocabulary).includes("a starting point only; the recorded steps are a prefix"));
+});
+
+test("a chain-named flow whose population is not re-scored is marked, and the legend says so", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } }];
+  doc.chains[0].flows = ["flow-1"];
+  const html = renderHtml(doc, table, template, vocabulary);
+  assert.ok(html.includes('<span class="mark mark-provisional"'), "the flow row carries the provisional mark");
+  assert.ok(html.includes("whose population has not been re-scored"), "the legend names the provisional note");
 });
 
 test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
@@ -400,7 +426,7 @@ test("a document without a computed block shows an em dash in the quality score 
 
 test("the header ends with the contents line, after the metadata, the tiles and the block", () => {
   const header = headerOf(golden());
-  const toc = '<p class="toc"><b>Contents</b> <a href="#ground-rules">Ground rules</a> <a href="#assumptions">Assumptions</a> <a href="#reviews">Review record</a> <a href="#structure">Structure</a> <a href="#chains">Failure chains</a> <a href="#actions">Actions</a> <a href="#lints">Automated checks</a> <a href="#provenance">Provenance</a></p>';
+  const toc = '<p class="toc"><b>Contents</b> <a href="#ground-rules">Ground rules</a> <a href="#assumptions">Assumptions</a> <a href="#reviews">Review record</a> <a href="#structure">Structure</a> <a href="#flows">Flows</a> <a href="#chains">Failure chains</a> <a href="#actions">Actions</a> <a href="#lints">Automated checks</a> <a href="#provenance">Provenance</a></p>';
   const at = ['<dl class="header">', '<div class="strip">', '<div class="attn">', toc].map((s) => header.indexOf(s));
   assert.ok(at.every((i) => i !== -1), `a header part is missing: ${at.join(", ")}`);
   assert.deepEqual(at, [...at].sort((a, b) => a - b));
@@ -443,7 +469,7 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   const labels = [...html.matchAll(FRAME)].map((match) => match[1]);
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
-    "By top-level element", "Dependencies", "Index of failure chains",
+    "By top-level element", "Dependencies", "Flows", "Index of failure chains",
     ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ScriptError } from "./lib/codes.ts";
-import type { Action, Chain, DependencyEdge, Element, FmeaDocument, Ratings, Factor } from "./lib/types.ts";
+import type { Action, Chain, DependencyEdge, Element, FmeaDocument, Ratings, Factor, ValuePriority } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import type { Vocabulary } from "./lib/vocabulary.ts";
@@ -11,14 +11,14 @@ import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { buildReportModel } from "./lib/report-model.ts";
-import type { ActionRow, Attention, CheckGroup, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RootRow, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
+import type { ActionRow, Attention, CheckGroup, FlowRow, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RootRow, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
 export const TEMPLATE_PATH: string = join(import.meta.dirname, "..", "assets", "report-template.html");
 
 const FACTORS: Factor[] = ["S", "O", "D"];
-const SLOTS = ["title", "header", "ground-rules", "assumptions", "reviews", "structure", "chains", "actions", "lints", "provenance", "data"] as const;
+const SLOTS = ["title", "header", "ground-rules", "assumptions", "reviews", "structure", "flows", "chains", "actions", "lints", "provenance", "data"] as const;
 
 const KEY_TEXT: Record<"sod" | "priority" | "rpn" | RowMark | "warning", string> = {
   sod: "Severity, Occurrence and Detection, each rated 1 to 10 against the scales. Higher is worse: more harm, more likely, caught later or not at all.",
@@ -45,7 +45,7 @@ const ATTENTION_WHY = {
 const NOTHING_NEEDS_ATTENTION = "Nothing needs attention: no blocker, no stale row, no provisional rating, no handoff and no open action.";
 const CONTENTS: [string, string][] = [
   ["ground-rules", "Ground rules"], ["assumptions", "Assumptions"], ["reviews", "Review record"], ["structure", "Structure"],
-  ["chains", "Failure chains"], ["actions", "Actions"], ["lints", "Automated checks"], ["provenance", "Provenance"],
+  ["flows", "Flows"], ["chains", "Failure chains"], ["actions", "Actions"], ["lints", "Automated checks"], ["provenance", "Provenance"],
 ];
 
 function e(s: string): string { return escapeHtml(s); }
@@ -213,6 +213,52 @@ function dependenciesHtml(edges: DependencyEdge[]): string {
     `<tr><td><code>${e(d.from)}</code></td><td><code>${e(d.to)}</code></td><td>${e(d.strength)}</td><td>${e(d.sla ?? "")}</td><td>${e(d.limits ?? "")}</td></tr>`;
   return captionHtml("dependencies-caption", DEPENDENCIES_CAPTION) +
     frameHtml("Dependencies", `<table aria-labelledby="dependencies-caption">${head}<tbody>${edges.map(row).join("")}</tbody></table>`);
+}
+
+const FLOWS_CAPTION = "One row per flow, High first then by id, a presentational order that ranks nothing.";
+const FLOWS_LEGEND = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
+const FLOWS_PROVISIONAL_NOTE = "A chain-named flow whose population has not been re-scored is marked provisional; the Severity of the rows that rest on it, and the priority that follows, are not final.";
+const FLOWS_PARTIAL = "a starting point only; the recorded steps are a prefix";
+const FLOWS_HEAD = "<thead><tr><th>Flow</th><th>Priority</th><th>Population</th><th>Sources</th><th>Steps</th></tr></thead>";
+// The flow value-priority tiers use the same badge styles as the loaded table's first, middle and
+// last values, so a tier is read at a glance and stays the bare label (DF4, C201).
+const VALUE_PRIORITY_STYLE: Record<ValuePriority, RankStyle> = { High: "top", Medium: "mid", Low: "low" };
+
+// The population, with the share and the selecting condition when the flow records them.
+function flowPopulationHtml(f: FlowRow): string {
+  if (f.population === null) return "&mdash;";
+  const share = f.share === null ? "" : ` <span class="muted">share: ${e(f.share)}</span>`;
+  const condition = f.selectingCondition === null ? "" : ` <span class="muted">selecting: ${e(f.selectingCondition)}</span>`;
+  return `${e(f.population)}${share}${condition}`;
+}
+
+function flowSourcesHtml(sources: FlowRow["sources"]): string {
+  if (sources.length === 0) return "&mdash;";
+  return sources.map((s) => `<span class="muted">${e(s.kind)}</span> <code>${e(s.ref)}</code>`).join("<br>");
+}
+
+// The ordered steps, and, for a partial flow, the marker phrase that says the list is a prefix.
+function flowStepsHtml(f: FlowRow): string {
+  const steps = f.steps.map((s) => `<code>${e(s)}</code>`).join(" &rarr; ");
+  if (!f.partial) return steps === "" ? "&mdash;" : steps;
+  const marker = `<span class="muted">${e(FLOWS_PARTIAL)}</span>`;
+  return steps === "" ? marker : `${steps}<br>${marker}`;
+}
+
+function flowRowHtml(f: FlowRow): string {
+  const mark = f.provisional ? `<br>${markHtml("provisional")}` : "";
+  return `<tr><td><code>${e(f.id)}</code> ${e(f.name)}${mark}</td>` +
+    `<td>${badgeHtml(f.valuePriority, VALUE_PRIORITY_STYLE[f.valuePriority])}</td>` +
+    `<td>${flowPopulationHtml(f)}</td><td>${flowSourcesHtml(f.sources)}</td><td>${flowStepsHtml(f)}</td></tr>`;
+}
+
+// The Flows section: a caption, a framed table (§5.3) or its empty state, and the legend that pins
+// DF4's sentence and names the provisional note.
+function flowsHtml(flows: FlowRow[]): string {
+  const legend = `<p>${e(FLOWS_LEGEND)} <span class="muted">${e(FLOWS_PROVISIONAL_NOTE)}</span></p>`;
+  if (flows.length === 0) return `<p class="empty">No flows recorded.</p>${legend}`;
+  return captionHtml("flows-caption", FLOWS_CAPTION) +
+    frameHtml("Flows", `<table aria-labelledby="flows-caption">${FLOWS_HEAD}<tbody>${flows.map(flowRowHtml).join("")}</tbody></table>`) + legend;
 }
 
 // The element tree; `labels` is indexed by element position and names each element's codebase, null for none printed.
@@ -460,6 +506,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
     assumptions: list(doc.meta.assumptions.map((a) => `${e(a.text)} <span class="empty">(${e(a.owner)}, ${e(a.status)})</span>`), "No assumptions recorded."),
     reviews: list(doc.meta.reviews.map((r) => `${e(r.date)} &mdash; ${r.reviewers.map(e).join(", ")} &mdash; ${e(r.outcome)}`), "No reviews recorded."),
     structure: structureHtml(doc, model, vocabulary),
+    flows: flowsHtml(model.flows),
     chains: chainsHtml(model),
     actions: actionsHtml(model.actions, model.tracked),
     lints: checksHtml(model.groups, model.tiles.qualityScore),
