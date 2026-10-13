@@ -227,17 +227,25 @@ test("a chain naming one flow prints no disjointness note, and a chain naming no
 });
 
 test("the annotation marks the first named flow by position, whichever id it carries, never every named flow", () => {
-  const doc = minimalDoc();
+  // The row carries a finding so the annotation's position within the row is pinned, not only its text.
+  const doc = withComputed(minimalDoc(), [lint("blocker", "detection-1-without-evidenced-control", "/chains/0/ratings/D", "Detection is 1 with no existing detection control carrying evidence")]);
   doc.flows = [
     { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
     { id: "flow-b", name: "B", value_priority: "Low", users: { population: "internal only: operators" } },
   ];
-  const marked = (order: string[]): string | undefined => {
+  const rowFor = (order: string[]): string => {
     doc.chains[0].flows = order;
-    return rowSection(renderHtml(doc, table, template, vocabulary), "ch-1").match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0];
+    return rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   };
-  assert.equal(marked(["flow-a", "flow-b"]), '<code>flow-a</code> <span class="mark mark-chosen">', "the first entry is marked when it leads");
-  assert.equal(marked(["flow-b", "flow-a"]), '<code>flow-b</code> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
+  // Both entries name a flow, so a renderer that marked every named flow would print two mark-chosen
+  // spans; exactly one proves the annotation reads position, not the presence of a name.
+  const leading = rowFor(["flow-a", "flow-b"]);
+  assert.equal(leading.match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0], '<code>flow-a</code> <span class="mark mark-chosen">', "the first entry is marked when it leads");
+  assert.equal(occurrences(leading, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when it leads, never every named flow");
+  assert.ok(leading.indexOf("breaks:") < leading.indexOf('<p class="finding'), "the annotation reads before the row's findings");
+  const later = rowFor(["flow-b", "flow-a"]);
+  assert.equal(later.match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0], '<code>flow-b</code> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
+  assert.equal(occurrences(later, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when the later entry is the other flow, never every named flow");
 });
 
 test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
