@@ -433,7 +433,7 @@ const stability = await pipeline(
     // flows comparison, where both runs carried no flows). That is a hole in the
     // evidence: the entry is marked unverified and is never counted as a measured
     // failure by the note's unver computation.
-    return { ...pair, ...measured, unverified: measured.verified === false }
+    return { ...pair, ...measured, unverified: measured.verified !== true }
   },
 )
 

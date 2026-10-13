@@ -176,7 +176,7 @@ function chainsNaming(ctx: Ctx, flowId: string): number[] {
   return ctx.draft.chains.flatMap((c, i) => (c.flows?.includes(flowId) ? [i] : []));
 }
 
-/** Records a reach text and its reason on a row; where reaches compete, the lowest-precedence reason
+/** Records a reach text and its reason on a row; where reaches compete, the highest-precedence reason
  *  (the earliest in `STALE_REASON_ORDER`) wins, so a tie keeps the first reach computed. */
 type Mark = (i: number, text: string, reason: StaleReason) => void;
 
