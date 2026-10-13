@@ -43,7 +43,7 @@ test("the tiles for the checkout fixture", () => {
     priorities: [{ value: "H", style: "top", count: 5 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
     chainsLine: "9 failure chains",
     ratings: { provisional: 11, total: 30, line: "provisional, in 4 rows" },
-    checks: { blockers: "1 blocker", warnings: "13 warnings", alert: true },
+    checks: { blockers: "1 blocker", warnings: "16 warnings", alert: true },
     actions: { headline: "8 open", of: "of 9", line: "next due 2026-10-09" },
     qualityScore: 89,
   });
@@ -163,7 +163,7 @@ test("a row finding is labelled by where its pointer lies within the row", () =>
   ]);
 });
 
-test("the fixture's findings form four groups, blockers first, rating-provisional as one group over four rows", () => {
+test("the fixture's findings form seven groups, blockers first, rating-provisional as one group over four rows", () => {
   const S = { text: "S", raw: false };
   const O = { text: "O", raw: false };
   const D = { text: "D", raw: false };
@@ -180,6 +180,12 @@ test("the fixture's findings form four groups, blockers first, rating-provisiona
     ] },
     { severity: "warning", rule: "seeded-action-without-incident", message: "action on a chain seeded from INC-2026-0314 carries no source_incident",
       count: 1, locations: [{ kind: "row", chainId: "ch-8", labels: [{ text: "act-2", raw: false }] }] },
+    { severity: "warning", rule: "flow-users-provisional", message: "flow flow-checkout is named by chain ch-9 and its population is not yet re-scored by a named person",
+      count: 1, locations: [{ kind: "document", pointer: "/flows/0/users/review" }] },
+    { severity: "warning", rule: "flow-users-provisional", message: "flow flow-retry is named by chain ch-9 and its population is not yet re-scored by a named person",
+      count: 1, locations: [{ kind: "document", pointer: "/flows/1/users/review" }] },
+    { severity: "warning", rule: "flow-users-provisional", message: "flow flow-resume is named by chain ch-5 and its population is not yet re-scored by a named person",
+      count: 1, locations: [{ kind: "document", pointer: "/flows/2/users/review" }] },
   ]);
 });
 

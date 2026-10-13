@@ -36,7 +36,7 @@
       }
     ],
     "scales": {
-      "version": 1,
+      "version": 2,
       "priority_table": "priority-fmea-software-v1"
     },
     "created": "2026-08-01",
@@ -287,7 +287,7 @@
       "ratings": {
         "S": {
           "value": 5,
-          "rationale": "The end effect is a policy breach for a subset of shoppers with no loss of access or data.",
+          "rationale": "The end effect is a policy breach for a subset of shoppers with no loss of access or data. The named flow, flow-resume, dies by the same clause, \"A subset of shoppers keeps an open checkout session longer than the policy allows\", so the band holds for shoppers resuming an abandoned session.",
           "evidence_kind": "estimate",
           "review": {
             "status": "rescored",
@@ -327,7 +327,10 @@
         "value": "M",
         "table": "priority-fmea-software-v1",
         "rpn": 80
-      }
+      },
+      "flows": [
+        "flow-resume"
+      ]
     },
     {
       "id": "ch-3",
@@ -542,10 +545,74 @@
       }
     }
   ],
+  "flows": [
+    {
+      "id": "flow-checkout",
+      "name": "A signed-in shopper submits a cart and the service returns a confirmation",
+      "value_priority": "High",
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#critical-flows"
+        }
+      ],
+      "users": {
+        "population": "signed-in shoppers"
+      },
+      "steps": [
+        "fn-checkout-order",
+        "fn-pricing-quote",
+        "fn-gateway-authorize",
+        "fn-store-persist"
+      ]
+    },
+    {
+      "id": "flow-retry",
+      "name": "A shopper retries a submission after a timeout and the cart is authorized once",
+      "value_priority": "High",
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#critical-flows"
+        }
+      ],
+      "users": {
+        "population": "shoppers retrying a submission after a timeout"
+      },
+      "steps": [
+        "fn-checkout-order",
+        "fn-gateway-authorize"
+      ]
+    },
+    {
+      "id": "flow-resume",
+      "name": "A shopper resumes an abandoned session from a saved link",
+      "value_priority": "Medium",
+      "sources": [
+        {
+          "kind": "document",
+          "ref": "checkout-inputs.md#critical-flows"
+        }
+      ],
+      "users": {
+        "population": "shoppers resuming an abandoned session from a saved link"
+      },
+      "steps": [
+        "fn-auth-session"
+      ]
+    }
+  ],
   "computed": {
     "quality_score": 100,
-    "lints": [],
-    "validated_at": "2026-09-11T04:49:32.136Z",
-    "validator_version": "0.1.0"
+    "lints": [
+      {
+        "rule": "flow-users-provisional",
+        "severity": "warning",
+        "pointer": "/flows/2/users/review",
+        "message": "flow flow-resume is named by chain ch-2 and its population is not yet re-scored by a named person"
+      }
+    ],
+    "validated_at": "2026-10-13T06:08:01.540Z",
+    "validator_version": "0.6.0"
   }
 }

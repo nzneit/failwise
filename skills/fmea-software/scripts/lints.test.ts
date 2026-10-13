@@ -584,10 +584,10 @@ test("runLints takes a rule subset", () => {
 });
 
 // The golden fixture's lint facts. A rule that fires on the golden analysis fails here first, before validate.test.ts.
-test("the golden fixture produces exactly the fourteen lints the later tasks assert, none from the four rules of schema v3", () => {
+test("the golden fixture produces exactly the seventeen lints the later tasks assert, none from the four rules of schema v3", () => {
   const doc = loadFixture<FmeaDocument>("checkout-service.fmea.json");
   const lints = runLints(doc);
-  assert.equal(lints.length, 14);
+  assert.equal(lints.length, 17);
   assert.equal(lints.filter((l) => l.severity === "blocker").length, 1);
   for (const rule of ["repo-ref-codebase", "cause-chain-unlinked", "cause-chain-severity", "linked-cause-occurrence-drift"]) {
     assert.deepEqual(lints.filter((l) => l.rule === rule), [], rule);

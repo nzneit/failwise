@@ -18,11 +18,11 @@ import { SKILL_ROOT } from "./test-helpers.ts";
 const table = loadTable();
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
 
-test("the golden analysis validates with the fourteen expected lints and a score of 89", () => {
+test("the golden analysis validates with the seventeen expected lints and a score of 89", () => {
   const result = validateDocument(golden(), table);
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.lints.length, 14);
+  assert.equal(result.lints.length, 17);
   assert.equal(result.quality_score, 89);
   const blockers = result.lints.filter((l) => l.severity === "blocker");
   assert.equal(blockers.length, 1);
@@ -63,7 +63,7 @@ test("the checkout fixture holds two codebases, three edges from checkout, and c
   assert.deepEqual((["S", "O", "D"] as const).map((f) => [ch9.ratings[f].value, ch9.ratings[f].evidence_kind, ch9.ratings[f].review.status]),
     [[9, "estimate", "provisional"], [6, "estimate", "provisional"], [3, "estimate", "provisional"]]);
   assert.deepEqual([ch9.actions, ch9.catalog_refs, ch9.priority], [[], [], { value: "H", table: "priority-fmea-software-v1", rpn: 162 }]);
-  assert.equal(doc.computed!.validator_version, "0.4.1");
+  assert.equal(doc.computed!.validator_version, PLUGIN_VERSION);
 });
 
 const ANALYSIS_FIXTURES = ["checkout-service.fmea.json", "update/before.fmea.json", "update/stale-rows.fmea.json", "legacy-rpn-sheet.expected.fmea.json"];
@@ -121,7 +121,7 @@ test("an invariant failure still reports lints and a score", () => {
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].rule, "stale-without-reason");
   assert.equal(result.errors[0].code, "INVARIANT");
-  assert.equal(result.lints.length, 14);
+  assert.equal(result.lints.length, 17);
   assert.equal(result.quality_score, 89);
 });
 
@@ -155,7 +155,7 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
     const parsed = JSON.parse(r.stdout);
     assert.equal(parsed.ok, true);
     assert.equal(parsed.quality_score, 89);
-    assert.equal(parsed.lints.length, 14);
+    assert.equal(parsed.lints.length, 17);
   });
 });
 
@@ -272,14 +272,14 @@ test("--write adds a computed block and leaves the authored parts alone", () => 
     const beforeDoc = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
     assert.equal(runCli("validate.ts", [path, "--write"]).status, 0);
     const first = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
-    assert.deepEqual(Object.keys(first), ["meta", "elements", "functions", "dependencies", "chains", "computed"]);
+    assert.deepEqual(Object.keys(first), ["meta", "elements", "functions", "dependencies", "chains", "flows", "computed"]);
     assert.deepEqual(
-      { meta: first.meta, elements: first.elements, functions: first.functions, dependencies: first.dependencies, chains: first.chains },
-      { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, dependencies: beforeDoc.dependencies, chains: beforeDoc.chains },
+      { meta: first.meta, elements: first.elements, functions: first.functions, dependencies: first.dependencies, chains: first.chains, flows: first.flows },
+      { meta: beforeDoc.meta, elements: beforeDoc.elements, functions: beforeDoc.functions, dependencies: beforeDoc.dependencies, chains: beforeDoc.chains, flows: beforeDoc.flows },
     );
     assert.equal(first.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(first.computed?.quality_score, 89);
-    assert.equal(first.computed?.lints.length, 14);
+    assert.equal(first.computed?.lints.length, 17);
     assert.ok(isRfc3339DateTime(String(first.computed?.validated_at)));
   });
 });
@@ -291,14 +291,15 @@ test("--write replaces an existing computed block whole and keeps it where the f
     const reordered = {
       computed: { quality_score: 3, lints: [], validated_at: "2020-01-01T00:00:00Z", validator_version: "0.0.1" },
       meta: doc.meta, elements: doc.elements, functions: doc.functions, dependencies: doc.dependencies, chains: doc.chains,
+      flows: doc.flows,
     };
     writeFileSync(path, JSON.stringify(reordered, null, 2) + "\n");
     assert.equal(runCli("validate.ts", [path, "--write"]).status, 0);
     const after = JSON.parse(readFileSync(path, "utf8")) as FmeaDocument;
-    assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "dependencies", "chains"]);
+    assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "dependencies", "chains", "flows"]);
     assert.equal(after.computed?.quality_score, 89);
     assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
-    assert.equal(after.computed?.lints.length, 14);
+    assert.equal(after.computed?.lints.length, 17);
   });
 });
 
@@ -477,7 +478,7 @@ test("staleComputed gives one COMPUTED_STALE issue for the score and one for a s
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/quality_score",
       message: "computed.quality_score is 3 but validate.ts now gives 89; run validate.ts --write, then render.ts again" },
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints",
-      message: "computed.lints, written by validator 0.4.1, holds 14 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again" },
+      message: `computed.lints, written by validator ${PLUGIN_VERSION}, holds 17 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again` },
   ]);
 });
 
@@ -504,7 +505,7 @@ test("staleComputed points at the first stored lint past the validator's list wh
   const fresh = validateDocument(doc, table);
   const extra = { rule: "rating-provisional", severity: "warning" as const, pointer: "/chains/0/ratings/S", message: "an old finding" };
   assert.deepEqual(staleComputed({ ...doc.computed!, lints: [...fresh.lints, extra] }, fresh), [
-    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/14",
-      message: "computed.lints, written by validator 0.4.1, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again" },
+    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/17",
+      message: `computed.lints, written by validator ${PLUGIN_VERSION}, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again` },
   ]);
 });

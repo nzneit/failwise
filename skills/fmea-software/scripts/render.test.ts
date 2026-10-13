@@ -9,6 +9,7 @@ import { escapeHtml } from "./lib/escape.ts";
 import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import { loadVocabulary } from "./lib/vocabulary.ts";
+import { PLUGIN_VERSION } from "./lib/version.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
 import { SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
@@ -215,12 +216,12 @@ test("the automated checks section explains the checks, states the score and gro
   assert.ok(text.includes(escapeHtml("Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A blocker must be fixed before the row it names, or the analysis as a whole, can be relied on. A warning is for a reviewer to judge and may be acceptable as it stands.")));
   assert.ok(text.includes(escapeHtml("Quality score: 89 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
   assert.ok(checks.includes("<strong>Quality score: 89 of 100</strong>"));
-  // the intro's two marks, then one per group: one blocker group and three warning groups
+  // the intro's two marks, then one per group: one blocker group and six warning groups
   assert.equal(occurrences(checks, 'class="mark mark-blocker"'), 2);
-  assert.equal(occurrences(checks, 'class="mark mark-warning"'), 4);
+  assert.equal(occurrences(checks, 'class="mark mark-warning"'), 7);
   assert.ok(checks.includes('<p class="caption" id="checks-caption">Blockers first. Findings with the same rule and message share a line; each row location links to its row.</p>'));
   assert.ok(checks.includes("<thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th>Finding</th></tr></thead>"));
-  assert.equal(occurrences(checks, "<tr>"), 5, "a head row and four groups");
+  assert.equal(occurrences(checks, "<tr>"), 8, "a head row and seven groups");
   const order = ["detection-1-without-evidenced-control", "occurrence-estimate-without-trigger", "rating-provisional", "seeded-action-without-incident"]
     .map((rule) => checks.indexOf(`<code>${rule}</code>`));
   assert.ok(order.every((at) => at !== -1));
@@ -271,7 +272,7 @@ test("the header carries every field section 9 requires, and the provisional cou
     "<dt>Branch</dt><dd>DFMEA</dd>",
     `<dt>Scope</dt><dd>${escapeHtml(doc.meta.scope)}</dd>`,
     `<dt>Security boundary</dt><dd>${escapeHtml(doc.meta.boundary.security)}</dd>`,
-    "<dt>Scales version</dt><dd>1</dd>",
+    "<dt>Scales version</dt><dd>2</dd>",
     "<dt>Priority table</dt><dd><code>priority-fmea-software-v1</code></dd>",
   ]) {
     assert.ok(header.includes(pair), `the header is missing ${pair}`);
@@ -299,7 +300,7 @@ test("the header shows the five tiles, each linking to its section", () => {
   for (const tile of [
     '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>5</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
     '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span></a>',
-    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">13 warnings</span></a>',
+    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">16 warnings</span></a>',
     '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
     '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">89 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
   ]) {
@@ -849,7 +850,7 @@ test("a computed block left stale by priority.ts --write is refused with COMPUTE
     assert.equal(render.stdout, "");
     assert.equal(render.stderr,
       "error COMPUTED_STALE: computed-stale: computed.quality_score is 89 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator ${PLUGIN_VERSION}, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n`);
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -922,7 +923,7 @@ test("a computed block whose lints hold the right findings in another order is r
     const { render, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator ${PLUGIN_VERSION}, first differs at finding 0: stored flow-users-provisional at /flows/2/users/review, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n`);
     assert.equal(existsSync(out), false);
   });
 });
@@ -935,7 +936,7 @@ test("a stored lint whose message alone differs from the validator's is refused,
     const { render, path, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator ${PLUGIN_VERSION}, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n`);
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -1156,7 +1157,7 @@ test("the header lists the codebases after Security boundary, each with its repo
   doc.meta.codebases![1].path = "packages/auth";
   assert.ok(headerOf(doc).includes(
     `<dt>Security boundary</dt><dd>${escapeHtml(doc.meta.boundary.security)}</dd><dt>Codebases</dt><dd>Checkout service, <code>acme/checkout</code><br>` +
-    "Session authentication library, <code>acme/session-auth</code>, <code>packages/auth</code></dd><dt>Scales version</dt><dd>1</dd>"));
+    "Session authentication library, <code>acme/session-auth</code>, <code>packages/auth</code></dd><dt>Scales version</dt><dd>2</dd>"));
 });
 
 test("the top-level table rolls up each root, links a name to its group, and heads its count with the table's first value", () => {
