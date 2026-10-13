@@ -10,6 +10,7 @@ import { SKILL_ROOT } from "./test-helpers.ts";
 
 const reference = readFileSync(join(SKILL_ROOT, "references", "quality-and-lint.md"), "utf8");
 const scales = readFileSync(join(SKILL_ROOT, "references", "scales-software.md"), "utf8");
+const methodology = readFileSync(join(SKILL_ROOT, "references", "methodology.md"), "utf8");
 
 /** The backticked ids of the one line that starts with `opening`. */
 function idsOf(opening: string): string[] {
@@ -70,4 +71,12 @@ test("scales-software.md restates every anchor row that names a radius class, an
   assert.deepEqual(Array.from({ length: hi - lo + 1 }, (_, i) => hi - i), radius);
   const tenth = rows.find((r) => r.rating === 10)!;
   assert.ok(tenth.anchor.includes("the reference population"), "rating 10's population is restated in referent terms");
+});
+
+test("DF4's sentence stands verbatim in the row that disclaims the canon's criticality", () => {
+  const row = methodology.split("\n").find((l) => l.startsWith("| A flow's value-priority tier |"));
+  assert.ok(row, "the row exists");
+  assert.ok(row!.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
+  assert.ok(row!.includes("[paraphrased:C201]"), "the tier's vocabulary is cited to C201");
+  assert.ok(row!.includes("[skill-authored]"), "the disclaimer is the skill's own words");
 });
