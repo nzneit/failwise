@@ -2,7 +2,7 @@
 
 Every sourced statement in a reference file cites a record id; every unsourced statement is tagged `skill-authored`. [skill-authored]
 An untagged sentence is a defect, and so is a tag the cited record's source status does not permit. [skill-authored]
-This file is the rule the rest of the build is checked against: the tag vocabulary, the permission table keyed on source status, and the register that gives each of the 58 sources, in 63 rows, its status. [skill-authored]
+This file is the rule the rest of the build is checked against: the tag vocabulary, the permission table keyed on source status, and the register that gives each of the 59 sources, in 64 rows, its status. [skill-authored]
 Records are cited, never findings: a record id `C###` is verified evidence, a finding id `F-WSn-NN` is the research report's synthesis and is not a citable unit. [skill-authored]
 
 ## Tag vocabulary
@@ -125,6 +125,7 @@ The Address column carries the web address the source's records share, so a reco
 | FIPS PUB 199, Standards for Security Categorization of Federal Information and Information Systems (C198) | https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.199.pdf | public domain. A US Government work (17 U.S.C. §105). | Reproduce with the government-work note. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
 | US Army FM 7-0, Training the Force, 22 October 2002, via a globalsecurity.org mirror (C199) | https://www.globalsecurity.org/military/library/policy/army/fm/7-0/index.html | public domain (the FM 7-0 document is a US Government work, US Army doctrine, 17 U.S.C. §105); the record reads it through a globalsecurity.org mirror, whose own terms are not in evidence. | Reproduce with the government-work note, for FM 7-0's own text; treat any globalsecurity.org-added text as unchecked; nothing from the range is reproduced in this version. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
 | Wikipedia, Service blueprint (C200) | https://en.wikipedia.org/wiki/Service_blueprint | open (CC BY-SA 4.0). | Cite-only, until a reading of ShareAlike is recorded. | `cites:` |
+| Azure Well-Architected Framework, identify and rate user and system flows RE:02 (C201) | https://learn.microsoft.com/en-us/azure/well-architected/reliability/identify-flows | proprietary-paraphrase-only (Microsoft Learn conceptual documentation; the verifiers record it as Microsoft copyright and recommend paraphrase with citation), the status the rows for C011–C015 and C142–C144 record for the same documentation set. | Paraphrase with citation; the three tier names appear only as the label values of a priority field, and no tier description is carried. | `paraphrased:` `adapted-from:` `cites:` |
 
 ## IEC 60812:2018
 
