@@ -9,6 +9,7 @@ import { loadSchema } from "./lib/schema.ts";
 import { SKILL_ROOT } from "./test-helpers.ts";
 
 const reference = readFileSync(join(SKILL_ROOT, "references", "quality-and-lint.md"), "utf8");
+const scales = readFileSync(join(SKILL_ROOT, "references", "scales-software.md"), "utf8");
 
 /** The backticked ids of the one line that starts with `opening`. */
 function idsOf(opening: string): string[] {
@@ -46,4 +47,27 @@ test("the top-of-scale anchor row measures over the reference population, not th
   assert.ok(row, "the anchor row exists");
   assert.ok(row!.includes("the named flow's, where a chain names flows, the function's users otherwise"), "the anchor row is restated in referent terms");
   assert.ok(row!.includes("[adapted-from:C030]"), "the row keeps its provenance tag");
+});
+
+test("scales-software.md declares the scales version this revision bumps, once", () => {
+  assert.match(scales, /^scales version: 2$/m);
+  assert.equal(scales.split("\n").filter((l) => l.startsWith("scales version: ")).length, 1);
+});
+
+test("scales-software.md restates every anchor row that names a radius class, and its checked sentence lists exactly those rows", () => {
+  // Scoped to the Severity table: Occurrence and Detection carry anchor tables of the same shape,
+  // and two of their rows read "at majority or subset radius" and "internal-only radius".
+  const severity = scales.slice(scales.indexOf("## Severity, 1 to 10"), scales.indexOf("## Occurrence, 1 to 10"));
+  const rows = [...severity.matchAll(/^\| (\d+) \| ([^|]*)\|/gm)].map((m) => ({ rating: Number(m[1]), anchor: m[2] }));
+  assert.equal(rows.length, 10, "the Severity anchor table has ten rows");
+  const radius = rows.filter((r) => /majority|subset|internal.only/i.test(r.anchor)).map((r) => r.rating);
+  assert.deepEqual(radius, [10, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const sentence = scales.split("\n").find((l) => l.startsWith("The anchor rows that name a radius class are"));
+  assert.ok(sentence, "the checked sentence exists");
+  const range = sentence!.match(/^The anchor rows that name a radius class are (\d+) to (\d+)/);
+  assert.ok(range, "the sentence states its row range up front");
+  const [lo, hi] = [Number(range![1]), Number(range![2])];
+  assert.deepEqual(Array.from({ length: hi - lo + 1 }, (_, i) => hi - i), radius);
+  const tenth = rows.find((r) => r.rating === 10)!;
+  assert.ok(tenth.anchor.includes("the reference population"), "rating 10's population is restated in referent terms");
 });
