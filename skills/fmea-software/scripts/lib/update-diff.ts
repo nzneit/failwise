@@ -15,8 +15,12 @@ export interface ElementChange { change: "added" | "removed" | "changed"; id: st
 export interface FlowChange { change: "added" | "removed" | "changed"; id: string; fields: FlowField[] }
 /** A chain whose `flows[]` set differs between the copy and the draft; `from` and `to` each keep their document's own order. */
 export interface ChainRepoint { chainId: string; index: number; from: string[]; to: string[] }
-/** `index` is the row's index in the draft; `reason` is the lowest-precedence reason this reach justifies. */
+/** `index` is the row's index in the draft; `reason` is the lowest-precedence-bar reason this reach
+ *  justifies, so a draft may state that reason or anything above it in `STALE_REASON_ORDER`. */
 export interface ReachedRow { chainId: string; index: number; rule: string; reason: StaleReason }
+/** The one precedence order, highest first: the reason a row states is accepted when its index is at or
+ *  below the index of the reach the checker computes, and refused when it sits below that reach. */
+export const STALE_REASON_ORDER: readonly StaleReason[] = ["element-changed", "function-changed", "flow-changed", "control-removed", "scales-version"];
 export interface UnmarkedRow { chainId: string; rule: string }
 /** `index` is the consumer's index in the draft. */
 export interface RemovedLink { chainId: string; index: number; cause: number; removed: string; candidates: string[] }
@@ -172,7 +176,8 @@ function chainsNaming(ctx: Ctx, flowId: string): number[] {
   return ctx.draft.chains.flatMap((c, i) => (c.flows?.includes(flowId) ? [i] : []));
 }
 
-/** Records a reach text and its reason on a row; the first reach to touch a row wins. */
+/** Records a reach text and its reason on a row; where reaches compete, the lowest-precedence reason
+ *  (the earliest in `STALE_REASON_ORDER`) wins, so a tie keeps the first reach computed. */
 type Mark = (i: number, text: string, reason: StaleReason) => void;
 
 function markChangedElements(ctx: Ctx, mark: Mark): void {
@@ -196,7 +201,12 @@ function markFlowReaches(ctx: Ctx, mark: Mark): void {
  *  carries the reason its reach justifies for the checker to read against the precedence order. */
 function reachedRows(ctx: Ctx): ReachedRow[] {
   const rule = new Map<number, { text: string; reason: StaleReason }>();
-  const mark: Mark = (i, text, reason) => { if (inBoth(ctx, i) && !rule.has(i)) rule.set(i, { text, reason }); };
+  const mark: Mark = (i, text, reason) => {
+    if (!inBoth(ctx, i)) return;
+    const prev = rule.get(i);
+    if (prev !== undefined && STALE_REASON_ORDER.indexOf(prev.reason) <= STALE_REASON_ORDER.indexOf(reason)) return;
+    rule.set(i, { text, reason });
+  };
   markChangedElements(ctx, mark);
   markChangedEdges(ctx, mark);
   markFlowReaches(ctx, mark);
@@ -370,7 +380,7 @@ export function baselineIssues(copy: FmeaDocument, draft: FmeaDocument, check: b
   return issue(`the draft's meta.version ${v} is not ${check ? c + 1 : `${c} or ${c + 1}`} as the stored copy's meta.version ${c} requires`, ptr("meta", "version"));
 }
 
-interface CheckCtx extends Pair { reached: ReadonlyMap<number, string>; removed: readonly RemovedLink[]; removedFlows: readonly RemovedFlow[]; flows: ReadonlyMap<string, number>; fresh: ReadonlySet<string> }
+interface CheckCtx extends Pair { reached: ReadonlyMap<number, ReachedRow>; removed: readonly RemovedLink[]; removedFlows: readonly RemovedFlow[]; flows: ReadonlyMap<string, number>; fresh: ReadonlySet<string> }
 type CheckRule = (ctx: CheckCtx, i: number) => Issue[];
 
 /** The draft's first index per flow id. */
@@ -382,7 +392,7 @@ function flowIndices(draft: FmeaDocument): Map<string, number> {
 
 function checkContext(copy: FmeaDocument, draft: FmeaDocument, diff: UpdateDiff): CheckCtx {
   const p = pair(copy, draft);
-  return { ...p, reached: new Map(diff.reached.map((r) => [r.index, r.rule])), removed: diff.removedLinks, removedFlows: diff.removedFlows, flows: flowIndices(draft), fresh: new Set(newChainIds(p)) };
+  return { ...p, reached: new Map(diff.reached.map((r) => [r.index, r])), removed: diff.removedLinks, removedFlows: diff.removedFlows, flows: flowIndices(draft), fresh: new Set(newChainIds(p)) };
 }
 
 function mismatch(rule: string, message: string, pointer: string): Issue[] {
@@ -400,17 +410,22 @@ function hasClearingEntry(ctx: CheckCtx, i: number): boolean {
 }
 
 const staleMissing: CheckRule = (ctx, i) => {
-  const rule = ctx.reached.get(i);
+  const reach = ctx.reached.get(i);
   const c = ctx.draft.chains[i];
-  if (rule === undefined || c.stale.flag || hasClearingEntry(ctx, i)) return [];
-  return mismatch("stale-missing", `chain ${c.id} is reached by ${rule} but its stale.flag is false`, ptr("chains", i, "stale", "flag"));
+  if (reach === undefined || c.stale.flag || hasClearingEntry(ctx, i)) return [];
+  return mismatch("stale-missing", `chain ${c.id} is reached by ${reach.rule} but its stale.flag is false`, ptr("chains", i, "stale", "flag"));
 };
 
+/** The stated reason is accepted when it sits at or above the reach the checker computes in the one
+ *  precedence order (`STALE_REASON_ORDER`), and refused when it sits below it. */
 const staleReason: CheckRule = (ctx, i) => {
-  const rule = ctx.reached.get(i);
+  const reach = ctx.reached.get(i);
   const c = ctx.draft.chains[i];
-  if (rule === undefined || !c.stale.flag || c.stale.reason === "element-changed") return [];
-  return mismatch("stale-reason", `chain ${c.id} is reached by ${rule} but its stale.reason is ${c.stale.reason ?? "absent"}`, ptr("chains", i, "stale", "reason"));
+  const stated = c.stale.reason;
+  if (reach === undefined || !c.stale.flag) return [];
+  if (stated === undefined) return mismatch("stale-reason", `chain ${c.id} is reached by ${reach.rule} but its stale.reason is absent`, ptr("chains", i, "stale", "reason"));
+  if (STALE_REASON_ORDER.indexOf(stated) <= STALE_REASON_ORDER.indexOf(reach.reason)) return [];
+  return mismatch("stale-reason", `chain ${c.id} is reached by ${reach.rule} but its stale.reason is ${stated}`, ptr("chains", i, "stale", "reason"));
 };
 
 /** A row flagged in the copy keeps its since_version; a newly flagged row takes the draft's version. */

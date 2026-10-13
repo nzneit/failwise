@@ -1,13 +1,19 @@
 // The structural check of an update: lib/update-diff.ts driven directly, then update-check.ts through runCli.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diffUpdate } from "./lib/update-diff.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { STALE_REASON_ORDER, diffUpdate } from "./lib/update-diff.ts";
 import type { UpdateDiff } from "./lib/update-diff.ts";
 import { legacyIssues } from "./lib/legacy.ts";
+import { loadSchema } from "./lib/schema.ts";
 import type { Cause, Chain, DependencyEdge, Flow, FmeaDocument, StaleReason } from "./lib/types.ts";
-import { clone, edge, fixturePath, graphDoc, loadFixture, moveEdgesIntoBlocks, newElement, rating, runCli, withTempDir, writeJson } from "./test-helpers.ts";
+import { SKILL_ROOT, clone, edge, fixturePath, graphDoc, loadFixture, moveEdgesIntoBlocks, newElement, rating, runCli, withTempDir, writeJson } from "./test-helpers.ts";
 
 const EMPTY: UpdateDiff = { edges: [], elements: [], flows: [], reached: [], repointed: [], removedFlows: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
+
+/** The operating document, read to cross-check its precedence sentence against STALE_REASON_ORDER. */
+const skill = readFileSync(join(SKILL_ROOT, "SKILL.md"), "utf8");
 
 /** diffUpdate of `copy` against a clone of it that `edit` changes. */
 function changed(copy: FmeaDocument, edit: (draft: FmeaDocument) => void): UpdateDiff {
@@ -257,6 +263,67 @@ test("a removed flow no chain names is reported and marks nothing stale", () => 
   const r = runCheck(copy, draft);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.includes("flows removed:\n  flow-2: named by no chain\n"), r.stdout);
+  assert.ok(r.stdout.includes("stale:\n  none"), r.stdout);
+});
+
+test("STALE_REASON_ORDER is the schema's stale reason enum, in order", () => {
+  const declared = (((loadSchema().$defs as Record<string, Record<string, unknown>>).stale as Record<string, Record<string, unknown>>).properties.reason as { enum: StaleReason[] }).enum;
+  assert.deepEqual([...STALE_REASON_ORDER], declared);
+});
+
+test("SKILL.md's precedence sentence names the stale reasons in STALE_REASON_ORDER's order", () => {
+  const line = skill.split("\n").find((l) => l.includes("the order of the stale reason set v2"));
+  assert.ok(line, "SKILL.md states the precedence order");
+  const named = [...line.matchAll(/`([a-z-]+)`/g)].map((m) => m[1]).filter((x) => (STALE_REASON_ORDER as readonly string[]).includes(x));
+  assert.deepEqual(named, [...STALE_REASON_ORDER]);
+});
+
+/** flowDoc with flow-1 grounded in a non-catalog source, so a --check of a users change cannot also trip flow-sources-lost. */
+function groundedFlowDoc(): FmeaDocument {
+  const doc = flowDoc();
+  flowOf(doc, "flow-1").sources = [{ kind: "document", ref: "flow notes" }];
+  return doc;
+}
+
+test("stale-reason: a row reached by a flow change accepts flow-changed and every reason above it, and refuses the ones below", () => {
+  for (const [reason, status] of [["element-changed", 0], ["function-changed", 0], ["flow-changed", 0], ["control-removed", 2], ["scales-version", 2]] as const) {
+    const copy = groundedFlowDoc();
+    const draft = bumped(copy);
+    chainOf(draft, "ch-1").stale = { flag: true, reason, since_version: draft.meta.version };
+    flowOf(draft, "flow-1").users = { population: "internal only: operators" };
+    assert.equal(runCheck(copy, draft, "--check").status, status, reason);
+  }
+});
+
+test("stale-reason: a row reached by both an element change and a flow change keeps element-changed, and stating it is accepted", () => {
+  const copy = groundedFlowDoc();
+  const draft = bumped(copy);
+  draft.elements[0].kind = "datastore";
+  flowOf(draft, "flow-1").users = { population: "internal only: operators" };
+  chainOf(draft, "ch-1").stale = { flag: true, reason: "element-changed", since_version: draft.meta.version };
+  assert.deepEqual(diffUpdate(copy, draft).reached.map((r) => [r.chainId, r.reason]), [["ch-1", "element-changed"]]);
+  assert.equal(runCheck(copy, draft, "--check").status, 0);
+});
+
+test("stale-reason: a row reached by an element change still refuses function-changed alone", () => {
+  const copy = storedCopy();
+  const draft = goodDraft(copy);
+  chainOf(draft, "ch-1").stale = { flag: true, reason: "function-changed", since_version: draft.meta.version };
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: stale-reason: chain ch-1 is reached by edge checkout to gw changed but its stale.reason is function-changed at \/chains\/0\/stale\/reason$/m);
+});
+
+test("update-check.ts: a flow's users.review change is reported as users.review and marks nothing stale", () => {
+  const copy = groundedFlowDoc();
+  flowOf(copy, "flow-1").users = { population: "internal only: operators" };
+  const draft = clone(copy);
+  flowOf(draft, "flow-1").users = { population: "internal only: operators", review: { status: "provisional" } };
+  assert.deepEqual(diffUpdate(copy, draft).flows, [{ change: "changed", id: "flow-1", fields: ["users.review"] }]);
+  assert.deepEqual(diffUpdate(copy, draft).reached, []);
+  const r = runCheck(copy, draft);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("flows:\n  changed flow-1: users.review\n"), r.stdout);
   assert.ok(r.stdout.includes("stale:\n  none"), r.stdout);
 });
 
