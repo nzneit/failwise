@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { isEntry } from "./lib/entry.ts";
+import type { FlowComparison } from "./eval-stability.ts";
 
 /** The repository root. Judge text quotes paths absolute under it; `oneLine` strips the prefix. */
 const ROOT = join(import.meta.dirname, "..");
@@ -489,6 +490,10 @@ export interface StabilityResult {
   unverified?: boolean;
   /** Of the element ids both runs carry, how many agree on role and boundary (eval-stability.ts). */
   typing?: { shared: number; agreeing: number; pass: boolean };
+  /** The two runs' flow id sets at the 0.8 floor, tri-state: pass, fail or unverified (eval-stability.ts). */
+  flows?: FlowComparison;
+  /** False when a stability predicate could not run; the workflow sets unverified from it (eval-stability.ts). */
+  verified?: boolean;
 }
 export interface CriticResult { missing: { area: string; detail: string }[]; blocking_candidates: string[] }
 /** A judge, stability pair, or critic whose agent never returned (plan reference §C). */
@@ -866,24 +871,26 @@ function promptScores(results: EvalResults, p: number): string[] {
 
 /** `## Stability between runs`: one row per (prompt, model capability) pair. */
 function stabilitySection(results: EvalResults, prompts: number[], capabilities: string[]): string[] {
-  // The Typing column appears only when some entry carries typing, so a results
-  // file written before eval-stability.ts reported it renders as it always did.
+  // The Typing and Flows columns each appear only when some entry carries the
+  // field, so a results file written before eval-stability.ts reported them
+  // renders as it always did.
   const typed = results.stability.some((s) => s.typing !== undefined);
+  const flowed = results.stability.some((s) => s.flows !== undefined);
   const lines: string[] = [];
   lines.push("## Stability between runs");
   lines.push("");
-  lines.push(`| Prompt | Model capability | Jaccard | Max rows | Bound | Count diffs |${typingCell(typed, "Typing")} Pass |`);
-  lines.push(`|---|---|---|---|---|---|${typed ? "---|" : ""}---|`);
+  lines.push(`| Prompt | Model capability | Jaccard | Max rows | Bound | Count diffs |${typingCell(typed, "Typing")}${flowsCell(flowed, "Flows")} Pass |`);
+  lines.push(`|---|---|---|---|---|---|${typed ? "---|" : ""}${flowed ? "---|" : ""}---|`);
   for (const p of prompts) {
     for (const m of capabilities) {
       const s = stabilityFor(results, p, m);
       if (!s) {
-        lines.push(`| ${p} | ${m} | — | — | — | — |${typingCell(typed, "—")} FAIL (no result) |`);
+        lines.push(`| ${p} | ${m} | — | — | — | — |${typingCell(typed, "—")}${flowsCell(flowed, "—")} FAIL (no result) |`);
         continue;
       }
       const diffs = Object.entries(s.countDiffs).map(([k, v]) => `${k}: ${v}`).join(", ");
       const verdict = s.unverified ? "UNVERIFIED" : yesNo(s.pass);
-      lines.push(`| ${p} | ${m} | ${fmt(s.jaccard)} | ${s.maxRows} | ${fmt(s.bound)} | ${diffs} |${typingCell(typed, typingText(s))} ${verdict} |`);
+      lines.push(`| ${p} | ${m} | ${fmt(s.jaccard)} | ${s.maxRows} | ${fmt(s.bound)} | ${diffs} |${typingCell(typed, typingText(s))}${flowsCell(flowed, flowsText(s))} ${verdict} |`);
     }
   }
   lines.push("");
@@ -898,6 +905,16 @@ function typingCell(typed: boolean, text: string): string {
 /** A stability entry's typing as `agreeing/shared pass`, or a dash when the entry carries none. */
 function typingText(s: StabilityResult): string {
   return s.typing === undefined ? "—" : `${s.typing.agreeing}/${s.typing.shared} ${yesNo(s.typing.pass)}`;
+}
+
+/** The Flows column's cell, with its leading space and closing bar, or nothing when the table has no such column. */
+function flowsCell(flowed: boolean, text: string): string {
+  return flowed ? ` ${text} |` : "";
+}
+
+/** A stability entry's flows as `<jaccard> <tri-state>`, or a dash when the entry carries none. */
+function flowsText(s: StabilityResult): string {
+  return s.flows === undefined ? "—" : `${fmt(s.flows.jaccard)} ${s.flows.pass}`;
 }
 
 /** `## Overall per prompt and model capability`: one row per pair. */
@@ -1191,12 +1208,19 @@ function stabilityEntryProblem(s: unknown, i: number): string | null {
   if (!isObject(s.countDiffs)) return `has a stability entry with no countDiffs object ${at}`;
   if (typeof s.pass !== "boolean") return `has a stability entry whose pass is not a boolean ${at}`;
   if (s.typing !== undefined && !isTyping(s.typing)) return `has a stability entry whose typing is not {shared, agreeing, pass} ${at}`;
+  if (s.flows !== undefined && !isFlows(s.flows)) return `has a stability flows that is not {jaccard, pass} ${at}`;
+  if (s.verified !== undefined && typeof s.verified !== "boolean") return `has a stability entry whose verified is not a boolean ${at}`;
   return null;
 }
 
 /** A stability entry's typing as eval-stability.ts writes it: two counts and a verdict. */
 function isTyping(t: unknown): boolean {
   return isObject(t) && typeof t.shared === "number" && typeof t.agreeing === "number" && typeof t.pass === "boolean";
+}
+
+/** A stability entry's flows as eval-stability.ts writes it: the id-set overlap and its tri-state. */
+function isFlows(f: unknown): boolean {
+  return isObject(f) && typeof f.jaccard === "number" && (f.pass === "pass" || f.pass === "fail" || f.pass === "unverified");
 }
 
 /** The top-level rubric version: absent (rubric 1), or a whole number of at least 1. */

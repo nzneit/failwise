@@ -211,8 +211,14 @@ const STABILITY_SCHEMA = {
       properties: { shared: { type: 'integer' }, agreeing: { type: 'integer' }, pass: { type: 'boolean' } },
       required: ['shared', 'agreeing', 'pass'],
     },
+    flows: {
+      type: 'object',
+      properties: { jaccard: { type: 'number' }, pass: { enum: ['pass', 'fail', 'unverified'] } },
+      required: ['jaccard', 'pass'],
+    },
+    verified: { type: 'boolean' },
   },
-  required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass', 'typing'],
+  required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass', 'typing', 'flows', 'verified'],
 }
 
 const PERSIST_SCHEMA = {
@@ -322,7 +328,7 @@ cd ${ROOT} && node tools/eval-stability.ts ${a} ${b}
 
 The command needs Node 24.2 or later on PATH. On a machine where Node is installed only through nvm, run \`source ~/.nvm/nvm.sh\` first, in the same shell call as the command, because PATH does not carry over from one call to the next.
 
-It prints {jaccard, maxRows, countDiffs, bound, pass, typing}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. Return those six fields verbatim, with countDiffs as an object with exactly the keys H, M and L and typing as an object with exactly the keys shared, agreeing and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one.`
+It prints {jaccard, maxRows, countDiffs, bound, pass, typing, flows, verified}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. flows is {jaccard, pass}: the Jaccard of the two runs' flow id sets and its verdict, pass, fail or unverified, where two runs that both carry no flows is unverified and one side carrying none is a fail; verified is false exactly when flows is unverified. Return those eight fields verbatim, with countDiffs as an object with exactly the keys H, M and L, typing as an object with exactly the keys shared, agreeing and pass, and flows as an object with exactly the keys jaccard and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}, flows: {jaccard: 0, pass: 'unverified'}, verified: false} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one. A flows comparison that never ran is unverified, not a failure.`
 }
 
 function criticPrompt(runs, stabilityResults, unverifiedUnits) {
@@ -423,7 +429,11 @@ const stability = await pipeline(
       log(`stability for p${pair.prompt} ${pair.model_capability}: the eval-stability.ts call failed; recorded as unverified, not as an unstable pair`)
       return { ...pair, jaccard: 0, maxRows: 0, countDiffs: { H: 0, M: 0, L: 0 }, bound: 0, pass: false, typing: { shared: 0, agreeing: 0, pass: false }, unverified: true }
     }
-    return { ...pair, ...measured, unverified: false }
+    // The tool's verified flag is false only when a predicate could not run (the
+    // flows comparison, where both runs carried no flows). That is a hole in the
+    // evidence: the entry is marked unverified and is never counted as a measured
+    // failure by the note's unver computation.
+    return { ...pair, ...measured, unverified: measured.verified === false }
   },
 )
 

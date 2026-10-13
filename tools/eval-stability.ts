@@ -27,6 +27,7 @@ import { isEntry } from "./lib/entry.ts";
 export interface FmeaDocument {
   elements: { id: string; kind?: string; boundary?: string }[];
   chains: { priority: { value: string } }[];
+  flows?: { id: string }[];
 }
 
 /** How far two runs typed their shared elements alike: same kind and same boundary. */
@@ -36,6 +37,22 @@ export interface Typing {
   pass: boolean;
 }
 
+/**
+ * The three-valued outcome of the flows predicate: a live verdict, or a
+ * comparison that could not be made because there was nothing to compare.
+ */
+export type FlowStability = "pass" | "fail" | "unverified";
+
+/**
+ * How far the two runs' flow id sets overlap, and the verdict that overlap
+ * earns. `unverified` means both runs carried no flow ids — there is no
+ * comparison to make — so the predicate is a hole in the evidence, never a pass.
+ */
+export interface FlowComparison {
+  jaccard: number;
+  pass: FlowStability;
+}
+
 export interface Stability {
   jaccard: number;
   maxRows: number;
@@ -43,6 +60,9 @@ export interface Stability {
   bound: number;
   pass: boolean;
   typing: Typing;
+  flows: FlowComparison;
+  /** True only when every predicate ran: false makes the pair unverified, never a pass. */
+  verified: boolean;
 }
 
 /** Minimum Jaccard similarity of the two runs' element id sets (§10). */
@@ -66,6 +86,16 @@ export const SHIPPED_TABLE_PATH = join(
  */
 export function elementIdSet(doc: FmeaDocument): Set<string> {
   return new Set(doc.elements.map((e) => e.id.trim().toLowerCase()));
+}
+
+/**
+ * flows[].id after trimming and case-folding, as a set, by the same rule as
+ * elementIdSet. A document that authors no flows carries no flows[] at all (the
+ * schema refuses an empty array, so absent is the only way to say "none"), and an
+ * absent array is the empty set; a present-but-malformed one is refused upstream.
+ */
+function flowIdSet(doc: FmeaDocument): Set<string> {
+  return new Set((doc.flows ?? []).map((f) => f.id.trim().toLowerCase()));
 }
 
 /** |a ∩ b| / |a ∪ b|; 1 when both sets are empty (two empty runs agree). */
@@ -111,6 +141,22 @@ export function typing(run1: FmeaDocument, run2: FmeaDocument): Typing {
   return { shared, agreeing, pass: shared > 0 && agreeing === shared };
 }
 
+/**
+ * The two runs' flow id sets at the JACCARD_MIN floor, three-valued. Two runs
+ * that both carry no flow ids have nothing whose stability could be measured, so
+ * the result is `unverified`, never a pass. Exactly one side carrying none is a
+ * real disagreement about the flows and is `fail` (the Jaccard over the two sets
+ * is 0 there). Otherwise the floor decides, failing closed like the other sets.
+ */
+function flowComparison(run1: FmeaDocument, run2: FmeaDocument): FlowComparison {
+  const a = flowIdSet(run1);
+  const b = flowIdSet(run2);
+  const j = jaccard(a, b);
+  if (a.size === 0 && b.size === 0) return { jaccard: 1, pass: "unverified" };
+  if (a.size === 0 || b.size === 0) return { jaccard: j, pass: "fail" };
+  return { jaccard: j, pass: j >= JACCARD_MIN ? "pass" : "fail" };
+}
+
 export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: string[]): Stability {
   const j = jaccard(elementIdSet(run1), elementIdSet(run2));
   const maxRows = Math.max(run1.chains.length, run2.chains.length);
@@ -126,8 +172,14 @@ export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: st
   const c2 = priorityCounts(run2, vocabulary);
   const countDiffs: Record<string, number> = {};
   for (const v of vocabulary) countDiffs[v] = Math.abs(c1[v] - c2[v]);
-  const pass = j >= JACCARD_MIN && Object.values(countDiffs).every((d) => d <= bound);
-  return { jaccard: j, maxRows, countDiffs, bound, pass, typing: typing(run1, run2) };
+  const flows = flowComparison(run1, run2);
+  // An unverified flows predicate is a hole in the evidence, so pass requires
+  // flows.pass === "pass" and can never be true when both runs carried no flows.
+  // verified records whether the predicate ran at all: false only for the
+  // two-empty case, and the caller records the pair as unverified rather than as
+  // a measured failure.
+  const pass = j >= JACCARD_MIN && Object.values(countDiffs).every((d) => d <= bound) && flows.pass === "pass";
+  return { jaccard: j, maxRows, countDiffs, bound, pass, typing: typing(run1, run2), flows, verified: flows.pass !== "unverified" };
 }
 
 function fail(code: "USAGE" | "IO_READ", message: string, status: 1 | 3): never {
@@ -158,16 +210,41 @@ function elementProblem(e: unknown, i: number): string | null {
   return null;
 }
 
+/** Why flows[i] is unusable (id not a string), or null. */
+function flowProblem(f: unknown, i: number): string | null {
+  if (typeof f !== "object" || f === null || typeof (f as { id?: unknown }).id !== "string") {
+    return `has a flows[${i}] that is not an object with a string id`;
+  }
+  return null;
+}
+
+/**
+ * Why flows[] is unusable — not an array, or an entry without a string id — or
+ * null. An absent flows[] is valid and means the run authored no flows, so it is
+ * not read as an empty comparison invented from a broken shape.
+ */
+function flowsProblem(flows: unknown): string | null {
+  if (flows === undefined) return null;
+  if (!Array.isArray(flows)) return "has a flows[] that is not an array";
+  for (let i = 0; i < flows.length; i++) {
+    const problem = flowProblem(flows[i], i);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
 /**
  * Why the parsed value is not a usable document, phrased to finish the sentence
  * `<path> …`, or null when it is one. Both files are unvalidated model output, so
- * every field the check later dereferences — elements[].id, and each chains
- * entry — is proved here: an uncaught TypeError would print a stack trace instead
- * of the one coded line the error contract requires (§9).
+ * every field the check later dereferences — elements[].id, each chains entry,
+ * and each flows entry when flows[] is present — is proved here: an uncaught
+ * TypeError would print a stack trace instead of the one coded line the error
+ * contract requires (§9). A present-but-malformed flows[] is refused rather than
+ * read as an empty set, so a broken shape never masquerades as a flows-less run.
  */
 function documentProblem(v: unknown): string | null {
   if (typeof v !== "object" || v === null) return "has no elements[] and chains[]";
-  const d = v as { elements?: unknown; chains?: unknown };
+  const d = v as { elements?: unknown; chains?: unknown; flows?: unknown };
   if (!Array.isArray(d.elements) || !Array.isArray(d.chains)) return "has no elements[] and chains[]";
   for (let i = 0; i < d.elements.length; i++) {
     const problem = elementProblem(d.elements[i], i);
@@ -177,7 +254,7 @@ function documentProblem(v: unknown): string | null {
     const c = d.chains[i];
     if (typeof c !== "object" || c === null) return `has a chains[${i}] that is not an object`;
   }
-  return null;
+  return flowsProblem(d.flows);
 }
 
 /** The parsed file as a document, or one coded I/O failure naming the malformed entry. */

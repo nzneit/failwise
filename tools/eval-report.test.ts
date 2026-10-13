@@ -284,6 +284,24 @@ test("the stability table gains a Typing column only when an entry carries typin
   assert.match(renderReport(missing), /\| 1 \| medium \| — \| — \| — \| — \| — \| FAIL \(no result\) \|/);
 });
 
+test("the stability table gains a Flows column only when an entry carries flows, and reads the tri-state", () => {
+  const r = sampleResults();
+  assert.match(renderReport(r), /\| Prompt \| Model capability \| Jaccard \| Max rows \| Bound \| Count diffs \| Pass \|/);
+  r.stability[0] = { ...r.stability[0], flows: { jaccard: 1, pass: "pass" }, verified: true };
+  r.stability[1] = { ...r.stability[1], flows: { jaccard: 1, pass: "unverified" }, verified: false };
+  const md = renderReport(r);
+  assert.match(md, /\| Prompt \| Model capability \| Jaccard \| Max rows \| Bound \| Count diffs \| Flows \| Pass \|/);
+  assert.match(md, /1\.000 pass/);
+  assert.match(md, /unverified/);
+});
+
+test("a stability flows that is not {jaccard, pass} is one coded IO_READ line", () => {
+  const r = sampleResults();
+  r.stability[1] = { ...r.stability[1], flows: { jaccard: "1", pass: "maybe" } } as unknown as (typeof r.stability)[number];
+  const run = reportOn(JSON.stringify(r), "eval-report-flows-");
+  assert.match(run.stderr, /^error IO_READ: .*has a stability flows that is not \{jaccard, pass\} at stability\[1\]/);
+});
+
 test("CRITERIA matches the rubric: same ids in the same order, same must flags", () => {
   const rubric = readFileSync(
     join(import.meta.dirname, "..", "skills", "fmea-software", "evals", "rubric.md"),

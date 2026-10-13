@@ -215,10 +215,11 @@ The criterion is vacuous on a prompt whose inputs name no critical-flow section,
 
 ## Stability between the two runs at the same model capability
 
-`tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when both hold:
+`tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when all three hold:
 
 - Jaccard similarity of the element id sets is at least **0.8**, where the id set is `elements[].id` after trimming and case-folding. The basis is the id and not `elements[].name` because a name is free text and two runs of one prompt word the same element differently, while the id is the element's structural identity — the schema keeps it stable across versions and the update mode diffs elements by it — so a difference in wording alone is not instability. (The schema's grammar already makes an id lowercase kebab-case; the trim and case-fold guard unvalidated run output.)
 - For each value v in the priority table's `vocabulary`, |count_v(run 1) − count_v(run 2)| ≤ **0.2** × max(chain rows in run 1, chain rows in run 2).
+- Jaccard similarity of the flow id sets is at least **0.8**, where the id set is `flows[].id` after trimming and case-folding, reported `pass` / `fail` / `unverified`: both runs carrying no flows is `unverified` and is named in the acceptance note rather than counted a pass, and one side carrying none is a `fail`.
 
 Run-to-run instability is one of the three documented failure modes of AI-generated FMEAs (design §3, guardrails); the check exists so a skill that produces a different analysis every time cannot pass on a lucky run.
 
@@ -235,7 +236,7 @@ enforces it; a change is real only when both move together.
 
 | Threshold | Here | In code |
 |---|---|---|
-| Jaccard floor 0.8 | "Stability between the two runs at the same model capability" | `JACCARD_MIN` in `tools/eval-stability.ts` |
+| Jaccard floor 0.8 | "Stability between the two runs at the same model capability" — the element id sets and the flow id sets | `JACCARD_MIN` in `tools/eval-stability.ts` |
 | Count fraction 0.2 | "Stability between the two runs at the same model capability" | `COUNT_BOUND_FRACTION` in `tools/eval-stability.ts` (`stability()` computes the bound as `maxRows * COUNT_BOUND_FRACTION`) |
 | Total 80% of maximum | "Pass rule" | `5 * total >= 4 * max` in `summarizeRun` in `tools/eval-report.ts` and in `summarize` in `tools/workflows/evals.js` |
 | A criterion's must flag | "Criteria" | the `must` field in `CRITERIA` in `tools/eval-report.ts` and in `CRITERIA` in `tools/workflows/evals.js` |

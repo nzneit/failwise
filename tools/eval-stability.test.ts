@@ -22,6 +22,11 @@ function doc(ids: string[], priorities: string[]): FmeaDocument {
   return {
     elements: ids.map((id) => ({ id })),
     chains: priorities.map((value) => ({ priority: { value } })),
+    // A run authors flows or omits the array entirely. The fixture carries one
+    // shared flow so the flows predicate is measured and passes, leaving the
+    // element and count predicates these tests exercise to decide pass on their
+    // own; tests that need other flow ids replace it (see withFlows below).
+    flows: [{ id: "flow-1" }],
   };
 }
 
@@ -60,6 +65,18 @@ test("case and surrounding whitespace differences in ids are ignored", () => {
 
 test("jaccard of two empty sets is 1", () => {
   assert.equal(jaccard(new Set(), new Set()), 1);
+});
+
+test("flows: the id sets agree at the 0.8 floor, one empty side fails, both empty is unverified", () => {
+  const withFlows = (ids: string[]): FmeaDocument => ({ ...doc(["a"], ["L"]), flows: ids.map((id) => ({ id, name: id, value_priority: "High" as const })) } as FmeaDocument);
+  const both = stability(withFlows(["f1", "f2", "f3", "f4"]), withFlows(["f1", "f2", "f3", "f4"]), VOCAB);
+  assert.deepEqual([both.flows, both.verified, both.pass], [{ jaccard: 1, pass: "pass" }, true, true]);
+  const three = stability(withFlows(["f1", "f2", "f3", "f4"]), withFlows(["f1", "f2", "f3", "f5"]), VOCAB);
+  assert.deepEqual([three.flows.pass, three.pass], ["fail", false]);
+  const dropped = stability(withFlows(["f1", "f2"]), withFlows([]), VOCAB);
+  assert.deepEqual([dropped.flows.pass, dropped.pass, dropped.verified], ["fail", false, true]);
+  const none = stability(withFlows([]), withFlows([]), VOCAB);
+  assert.deepEqual([none.flows, none.verified, none.pass], [{ jaccard: 1, pass: "unverified" }, false, false]);
 });
 
 test("three of five ids shared fails; four of five reaches the 0.8 floor", () => {
@@ -115,7 +132,7 @@ test("CLI prints the Stability JSON for two files and a table file", () => {
     );
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assert.deepEqual(out, { jaccard: 1, maxRows: 2, countDiffs: { H: 0, M: 1, L: 1 }, bound: 0.4, pass: false, typing: { shared: 2, agreeing: 0, pass: false } });
+    assert.deepEqual(out, { jaccard: 1, maxRows: 2, countDiffs: { H: 0, M: 1, L: 1 }, bound: 0.4, pass: false, typing: { shared: 2, agreeing: 0, pass: false }, flows: { jaccard: 1, pass: "pass" }, verified: true });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -303,7 +320,7 @@ test("the CLI prints typing beside the five stability fields", () => {
     const r = spawnSync(process.execPath, [join(import.meta.dirname, "eval-stability.ts"), join(dir, "run1.json"), join(dir, "run2.json")], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout);
-    assert.deepEqual(Object.keys(out), ["jaccard", "maxRows", "countDiffs", "bound", "pass", "typing"]);
+    assert.deepEqual(Object.keys(out), ["jaccard", "maxRows", "countDiffs", "bound", "pass", "typing", "flows", "verified"]);
     assert.deepEqual(out.typing, { shared: 2, agreeing: 2, pass: true });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -323,6 +340,29 @@ test("an element whose kind or boundary is present but not a string is one coded
       assert.equal(r.status, 3);
       assert.equal(r.stderr.trimEnd().split("\n").length, 1, r.stderr);
       assert.match(r.stderr, /^error IO_READ: .*elements\[0\]/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a flows that is not an array, or an entry with no string id, is one coded IO_READ line", () => {
+  const script = join(import.meta.dirname, "eval-stability.ts");
+  const dir = mkdtempSync(join(tmpdir(), "eval-stability-flows-"));
+  try {
+    const good = join(dir, "run2.json");
+    writeFileSync(good, JSON.stringify(doc(["a"], ["H"])));
+    const bads = [
+      { elements: [{ id: "a" }], chains: [], flows: [{ name: "checkout" }] },
+      { elements: [{ id: "a" }], chains: [], flows: "checkout" },
+    ];
+    for (const bad of bads) {
+      const path = join(dir, "run1.json");
+      writeFileSync(path, JSON.stringify(bad));
+      const r = spawnSync(process.execPath, [script, path, good], { encoding: "utf8" });
+      assert.equal(r.status, 3, JSON.stringify(bad));
+      assert.equal(r.stderr.trimEnd().split("\n").length, 1, r.stderr);
+      assert.match(r.stderr, /^error IO_READ: .*flows/);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
