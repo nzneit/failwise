@@ -199,19 +199,27 @@ Judgeable from the document alone; the inputs give the textbook pair, a failed a
 
 ### c16-flows (prompt 1; rubric 4)
 
-The critical flows the inputs name appear in `flows[]`, and the chain-to-flow naming the inputs support appears in `chains[].flows`. Compare against the table for the prompt.
+The critical flows the inputs name appear in `flows[]`, and the chain-to-flow naming the inputs support appears in `chains[].flows`. Compare against the table and the chain-naming conditions for the prompt.
 
-- **2** — Every flow the inputs name is present with its `id`, its `name` and its `value_priority`; every flow a chain names carries `users` with a `population` grounded in the inputs and a non-catalog `sources[]` entry; and the chain-to-flow naming matches the table.
-- **1** — The flows are present but incomplete: a flow is missing, or a chain-named flow carries no `users`, or the chain naming is absent or wrong on one chain.
+- **2** — Every flow the inputs name is present with its `id`, its `name` and its `value_priority`; every flow a chain names carries `users` with a `population` grounded in the inputs and a non-catalog `sources[]` entry; and the chain naming meets every condition below the table.
+- **1** — The flows are present but incomplete: a flow is missing, or a chain-named flow carries no `users`, or the chain naming is absent or fails a condition below the table.
 - **0** — No `flows[]` at all.
 
-The criterion is vacuous on a prompt whose inputs name no critical-flow section, so prompt 6 (a converted sheet) and prompt 5 (a postmortem-seeded baseline scored on c1 to c10) are not scored on it: c16 scores prompt 1 at band 2 only, since the postmortem-seeded and conversion prompts read no critical-flows input. Prompt 1 (`checkout-inputs.md`), flows:
+The criterion is vacuous on a prompt whose inputs name no critical-flow section, so prompt 6 is not scored on it: its converted sheet, `legacy-rpn-sheet.csv`, carries none. Prompt 5 reads `checkout-inputs.md` and its critical flows, but its postmortem-seeded baseline is scored on c1 to c10 only, the convention that keeps c13 and c14 off it, so c16 scores prompt 1 alone. Prompt 1 (`checkout-inputs.md`), flows, each with the `id` and `value_priority` the inputs state for it:
 
-| `flows[].id` | What it is | `value_priority` | Named by |
-|---|---|---|---|
-| `flow-checkout` | A signed-in shopper submits a cart and the service returns a confirmation | `High` | the checkout chain, with `flow-retry` |
-| `flow-retry` | A shopper retries a submission after a timeout and the cart is authorized once | `High` | the checkout chain |
-| `flow-resume` | A shopper resumes an abandoned session from a saved link | `Medium` | the session chain |
+| `flows[].id` | What it is | `value_priority` |
+|---|---|---|
+| `flow-checkout` | A signed-in shopper submits a cart and the service returns a confirmation | `High` |
+| `flow-retry` | A shopper retries a submission after a timeout and the cart is authorized once | `High` |
+| `flow-resume` | A shopper resumes an abandoned session from a saved link | `Medium` |
+
+The chain naming meets the table when all three conditions hold:
+
+- at least one chain names both `flow-checkout` and `flow-retry`: a failure on the submission path that a retried submission meets as well, such as a degraded payment gateway;
+- at least one chain names `flow-resume`: a failure in resuming a session from a saved link, such as on the session token;
+- no chain names a flow whose journey its end effect does not break.
+
+A chain that names no flow is not a defect here. (Amended 2026-10-13, before any run was judged under rubric 4: the table's last column named "the checkout chain" and "the session chain", which a run with ten or more chains cannot map to one chain, and the inputs now state each flow's `id` and `value_priority`, which they did not when rubric 4 was written, so the round's first prompt-1 runs had to mint their own ids.)
 
 ## Stability between the two runs at the same model capability
 

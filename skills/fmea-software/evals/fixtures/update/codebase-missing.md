@@ -4,9 +4,11 @@ Synthetic inputs for the fmea-software evals. Nothing here describes a real syst
 
 ## Critical flows
 
-1. A signed-in shopper submits a cart; the checkout service prices it, authorizes payment, writes the order, and returns a confirmation.
-2. A shopper retries a submission after a timeout; the checkout service must not authorize the same cart twice.
-3. A shopper resumes an abandoned session from a saved link.
+| Flow | Value priority | What it is |
+|---|---|---|
+| flow-checkout | High | A signed-in shopper submits a cart; the checkout service prices it, authorizes payment, writes the order, and returns a confirmation. |
+| flow-retry | High | A shopper retries a submission after a timeout; the checkout service must not authorize the same cart twice. |
+| flow-resume | Medium | A shopper resumes an abandoned session from a saved link. |
 
 ## Component inventory
 

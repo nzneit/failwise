@@ -334,7 +334,9 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /21 of 26, since 20\.8 rounds up/);
   assert.match(rubric, /20 of 24, since 19\.2 rounds up/);
   assert.match(rubric, /23 of 28, since 22\.4 rounds up/);
-  assert.match(rubric, /c16 scores prompt 1 at band 2 only, since the postmortem-seeded and conversion prompts read no critical-flows input/);
+  assert.match(rubric, /Prompt 5 reads `checkout-inputs\.md` and its critical flows, but its postmortem-seeded baseline is scored on c1 to c10 only, the convention that keeps c13 and c14 off it, so c16 scores prompt 1 alone\./);
+  assert.match(rubric, /at least one chain names both `flow-checkout` and `flow-retry`/);
+  assert.match(rubric, /\(Amended 2026-10-13, before any run was judged under rubric 4:/);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c14-edges-and-codebases"), { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 });
   assert.deepEqual(CRITERIA.find((c) => c.id === "c15-cross-service-trace"), { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 });
   assert.deepEqual(CRITERIA.find((c) => c.id === "c16-flows"), { id: "c16-flows", must: false, prompts: [1], rubric: 4 });
@@ -344,6 +346,40 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (\d+))? \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]), rubric: m[4] === undefined ? undefined : Number(m[4]) }));
   assert.deepEqual(fromWorkflow, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts, rubric: c.rubric })));
+});
+
+// c16 and the flows stability predicate both key on flows[].id, so the ids and
+// tiers c16's table expects must be the ones prompt 1's input states and the
+// model answer carries. The 2026-10-13 round ran on an input that stated
+// neither, and every run minted its own ids. The update/*.md inputs restate
+// checkout-inputs.md word for word except for their one change, so their
+// critical flows are the same section.
+test("c16's table, prompt 1's input and the model answer name the same flows with the same tiers", () => {
+  const evals = join(import.meta.dirname, "..", "skills", "fmea-software", "evals");
+  const read = (rel: string) => readFileSync(join(evals, rel), "utf8");
+  const section = (text: string, heading: string) => {
+    const from = text.indexOf(heading);
+    assert.notEqual(from, -1, `no ${heading}`);
+    const to = text.indexOf("\n## ", from);
+    return to === -1 ? text.slice(from) : text.slice(from, to);
+  };
+  // The body rows of the first markdown table in text, each row's cells with backticks dropped.
+  const rows = (text: string) =>
+    text.split("\n").filter((l) => l.startsWith("| ")).slice(1).map((l) => l.slice(1, -1).split("|").map((c) => c.trim().replaceAll("`", "")));
+  const byId = (pairs: string[][]) => [...pairs].sort((a, b) => a[0].localeCompare(b[0]));
+
+  const flows = section(read("fixtures/checkout-inputs.md"), "## Critical flows");
+  const fromInputs = byId(rows(flows).map(([id, tier]) => [id, tier]));
+  const fromRubric = byId(rows(section(read("rubric.md"), "### c16-flows")).map(([id, , tier]) => [id, tier]));
+  const answer = JSON.parse(read("fixtures/checkout-service.fmea.json")) as { flows: { id: string; value_priority: string }[] };
+  const fromAnswer = byId(answer.flows.map((f) => [f.id, f.value_priority]));
+
+  assert.equal(fromAnswer.length, 3);
+  assert.deepEqual(fromInputs, fromAnswer);
+  assert.deepEqual(fromRubric, fromAnswer);
+  for (const copy of ["gateway-dropped.md", "gateway-limits.md", "codebase-missing.md"]) {
+    assert.equal(section(read(`fixtures/update/${copy}`), "## Critical flows"), flows, copy);
+  }
 });
 
 test("CLI reads --results and writes --out", () => {
