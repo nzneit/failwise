@@ -208,6 +208,38 @@ test("a chain-named flow whose population is not re-scored is marked, and the le
   assert.ok(html.includes("whose population has not been re-scored"), "the legend names the provisional note");
 });
 
+test("the chain annotation names every flow it breaks, marks the one whose band was used, and notes the disjointness assumption", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const row = rowSection(html, "ch-9");
+  assert.ok(row.includes("breaks:"), "the row names the flows");
+  assert.ok(row.includes("<code>flow-checkout</code>"), "the first named flow is printed");
+  assert.ok(row.includes("<code>flow-retry</code>"), "the second named flow is printed");
+  assert.ok(row.includes("whose band was used"), "the chosen flow is marked");
+  assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+});
+
+test("a chain naming one flow prints no disjointness note, and a chain naming none prints no annotation", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const single = rowSection(html, "ch-5");
+  assert.ok(single.includes("breaks:") && single.includes("<code>flow-resume</code>"), "the single named flow is still annotated");
+  assert.ok(!single.includes("treated as disjoint"), "one named flow prints no disjointness note");
+  assert.ok(!renderHtml(minimalDoc(), table, template, vocabulary).includes("breaks:"));
+});
+
+test("the annotation marks the first named flow by position, whichever id it carries, never every named flow", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "Low", users: { population: "internal only: operators" } },
+  ];
+  const marked = (order: string[]): string | undefined => {
+    doc.chains[0].flows = order;
+    return rowSection(renderHtml(doc, table, template, vocabulary), "ch-1").match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0];
+  };
+  assert.equal(marked(["flow-a", "flow-b"]), '<code>flow-a</code> <span class="mark mark-chosen">', "the first entry is marked when it leads");
+  assert.equal(marked(["flow-b", "flow-a"]), '<code>flow-b</code> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
+});
+
 test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
   const doc = golden();
   const html = renderHtml(doc, table, template, vocabulary);

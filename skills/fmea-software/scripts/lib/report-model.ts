@@ -62,6 +62,9 @@ export interface RowModel {
   staleNotice: string | null;      // null when stale.flag is false
   causeLinks: CauseLink[];         // the causes linked to another chain, in cause order; element "" only when the provider's function does not resolve
   propagatesTo: Propagation[];     // each chain linking into this one once, in the index order; element "" only when the consumer's function does not resolve
+  flows: string[];                 // the flows the chain names, in the author's order; empty when it names none
+  chosenFlow: string | null;       // the first named flow that resolves to a document flow, the one whose band the Severity rationale used (§5.3); null when the chain names none
+  disjoint: boolean;               // true when the chain names more than one flow, so the annotation notes that their union is not computed
 }
 
 export type GroupLocation =
@@ -293,6 +296,15 @@ function groupFindings(located: Located[]): CheckGroup[] {
     .sort((a, b) => Number(b.severity === "blocker") - Number(a.severity === "blocker"));
 }
 
+// The flows a chain names, the first that resolves to a document flow — the one the chain's Severity
+// rationale names as having set the band (§5.3, the positional rule) — and whether it names more than
+// one, which the annotation's disjointness note reads.
+function rowFlows(chain: Chain, doc: FmeaDocument): Pick<RowModel, "flows" | "chosenFlow" | "disjoint"> {
+  const flows = chain.flows ?? [];
+  const known = new Set((doc.flows ?? []).map((f) => f.id));
+  return { flows, chosenFlow: flows.find((id) => known.has(id)) ?? null, disjoint: flows.length > 1 };
+}
+
 // A row's marks, in the order of §5.7. `own` is every finding that points into the row.
 function rowMarks(chain: Chain, own: PlacedFinding[]): RowMark[] {
   const marks: RowMark[] = [];
@@ -400,6 +412,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[], 
       staleNotice: staleNotice(chain.stale),
       causeLinks: causeLinksOf(doc, docIndex, links, index),
       propagatesTo: [],
+      ...rowFlows(chain, doc),
     };
   });
   propagationsOf(rows, doc, docIndex, links);

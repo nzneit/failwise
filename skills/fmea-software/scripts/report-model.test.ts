@@ -715,3 +715,24 @@ test("model.flows is in the presentational order and marks the provisional and c
   assert.deepEqual(model.flows.map((f) => f.id), ["flow-a", "flow-c", "flow-b"]);
   assert.deepEqual(model.flows.map((f) => [f.provisional, f.namedByChain]), [[true, true], [false, false], [false, false]]);
 });
+
+test("a chain that names flows carries them, the first as the one whose band was used, and the disjointness flag", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-2", name: "Two", value_priority: "Low", users: { population: "internal only: operators" } },
+  ];
+  doc.chains[0].flows = ["flow-1", "flow-2"];
+  const [row] = modelOf(doc).rows;
+  assert.deepEqual([row.flows, row.chosenFlow, row.disjoint], [["flow-1", "flow-2"], "flow-1", true]);
+});
+
+test("the chosen flow is the first entry by position, whichever id it carries", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "Low", users: { population: "internal only: operators" } },
+  ];
+  doc.chains[0].flows = ["flow-b", "flow-a"];
+  assert.equal(modelOf(doc).rows[0].chosenFlow, "flow-b");
+});

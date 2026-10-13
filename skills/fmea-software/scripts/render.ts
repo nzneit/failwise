@@ -219,6 +219,11 @@ const FLOWS_CAPTION = "One row per flow, High first then by id, a presentational
 const FLOWS_LEGEND = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
 const FLOWS_PROVISIONAL_NOTE = "A chain-named flow whose population has not been re-scored is marked provisional; the Severity of the rows that rest on it, and the priority that follows, are not final.";
 const FLOWS_PARTIAL = "a starting point only; the recorded steps are a prefix";
+// The chain annotation (§5.3): its label, the phrase marking the flow the Severity rationale used, and
+// the disjointness note a chain that names more than one flow carries (§4.2).
+const BREAKS_LABEL = "breaks:";
+const BREAKS_CHOSEN = "the flow whose band was used";
+const FLOWS_DISJOINT_NOTE = "The named flows are treated as disjoint and their union is not computed; the band is the highest of the single flows' classes.";
 const FLOWS_HEAD = "<thead><tr><th>Flow</th><th>Priority</th><th>Population</th><th>Sources</th><th>Steps</th></tr></thead>";
 // The flow value-priority tiers use the same badge styles as the loaded table's first, middle and
 // last values, so a tier is read at a glance and stays the bare label (DF4, C201).
@@ -325,6 +330,18 @@ function part(label: string, body: string): string {
   return `<div><span class="lbl">${e(label)}</span>${body}</div>`;
 }
 
+// The chain annotation (§5.3): the flows the row breaks, the first named flow marked as the one whose
+// band the Severity rationale used, and, for a chain that names more than one flow, the disjointness
+// note. A row that names no flow prints nothing — no label, no empty list.
+function flowBreaksHtml(row: RowModel): string {
+  if (row.flows.length === 0) return "";
+  const listed = row.flows.map((id) => id !== row.chosenFlow
+    ? `<code>${e(id)}</code>`
+    : `<code>${e(id)}</code> <span class="mark mark-chosen">${e(BREAKS_CHOSEN)}</span>`).join(", ");
+  const note = row.disjoint ? ` <span class="muted">${e(FLOWS_DISJOINT_NOTE)}</span>` : "";
+  return `<p class="breaks">${e(BREAKS_LABEL)} ${listed}${note}</p>`;
+}
+
 function rowHeaderHtml(row: RowModel): string {
   const c = row.chain;
   const marks = row.marks.length === 0 ? "" : ` &middot; ${marksHtml(row.marks)}`;
@@ -422,7 +439,7 @@ function gridHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): s
 
 function rowSectionHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): string {
   const stale = row.staleNotice === null ? "" : `<p class="stale-notice">${e(row.staleNotice)}</p>`;
-  return `<article class="row" id="row-${e(row.chain.id)}">${rowHeaderHtml(row)}${row.findings.map(findingHtml).join("")}${stale}` +
+  return `<article class="row" id="row-${e(row.chain.id)}">${rowHeaderHtml(row)}${flowBreaksHtml(row)}${row.findings.map(findingHtml).join("")}${stale}` +
     `<div class="grid">${gridHtml(row, trackers)}</div><p class="back"><a href="#chains">&uarr; index</a></p></article>`;
 }
 
