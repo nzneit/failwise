@@ -7,7 +7,7 @@ import { legacyIssues } from "./lib/legacy.ts";
 import type { Cause, Chain, DependencyEdge, Flow, FmeaDocument, StaleReason } from "./lib/types.ts";
 import { clone, edge, fixturePath, graphDoc, loadFixture, moveEdgesIntoBlocks, newElement, rating, runCli, withTempDir, writeJson } from "./test-helpers.ts";
 
-const EMPTY: UpdateDiff = { edges: [], elements: [], flows: [], reached: [], repointed: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
+const EMPTY: UpdateDiff = { edges: [], elements: [], flows: [], reached: [], repointed: [], removedFlows: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
 
 /** diffUpdate of `copy` against a clone of it that `edit` changes. */
 function changed(copy: FmeaDocument, edit: (draft: FmeaDocument) => void): UpdateDiff {
@@ -231,6 +231,35 @@ test("update-check.ts prints the flows section, calls a name change informationa
   assert.ok(/update-check: [^\n]*, 1 chain re-pointed\n$/.test(repointed.stdout), repointed.stdout);
 });
 
+test("a removed flow a chain still names is refused and listed with the flows to re-point to", () => {
+  const copy = flowDoc();
+  const draft = bumped(copy);
+  draft.flows = draft.flows!.filter((f) => f.id !== "flow-1");
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.ok(r.stdout.includes("flows removed:\n  flow-1: named by ch-1; repoint to flow-2, or drop\n"), r.stdout);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: removed-flow-still-named: chain ch-1 names flow-1, which this update removes at \/chains\/0\/flows\/0$/m);
+});
+
+test("a chain-named flow that lost its last non-catalog source is refused by the same guard", () => {
+  const copy = flowDoc();
+  const draft = bumped(copy);
+  flowOf(draft, "flow-1").sources = [{ kind: "catalog", ref: "cat-service-01" }];
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: flow-sources-lost: flow flow-1 is named by chain ch-1 and has lost its last source whose kind is not catalog at \/flows\/0\/sources$/m);
+});
+
+test("a removed flow no chain names is reported and marks nothing stale", () => {
+  const copy = flowDoc();
+  const draft = clone(copy);
+  draft.flows = draft.flows!.filter((f) => f.id !== "flow-2");
+  const r = runCheck(copy, draft);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("flows removed:\n  flow-2: named by no chain\n"), r.stdout);
+  assert.ok(r.stdout.includes("stale:\n  none"), r.stdout);
+});
+
 function chainOf(doc: FmeaDocument, id: string): Chain {
   const c = doc.chains.find((x) => x.id === id);
   assert.ok(c, `no chain ${id}`);
@@ -292,7 +321,7 @@ test("update-check.ts prints the diff on the first run and refuses nothing a dra
   const r = runCheck(copy, draft);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
-  assert.equal(r.stdout, "edges:\n  changed checkout to gw: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") +
+  assert.equal(r.stdout, "edges:\n  changed checkout to gw: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") + NONE("flows removed") +
     "stale:\n  ch-1: edge checkout to gw changed\n  ch-2: link /chains/1/causes/0 into ch-1 across edge checkout to gw\n" +
     NONE("unmarked") + NONE("links into removed chains") + NONE("outside elements with no consumer") +
     "re-rating order:\n  ch-1, ch-2\n" +
@@ -311,7 +340,7 @@ test("update-check.ts given one path as both copy and draft prints every section
   const path = fixturePath("update", "before.fmea.json");
   const r = runCli("update-check.ts", [path, path]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, ["edges", "elements", "flows", "chains re-pointed", "stale", "unmarked", "links into removed chains", "outside elements with no consumer", "re-rating order"].map(NONE).join("") +
+  assert.equal(r.stdout, ["edges", "elements", "flows", "chains re-pointed", "flows removed", "stale", "unmarked", "links into removed chains", "outside elements with no consumer", "re-rating order"].map(NONE).join("") +
     "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed\n");
   const c = runCli("update-check.ts", [path, path, "--check"]);
   assert.equal(c.status, 2);
@@ -488,7 +517,7 @@ test("update-check.ts --check exits 0 on update/before.fmea.json against a draft
   const r = runCheck(copy, draft, "--check");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
-  assert.equal(r.stdout, "edges:\n  changed checkout to checkout.payment-gateway: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") +
+  assert.equal(r.stdout, "edges:\n  changed checkout to checkout.payment-gateway: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") + NONE("flows removed") +
     "stale:\n  ch-1: edge checkout to checkout.payment-gateway changed\n" + NONE("unmarked") + NONE("links into removed chains") +
     NONE("outside elements with no consumer") + NONE("consumer causes whose linked chain changed") + "re-rating order:\n  ch-1, ch-2, ch-4\n" +
     "update-check: 1 edge change, 0 element changes, 1 stale row, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed, 0 changed providers\n");

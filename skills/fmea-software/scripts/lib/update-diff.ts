@@ -20,10 +20,13 @@ export interface ReachedRow { chainId: string; index: number; rule: string; reas
 export interface UnmarkedRow { chainId: string; rule: string }
 /** `index` is the consumer's index in the draft. */
 export interface RemovedLink { chainId: string; index: number; cause: number; removed: string; candidates: string[] }
+/** A flow the update removes; `chains` are the draft rows that still name it and `candidates` the
+ *  draft's flows a row could be re-pointed to. */
+export interface RemovedFlow { flow: string; chains: string[]; candidates: string[] }
 export interface Orphan { element: string; why: string }
 /** `index` is the consumer's index in the draft. */
 export interface ChangedProvider { chainId: string; index: number; cause: number; provider: string; changed: ("failure_mode" | "O")[] }
-export interface UpdateDiff { edges: EdgeChange[]; elements: ElementChange[]; flows: FlowChange[]; reached: ReachedRow[]; repointed: ChainRepoint[]; unmarked: UnmarkedRow[]; removedLinks: RemovedLink[]; orphans: Orphan[]; changedProviders: ChangedProvider[]; order: string[] }
+export interface UpdateDiff { edges: EdgeChange[]; elements: ElementChange[]; flows: FlowChange[]; reached: ReachedRow[]; repointed: ChainRepoint[]; removedFlows: RemovedFlow[]; unmarked: UnmarkedRow[]; removedLinks: RemovedLink[]; orphans: Orphan[]; changedProviders: ChangedProvider[]; order: string[] }
 
 interface Pair { copy: FmeaDocument; draft: FmeaDocument; ci: DocIndex; di: DocIndex }
 interface Ctx extends Pair { links: ResolvedLink[]; edges: EdgeChange[]; elements: ElementChange[]; flows: FlowChange[]; repointed: ChainRepoint[] }
@@ -260,6 +263,19 @@ function removedLinks(ctx: Ctx): RemovedLink[] {
   });
 }
 
+/** One removed flow: its name, the draft rows that still name it, and the draft's flows a row could
+ *  be re-pointed to. */
+function removedFlow(draft: FmeaDocument, flow: string, candidates: string[]): RemovedFlow {
+  return { flow, chains: draft.chains.filter((c) => c.flows?.includes(flow)).map((c) => c.id), candidates };
+}
+
+/** Each flow in the copy the draft lacks, in copy order, with the surviving flows as candidates. */
+function removedFlows(copy: FmeaDocument, draft: FmeaDocument): RemovedFlow[] {
+  const survivors = (draft.flows ?? []).map((f) => f.id);
+  const after = new Set(survivors);
+  return (copy.flows ?? []).flatMap((f) => (after.has(f.id) ? [] : [removedFlow(draft, f.id, survivors)]));
+}
+
 /** Why an outside element is the `to` of no edge in the draft. */
 function orphanWhy(ctx: Ctx, el: Element): string {
   const at = ctx.ci.element.get(el.id);
@@ -333,6 +349,7 @@ export function diffUpdate(copy: FmeaDocument, draft: FmeaDocument): UpdateDiff 
     flows: ctx.flows,
     reached,
     repointed: ctx.repointed,
+    removedFlows: removedFlows(copy, draft),
     unmarked: unmarkedRows(ctx, reached),
     removedLinks: removedLinks(ctx),
     orphans: orphans(ctx),
@@ -353,12 +370,19 @@ export function baselineIssues(copy: FmeaDocument, draft: FmeaDocument, check: b
   return issue(`the draft's meta.version ${v} is not ${check ? c + 1 : `${c} or ${c + 1}`} as the stored copy's meta.version ${c} requires`, ptr("meta", "version"));
 }
 
-interface CheckCtx extends Pair { reached: ReadonlyMap<number, string>; removed: readonly RemovedLink[]; fresh: ReadonlySet<string> }
+interface CheckCtx extends Pair { reached: ReadonlyMap<number, string>; removed: readonly RemovedLink[]; removedFlows: readonly RemovedFlow[]; flows: ReadonlyMap<string, number>; fresh: ReadonlySet<string> }
 type CheckRule = (ctx: CheckCtx, i: number) => Issue[];
+
+/** The draft's first index per flow id. */
+function flowIndices(draft: FmeaDocument): Map<string, number> {
+  const map = new Map<string, number>();
+  (draft.flows ?? []).forEach((f, i) => { if (!map.has(f.id)) map.set(f.id, i); });
+  return map;
+}
 
 function checkContext(copy: FmeaDocument, draft: FmeaDocument, diff: UpdateDiff): CheckCtx {
   const p = pair(copy, draft);
-  return { ...p, reached: new Map(diff.reached.map((r) => [r.index, r.rule])), removed: diff.removedLinks, fresh: new Set(newChainIds(p)) };
+  return { ...p, reached: new Map(diff.reached.map((r) => [r.index, r.rule])), removed: diff.removedLinks, removedFlows: diff.removedFlows, flows: flowIndices(draft), fresh: new Set(newChainIds(p)) };
 }
 
 function mismatch(rule: string, message: string, pointer: string): Issue[] {
@@ -429,7 +453,26 @@ const linkIntoRemoved: CheckRule = (ctx, i) => {
   });
 };
 
-const CHECK_RULES: readonly CheckRule[] = [staleMissing, staleReason, staleSinceVersion, staleUnreached, ratingOutsideSet, linkIntoRemoved];
+/** One issue per row still naming a flow this update removes: that name resolves to no flow. */
+const removedFlowStillNamed: CheckRule = (ctx, i) => {
+  const c = ctx.draft.chains[i];
+  return (c.flows ?? []).flatMap((flow, pos) => ctx.removedFlows.some((r) => r.flow === flow)
+    ? mismatch("removed-flow-still-named", `chain ${c.id} names ${flow}, which this update removes`, ptr("chains", i, "flows", pos))
+    : []);
+};
+
+/** One issue per row naming a draft flow that resolves to no source whose kind is not catalog: the
+ *  denominator would rest on a catalog row alone. A name with no draft flow is the guard above's. */
+const flowSourcesLost: CheckRule = (ctx, i) => {
+  const c = ctx.draft.chains[i];
+  return (c.flows ?? []).flatMap((flow) => {
+    const at = ctx.flows.get(flow);
+    if (at === undefined || (ctx.draft.flows?.[at].sources ?? []).some((s) => s.kind !== "catalog")) return [];
+    return mismatch("flow-sources-lost", `flow ${flow} is named by chain ${c.id} and has lost its last source whose kind is not catalog`, ptr("flows", at, "sources"));
+  });
+};
+
+const CHECK_RULES: readonly CheckRule[] = [staleMissing, staleReason, staleSinceVersion, staleUnreached, ratingOutsideSet, linkIntoRemoved, removedFlowStillNamed, flowSourcesLost];
 
 /** The UPDATE_MISMATCH issues of --check, rows in draft order, one line per row per rule in rule order. */
 export function mismatchIssues(copy: FmeaDocument, draft: FmeaDocument, diff: UpdateDiff): Issue[] {
@@ -454,6 +497,13 @@ function removedLine(r: RemovedLink): string {
   return r.candidates.length > 0 ? `${head}: repoint to ${r.candidates.join(", ")}, or drop` : `${head}: drop`;
 }
 
+/** The removed-flow guard's line: the rows that still name the flow and where they could point. */
+function removedFlowLine(r: RemovedFlow): string {
+  if (r.chains.length === 0) return `${r.flow}: named by no chain`;
+  const head = `${r.flow}: named by ${r.chains.join(", ")}`;
+  return r.candidates.length > 0 ? `${head}; repoint to ${r.candidates.join(", ")}, or drop` : `${head}; drop`;
+}
+
 /** The stdout of update-check.ts: one section per part of the diff, then the counts line. */
 export function diffLines(diff: UpdateDiff, check: boolean): string[] {
   const providers = check ? section("consumer causes whose linked chain changed", diff.changedProviders.map((p) => `/chains/${p.index}/causes/${p.cause} into ${p.provider}: ${p.changed.join(", ")}`)) : [];
@@ -473,6 +523,7 @@ export function diffLines(diff: UpdateDiff, check: boolean): string[] {
     ...section("elements", diff.elements.map((e) => changeLine(e.change, e.id, e.fields))),
     ...section("flows", diff.flows.map((f) => changeLine(f.change, f.id, f.fields))),
     ...section("chains re-pointed", diff.repointed.map((r) => `${r.chainId}: ${r.from.join(", ")} to ${r.to.join(", ")}`)),
+    ...section("flows removed", diff.removedFlows.map(removedFlowLine)),
     ...section("stale", diff.reached.map((r) => `${r.chainId}: ${r.rule}`)),
     ...section("unmarked", diff.unmarked.map((r) => `${r.chainId}: ${r.rule}`)),
     ...section("links into removed chains", diff.removedLinks.map(removedLine)),
