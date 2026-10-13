@@ -225,6 +225,18 @@ test("flow-users-review-by-date wants by and date on a chain-named flow's rescor
   assert.deepEqual(only(checkInvariants(doc), "flow-users-review-by-date"), []);
 });
 
+test("flow-users-required checks the first copy of a repeated flow id, not the last, for a chain that is not the first", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-1", name: "One", value_priority: "High" },
+    { id: "flow-1", name: "One again", value_priority: "Low" },
+  ];
+  doc.chains.push({ ...clone(doc.chains[0]), id: "ch-2", flows: ["flow-1"] });
+  assert.deepEqual(found(checkInvariants(doc), "flow-users-required"), [
+    ["/flows/0/users", "flow flow-1 is named by chain ch-2 and needs users with a population"],
+  ]);
+});
+
 test("dependency-from-resolves, dependency-to-resolves and dependency-self report edge by edge, in that order within an edge", () => {
   const doc = graphDoc({ elements: ["svc"] });
   doc.dependencies = [edge("ghost", "svc"), edge("svc", "phantom"), edge("svc", "svc"), edge("void", "void")];

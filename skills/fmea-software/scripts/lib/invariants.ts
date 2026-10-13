@@ -175,7 +175,8 @@ function flowIdIssues(flows: Flow[]): Issue[] {
 /** The flow ids each chain names, resolved to their first occurrence and kept only for chains that
  *  name at least one, so a flow no chain names is absent and the three rules below skip it. */
 function namedFlowIds(chains: Chain[], flows: Flow[]): NamedFlows {
-  const at = new Map(flows.map((f, i) => [f.id, i]));
+  const at = new Map<string, number>();
+  flows.forEach((f, i) => { if (!at.has(f.id)) at.set(f.id, i); });
   return new Map(chains.flatMap((chain, ci) => {
     const named = (chain.flows ?? []).flatMap((id) => {
       const fi = at.get(id);
