@@ -140,10 +140,10 @@ const RUNS = [1, 2]
 
 // The rubric version this file judges against, written into results.json as
 // `rubric`. A criterion without a `rubric` field belongs to version 1.
-const RUBRIC = 3
+const RUBRIC = 4
 
-// The fifteen rubric criteria (plan reference §I; c13 added by rubric 2, c14 and c15 by rubric 3).
-// c5 does not apply to prompt 6; c13 and c14 apply to prompts 1 and 6 only, c15 to prompt 1 only.
+// The sixteen rubric criteria (plan reference §I; c13 added by rubric 2, c14 and c15 by rubric 3, c16 by rubric 4).
+// c5 does not apply to prompt 6; c13 and c14 apply to prompts 1 and 6 only, c15 and c16 to prompt 1 only.
 // Kept in sync by hand with tools/eval-report.ts CRITERIA; workflow scripts
 // cannot import.
 const CRITERIA = [
@@ -162,6 +162,7 @@ const CRITERIA = [
   { id: 'c13-element-typing', must: false, prompts: [1, 6], rubric: 2 },
   { id: 'c14-edges-and-codebases', must: false, prompts: [1, 6], rubric: 3 },
   { id: 'c15-cross-service-trace', must: false, prompts: [1], rubric: 3 },
+  { id: 'c16-flows', must: false, prompts: [1], rubric: 4 },
 ]
 
 const EXPECTED_FILES = {

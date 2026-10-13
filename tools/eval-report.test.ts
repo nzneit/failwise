@@ -29,8 +29,8 @@ function allTwo(prompt: number, except: Record<string, number> = {}, rubric = 1)
   return criteriaFor(prompt, rubric).map((c) => ({ id: c.id, score: except[c.id] ?? 2, evidence: "ok" }));
 }
 
-test("fifteen criteria; under rubric 1 prompts 1, 5 and 6 have 10 applicable with 8 musts, prompt 7 has 11 with 9", () => {
-  assert.equal(CRITERIA.length, 15);
+test("sixteen criteria; under rubric 1 prompts 1, 5 and 6 have 10 applicable with 8 musts, prompt 7 has 11 with 9", () => {
+  assert.equal(CRITERIA.length, 16);
   for (const p of [1, 5, 6]) {
     assert.equal(criteriaFor(p).length, 10);
     assert.equal(criteriaFor(p).filter((c) => c.must).length, 8);
@@ -299,8 +299,8 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /prompt 6 on c1 to c4 and c6 to c11 \(maximum 20, 8 musts\)/);
   assert.match(rubric, /prompt 7 on c1 to c10 and c12 \(maximum 22, 9 musts\)/);
   assert.match(rubric, /Under rubric 2, prompts 1 and 6 add c13 \(maximum 22, 8 musts\)\./);
-  assert.match(rubric, /^\*\*Rubric version\.\*\* This is rubric 3, dated 2026-10-09: it adds c14 and c15\./m);
-  assert.match(rubric, /rubric 2, dated 2026-10-07, which added c13, and is read without c14 and c15/);
+  assert.match(rubric, /^\*\*Rubric version\.\*\* This is rubric 4, dated 2026-10-12: it adds c16\./m);
+  assert.match(rubric, /a file carrying `rubric: 3` was judged under rubric 3, dated 2026-10-09, which added c14 and c15, and is read without c16/);
   assert.match(rubric, /^### c13-element-typing \(prompts 1 and 6; rubric 2\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c13-element-typing"), { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 });
   // c5 carries its applicability on its heading the way c11 and c12 do; the
@@ -308,15 +308,20 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /^### c5-provisional-rescore \(must, not prompt 6\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c5-provisional-rescore")?.prompts, [1, 5, 7]);
   assert.match(rubric, /Under rubric 3, prompt 1 adds c14 and c15 \(maximum 26, 8 musts\) and prompt 6 adds c14 \(maximum 24, 8 musts\); prompt 7 is unchanged \(maximum 22, 9 musts\)\./);
+  assert.match(rubric, /Under rubric 4, prompt 1 adds c16 \(maximum 28, 8 musts\); prompts 6 and 7 are unchanged \(maximum 24 and 22, 9 musts\)\./);
   assert.match(rubric, /^### c14-edges-and-codebases \(prompts 1 and 6; rubric 3\)$/m);
   assert.match(rubric, /^### c15-cross-service-trace \(prompt 1; rubric 3\)$/m);
-  assert.match(rubric, /only c3, c8, c13, c14 and c15 are not musts/);
+  assert.match(rubric, /^### c16-flows \(prompt 1; rubric 4\)$/m);
+  assert.match(rubric, /only c3, c8, c13, c14, c15 and c16 are not musts/);
   assert.match(rubric, /21 of 26, since 20\.8 rounds up/);
   assert.match(rubric, /20 of 24, since 19\.2 rounds up/);
+  assert.match(rubric, /23 of 28, since 22\.4 rounds up/);
+  assert.match(rubric, /c16 scores prompt 1 at band 2 only, since the postmortem-seeded and conversion prompts read no critical-flows input/);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c14-edges-and-codebases"), { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 });
   assert.deepEqual(CRITERIA.find((c) => c.id === "c15-cross-service-trace"), { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 });
+  assert.deepEqual(CRITERIA.find((c) => c.id === "c16-flows"), { id: "c16-flows", must: false, prompts: [1], rubric: 4 });
   const workflow = readFileSync(join(import.meta.dirname, "workflows", "evals.js"), "utf8");
-  assert.match(workflow, /^const RUBRIC = 3$/m);
+  assert.match(workflow, /^const RUBRIC = 4$/m);
   assert.match(workflow, /node \$\{SKILL\}\/scripts\/update-check\.ts \$\{SKILL\}\/evals\/fixtures\/update\/before\.fmea\.json \$\{item\.dir\}\/analysis\.json/);
   const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (\d+))? \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]), rubric: m[4] === undefined ? undefined : Number(m[4]) }));

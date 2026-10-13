@@ -6,9 +6,9 @@ Scoring guide for the skill evals of design §10. Each of prompts 1, 5, 6, and 7
 
 The judge reads the prompt and its preamble, the run's `inputs/`, `analysis.json`, `report.html`, `validate.json` (the validator's output for `analysis.json`), the final message in `transcript.json` (`result`), and the run's message stream `transcript.jsonl` (one JSON object per line; its assistant `tool_use` blocks are the only record of the commands the run ran — `transcript.json` holds the final message and cost metadata, never a tool call); for prompt 6 also `fixtures/legacy-rpn-sheet.expected.fmea.json`, for prompt 7 also `fixtures/update/expected-stale.json`. Every criterion is scored 0, 1, or 2 with one or two sentences of evidence naming the pointer, file, or transcript text relied on. A criterion marked **must** has to score 2 for the run to pass.
 
-Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts). Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts). Under rubric 3, prompt 1 adds c14 and c15 (maximum 26, 8 musts) and prompt 6 adds c14 (maximum 24, 8 musts); prompt 7 is unchanged (maximum 22, 9 musts).
+Applicability and maximum: prompts 1 and 5 are scored on c1 to c10 (maximum 20, 8 musts); prompt 6 on c1 to c4 and c6 to c11 (maximum 20, 8 musts); prompt 7 on c1 to c10 and c12 (maximum 22, 9 musts). Under rubric 2, prompts 1 and 6 add c13 (maximum 22, 8 musts). Under rubric 3, prompt 1 adds c14 and c15 (maximum 26, 8 musts) and prompt 6 adds c14 (maximum 24, 8 musts); prompt 7 is unchanged (maximum 22, 9 musts). Under rubric 4, prompt 1 adds c16 (maximum 28, 8 musts); prompts 6 and 7 are unchanged (maximum 24 and 22, 9 musts).
 
-**Rubric version.** This is rubric 3, dated 2026-10-09: it adds c14 and c15. A results file written under it carries `rubric: 3` at its top level. A file carrying `rubric: 2` was judged under rubric 2, dated 2026-10-07, which added c13, and is read without c14 and c15, so the element-kinds document regenerates as it was; a file with no such field was judged under rubric 1 and is read without c13, so the v1 document regenerates as it was.
+**Rubric version.** This is rubric 4, dated 2026-10-12: it adds c16. A results file written under it carries `rubric: 4` at its top level; a file carrying `rubric: 3` was judged under rubric 3, dated 2026-10-09, which added c14 and c15, and is read without c16; a file carrying `rubric: 2` was judged under rubric 2, dated 2026-10-07, which added c13, and is read without c14, c15 and c16, so the element-kinds document regenerates as it was; a file with no such field was judged under rubric 1 and is read without c13, so the v1 document regenerates as it was.
 
 **Unattended runs.** The run cannot ask a question, so the things the skill normally does interactively are judged by their unattended substitutes:
 
@@ -197,6 +197,22 @@ A failure that crosses from a provider to its consumer is recorded as a link: a 
 
 Judgeable from the document alone; the inputs give the textbook pair, a failed authorization failing the checkout. A run that links but records no `cited_o` carries the `linked-cause-occurrence-drift` warning and loses no score here.
 
+### c16-flows (prompt 1; rubric 4)
+
+The critical flows the inputs name appear in `flows[]`, and the chain-to-flow naming the inputs support appears in `chains[].flows`. Compare against the table for the prompt.
+
+- **2** — Every flow the inputs name is present with its `id`, its `name` and its `value_priority`; every flow a chain names carries `users` with a `population` grounded in the inputs and a non-catalog `sources[]` entry; and the chain-to-flow naming matches the table.
+- **1** — The flows are present but incomplete: a flow is missing, or a chain-named flow carries no `users`, or the chain naming is absent or wrong on one chain.
+- **0** — No `flows[]` at all.
+
+The criterion is vacuous on a prompt whose inputs name no critical-flow section, so prompt 6 (a converted sheet) and prompt 5 (a postmortem-seeded baseline scored on c1 to c10) are not scored on it: c16 scores prompt 1 at band 2 only, since the postmortem-seeded and conversion prompts read no critical-flows input. Prompt 1 (`checkout-inputs.md`), flows:
+
+| `flows[].id` | What it is | `value_priority` | Named by |
+|---|---|---|---|
+| `flow-checkout` | A signed-in shopper submits a cart and the service returns a confirmation | `High` | the checkout chain, with `flow-retry` |
+| `flow-retry` | A shopper retries a submission after a timeout and the cart is authorized once | `High` | the checkout chain |
+| `flow-resume` | A shopper resumes an abandoned session from a saved link | `Medium` | the session chain |
+
 ## Stability between the two runs at the same model capability
 
 `tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when both hold:
@@ -208,9 +224,9 @@ Run-to-run instability is one of the three documented failure modes of AI-genera
 
 ## Pass rule
 
-A run passes when every **must** criterion scores 2 and the total is at least **80%** of the maximum (16 of 20; 18 of 22, since 17.6 rounds up to the next whole score; 20 of 24, since 19.2 rounds up; 21 of 26, since 20.8 rounds up). A (prompt, model capability) pair passes when both of its runs pass and the stability check between them passes. v1 is accepted on the evals when all eight pairs pass (design §15, criterion 2).
+A run passes when every **must** criterion scores 2 and the total is at least **80%** of the maximum (16 of 20; 18 of 22, since 17.6 rounds up to the next whole score; 20 of 24, since 19.2 rounds up; 21 of 26, since 20.8 rounds up; 23 of 28, since 22.4 rounds up). A (prompt, model capability) pair passes when both of its runs pass and the stability check between them passes. v1 is accepted on the evals when all eight pairs pass (design §15, criterion 2).
 
-With the criteria as written, only c3, c8, c13, c14 and c15 are not musts. On prompts 5 and 7 a run whose musts all score 2 already totals at least 16 of 20 or 18 of 22. Under rubric 2, on prompts 1 and 6 such a run totals 16 of 22 with the three non-musts at 0 and needs two more points among them. Under rubric 3 the musts total 16, so prompt 1 needs 5 of the 10 points among c3, c8, c13, c14 and c15 to reach 21 of 26, and prompt 6 needs 4 of the 8 among c3, c8, c13 and c14 to reach 20 of 24; the total rule binds there. Each file's maximum comes from `criteriaFor` in `tools/eval-report.ts`.
+With the criteria as written, only c3, c8, c13, c14, c15 and c16 are not musts. On prompts 5 and 7 a run whose musts all score 2 already totals at least 16 of 20 or 18 of 22. Under rubric 2, on prompts 1 and 6 such a run totals 16 of 22 with the three non-musts at 0 and needs two more points among them. Under rubric 3 the musts total 16, so prompt 1 needs 5 of the 10 points among c3, c8, c13, c14 and c15 to reach 21 of 26, and prompt 6 needs 4 of the 8 among c3, c8, c13 and c14 to reach 20 of 24; the total rule binds there. Under rubric 4 prompt 1 needs 7 of the 12 points among c3, c8, c13, c14, c15 and c16 to reach 23 of 28; prompts 6 and 7 are unchanged. Each file's maximum comes from `criteriaFor` in `tools/eval-report.ts`.
 
 ## Changing a threshold
 

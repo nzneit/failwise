@@ -37,9 +37,10 @@ const ROOT_AT_BOUNDARY = new RegExp(
 export interface Criterion { id: string; must: boolean; prompts: number[]; rubric?: number }
 
 /**
- * The fifteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
+ * The sixteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
  * c11 applies to prompt 6 only, c12 to prompt 7 only, c13 to prompts 1 and 6
- * from rubric 2, and c14 to prompts 1 and 6 and c15 to prompt 1 from rubric 3.
+ * from rubric 2, c14 to prompts 1 and 6 and c15 to prompt 1 from rubric 3, and
+ * c16 to prompt 1 from rubric 4.
  */
 export const CRITERIA: Criterion[] = [
   { id: "c1-missing-inputs-asked", must: true, prompts: [1, 5, 6, 7] },
@@ -57,6 +58,7 @@ export const CRITERIA: Criterion[] = [
   { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 },
   { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 },
   { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 },
+  { id: "c16-flows", must: false, prompts: [1], rubric: 4 },
 ];
 
 /** Short titles for the four prompts, in the words of spec §10. */
