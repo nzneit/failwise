@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { diffUpdate } from "./lib/update-diff.ts";
 import type { UpdateDiff } from "./lib/update-diff.ts";
 import { legacyIssues } from "./lib/legacy.ts";
-import type { Cause, Chain, DependencyEdge, FmeaDocument, StaleReason } from "./lib/types.ts";
+import type { Cause, Chain, DependencyEdge, Flow, FmeaDocument, StaleReason } from "./lib/types.ts";
 import { clone, edge, fixturePath, graphDoc, loadFixture, moveEdgesIntoBlocks, newElement, rating, runCli, withTempDir, writeJson } from "./test-helpers.ts";
 
-const EMPTY: UpdateDiff = { edges: [], elements: [], reached: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
+const EMPTY: UpdateDiff = { edges: [], elements: [], flows: [], reached: [], repointed: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
 
 /** diffUpdate of `copy` against a clone of it that `edit` changes. */
 function changed(copy: FmeaDocument, edit: (draft: FmeaDocument) => void): UpdateDiff {
@@ -44,7 +44,7 @@ test("diffUpdate: a boundary change reaches its element's own chains only, and l
   assert.deepEqual(changed(copy, (d) => { d.elements[1].boundary = "owned_outside"; }), {
     ...EMPTY,
     elements: [{ change: "changed", id: "pricing", fields: ["boundary"] }],
-    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing boundary changed" }],
+    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing boundary changed", reason: "element-changed" }],
     unmarked: [{ chainId: "ch-3", rule: "link /chains/2/causes/0 into ch-2, a row this update marks" }],
     order: ["ch-2"],
   });
@@ -55,7 +55,7 @@ test("diffUpdate: an element change in two fields names both in its chains' rule
   assert.deepEqual(changed(copy, (d) => { d.elements[1].kind = "datastore"; d.elements[1].security_relevant = true; }), {
     ...EMPTY,
     elements: [{ change: "changed", id: "pricing", fields: ["kind", "security_relevant"] }],
-    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing kind, security_relevant changed" }],
+    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing kind, security_relevant changed", reason: "element-changed" }],
     order: ["ch-2"],
   });
 });
@@ -73,7 +73,7 @@ test("diffUpdate: a re-parented consumer marks the provider's chains through the
     ...EMPTY,
     edges: [{ change: "added", from: "api", to: "gw", fields: [] }, { change: "removed", from: "checkout.api", to: "gw", fields: [] }],
     elements: [{ change: "added", id: "api", fields: [] }, { change: "removed", id: "checkout.api", fields: [] }],
-    reached: [{ chainId: "ch-1", index: 0, rule: "edge api to gw changed" }],
+    reached: [{ chainId: "ch-1", index: 0, rule: "edge api to gw changed", reason: "element-changed" }],
     order: ["ch-1"],
   });
 });
@@ -121,10 +121,10 @@ test("diffUpdate: an edge change reaches the chains on to and the links into the
     ...EMPTY,
     edges: [{ change: "changed", from: "shop.api", to: "gw", fields: ["sla"] }],
     reached: [
-      { chainId: "ch-1", index: 0, rule: "edge shop.api to gw changed" },
-      { chainId: "ch-3", index: 2, rule: "link /chains/2/causes/0 into ch-1 across edge shop.api to gw" },
-      { chainId: "ch-4", index: 3, rule: "link /chains/3/causes/0 into ch-1 across edge shop.api to gw" },
-      { chainId: "ch-5", index: 4, rule: "link /chains/4/causes/0 into ch-1 across edge shop.api to gw" },
+      { chainId: "ch-1", index: 0, rule: "edge shop.api to gw changed", reason: "element-changed" },
+      { chainId: "ch-3", index: 2, rule: "link /chains/2/causes/0 into ch-1 across edge shop.api to gw", reason: "element-changed" },
+      { chainId: "ch-4", index: 3, rule: "link /chains/3/causes/0 into ch-1 across edge shop.api to gw", reason: "element-changed" },
+      { chainId: "ch-5", index: 4, rule: "link /chains/4/causes/0 into ch-1 across edge shop.api to gw", reason: "element-changed" },
     ],
     unmarked: [
       { chainId: "ch-6", rule: "link /chains/5/causes/0 into ch-1, a row this update marks" },
@@ -179,6 +179,56 @@ test("diffUpdate: a removed codebase and a cleared or relabelled element mark no
     delete d.elements[1].codebase;
     d.elements[1].name = "Auth library";
   }), EMPTY);
+});
+
+test("diffUpdate: a chain-named flow's users change reaches its chain as flow-changed and marks nothing else", () => {
+  const copy = flowDoc();
+  const seen = changed(copy, (d) => { flowOf(d, "flow-1").users = { population: "internal only: operators" }; });
+  assert.deepEqual(seen.reached.map((r) => [r.chainId, r.rule, r.reason]), [["ch-1", "flow flow-1 changed users", "flow-changed"]]);
+  assert.deepEqual(seen.flows, [{ change: "changed", id: "flow-1", fields: ["users"] }]);
+});
+
+test("diffUpdate: a chain's flows set change reaches it as flow-changed, and a name or a tier change marks nothing", () => {
+  const copy = flowDoc();
+  const repointed = changed(copy, (d) => { chainOf(d, "ch-1").flows = ["flow-2"]; });
+  assert.deepEqual(repointed.reached.map((r) => [r.chainId, r.rule, r.reason]), [["ch-1", "chain ch-1 names flow-2 in place of flow-1", "flow-changed"]]);
+  assert.deepEqual(repointed.repointed, [{ chainId: "ch-1", index: 0, from: ["flow-1"], to: ["flow-2"] }]);
+  assert.deepEqual(changed(copy, (d) => { flowOf(d, "flow-1").name = "Checkout submission again"; flowOf(d, "flow-1").value_priority = "Low"; }).reached, []);
+});
+
+function flowOf(doc: FmeaDocument, id: string): Flow {
+  const f = doc.flows?.find((x) => x.id === id);
+  assert.ok(f, `no flow ${id}`);
+  return f;
+}
+
+/** A bare flow: the id, its name and the tier the schema requires, no users and no sources. */
+function flow(id: string): Flow {
+  return { id, name: id, value_priority: "High" };
+}
+
+/** ch-1 on checkout names flow-1; flow-2 is named by no chain. */
+function flowDoc(): FmeaDocument {
+  const doc = graphDoc({ elements: ["checkout"], chains: [["ch-1", "checkout"]] });
+  doc.flows = [flow("flow-1"), flow("flow-2")];
+  chainOf(doc, "ch-1").flows = ["flow-1"];
+  return doc;
+}
+
+test("update-check.ts prints the flows section, calls a name change informational, and counts the chain re-points", () => {
+  const copy = flowDoc();
+  const renamedDraft = clone(copy);
+  flowOf(renamedDraft, "flow-1").name = "Checkout submission again";
+  const renamed = runCheck(copy, renamedDraft);
+  assert.equal(renamed.status, 0, renamed.stderr);
+  assert.ok(renamed.stdout.includes("flows:\n  changed flow-1: name\n"), renamed.stdout);
+  assert.ok(renamed.stdout.includes("stale:\n  none"), "a name change marks nothing stale");
+  const repointedDraft = clone(copy);
+  chainOf(repointedDraft, "ch-1").flows = ["flow-2"];
+  const repointed = runCheck(copy, repointedDraft);
+  assert.ok(repointed.stdout.includes("chains re-pointed:\n  ch-1: flow-1 to flow-2\n"), repointed.stdout);
+  // The counts line ends with the last count, so match its tail rather than a substring with a trailing comma.
+  assert.ok(/update-check: [^\n]*, 1 chain re-pointed\n$/.test(repointed.stdout), repointed.stdout);
 });
 
 function chainOf(doc: FmeaDocument, id: string): Chain {
@@ -242,11 +292,11 @@ test("update-check.ts prints the diff on the first run and refuses nothing a dra
   const r = runCheck(copy, draft);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
-  assert.equal(r.stdout, "edges:\n  changed checkout to gw: strength\n" + NONE("elements") +
+  assert.equal(r.stdout, "edges:\n  changed checkout to gw: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") +
     "stale:\n  ch-1: edge checkout to gw changed\n  ch-2: link /chains/1/causes/0 into ch-1 across edge checkout to gw\n" +
     NONE("unmarked") + NONE("links into removed chains") + NONE("outside elements with no consumer") +
     "re-rating order:\n  ch-1, ch-2\n" +
-    "update-check: 1 edge change, 0 element changes, 2 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer\n");
+    "update-check: 1 edge change, 0 element changes, 2 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed\n");
 });
 
 test("update-check.ts --check accepts a draft whose flags the rules reach, and prints the changed-provider section and count", () => {
@@ -254,15 +304,15 @@ test("update-check.ts --check accepts a draft whose flags the rules reach, and p
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
   assert.ok(r.stdout.includes(NONE("outside elements with no consumer") + NONE("consumer causes whose linked chain changed") + "re-rating order:\n  ch-1, ch-2\n"), r.stdout);
-  assert.ok(r.stdout.endsWith(", 0 outside elements with no consumer, 0 changed providers\n"), r.stdout);
+  assert.ok(r.stdout.endsWith(", 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed, 0 changed providers\n"), r.stdout);
 });
 
 test("update-check.ts given one path as both copy and draft prints every section none, and --check refuses it at /meta/version", () => {
   const path = fixturePath("update", "before.fmea.json");
   const r = runCli("update-check.ts", [path, path]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, ["edges", "elements", "stale", "unmarked", "links into removed chains", "outside elements with no consumer", "re-rating order"].map(NONE).join("") +
-    "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer\n");
+  assert.equal(r.stdout, ["edges", "elements", "flows", "chains re-pointed", "stale", "unmarked", "links into removed chains", "outside elements with no consumer", "re-rating order"].map(NONE).join("") +
+    "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed\n");
   const c = runCli("update-check.ts", [path, path, "--check"]);
   assert.equal(c.status, 2);
   assert.equal(c.stderr, "error UPDATE_BASELINE: update-baseline: the draft's meta.version 1 is not 2 as the stored copy's meta.version 1 requires at /meta/version\n");
@@ -438,8 +488,8 @@ test("update-check.ts --check exits 0 on update/before.fmea.json against a draft
   const r = runCheck(copy, draft, "--check");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
-  assert.equal(r.stdout, "edges:\n  changed checkout to checkout.payment-gateway: strength\n" + NONE("elements") +
+  assert.equal(r.stdout, "edges:\n  changed checkout to checkout.payment-gateway: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") +
     "stale:\n  ch-1: edge checkout to checkout.payment-gateway changed\n" + NONE("unmarked") + NONE("links into removed chains") +
     NONE("outside elements with no consumer") + NONE("consumer causes whose linked chain changed") + "re-rating order:\n  ch-1, ch-2, ch-4\n" +
-    "update-check: 1 edge change, 0 element changes, 1 stale row, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 changed providers\n");
+    "update-check: 1 edge change, 0 element changes, 1 stale row, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed, 0 changed providers\n");
 });

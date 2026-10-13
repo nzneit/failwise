@@ -1,13 +1,15 @@
 // update-check.ts <stored copy> <draft> [--check]
 // Reads the copy of the analysis an update set aside before its first change, and the draft it is
-// writing, and prints the structural diff: the edge and element changes, the rows an element-changed
-// rule reaches with each row's rule, the rows left unmarked by rule, the links into removed chains,
-// the outside elements left with no consumer and the order to re-rate in. With --check it also prints
-// the consumer causes whose linked chain changed, and refuses with UPDATE_MISMATCH a draft whose
-// stale flags, ratings outside the stale set or links into removed chains disagree. A copy that is
-// not the draft's baseline is UPDATE_BASELINE on either run. It runs the legacy gate and the schema on
-// both documents, never the invariants or the priorities, and writes nothing.
-// Its edges, elements and stale sections and its last line are the summary the update copies into meta.history.
+// writing, and prints the structural diff: the edge, element and flow changes, the chains re-pointed
+// to another flow, the rows a rule reaches with each row's rule, the rows left unmarked by rule, the
+// links into removed chains, the outside elements left with no consumer and the order to re-rate in.
+// With --check it also prints the consumer causes whose linked chain changed, and refuses with
+// UPDATE_MISMATCH a draft whose stale flags, ratings outside the stale set, links into removed
+// chains or removed flows still named disagree. A copy that is not the draft's baseline is
+// UPDATE_BASELINE on either run. It runs the legacy gate and the schema on both documents, never
+// the invariants or the priorities, and writes nothing.
+// Its edges, elements, flows and stale sections and its last line are the summary the update copies
+// into meta.history.
 import process from "node:process";
 import type { Issue } from "./lib/codes.ts";
 import type { FmeaDocument } from "./lib/types.ts";

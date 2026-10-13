@@ -181,7 +181,7 @@ test("SKILL.md's update-check.ts line runs on a stored copy and an unchanged dra
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
     assert.equal(result.stdout.trimEnd().split("\n").at(-1),
-      "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer");
+      "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed");
   });
 });
 
