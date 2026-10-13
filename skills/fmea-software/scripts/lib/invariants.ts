@@ -1,5 +1,5 @@
 import type { Issue } from "./codes.ts";
-import type { Chain, DependencyEdge, Element, FmeaDocument, Factor, Fn, Priority, Ratings } from "./types.ts";
+import type { Chain, DependencyEdge, Element, FmeaDocument, Factor, Flow, Fn, Priority, Ratings } from "./types.ts";
 import type { PriorityTable } from "./table.ts";
 import { computePriority } from "./table.ts";
 import { ptr } from "./pointer.ts";
@@ -20,6 +20,13 @@ export const INVARIANT_RULES: readonly string[] = [
   "element-security-rationale-required",
   "codebase-id-unique",
   "element-codebase-resolves",
+  "flow-id-unique",
+  "chain-flow-resolves",
+  "flow-step-resolves",
+  "chain-flows-unique",
+  "flow-users-required",
+  "flow-sources-required",
+  "flow-users-review-by-date",
   "dependency-from-resolves",
   "dependency-to-resolves",
   "dependency-self",
@@ -153,6 +160,101 @@ function codebaseIssues(elements: Element[], codebaseIds: Set<string>): Issue[] 
     const id = elements[i].codebase;
     if (id !== undefined && !codebaseIds.has(id)) {
       out.push(invariant("element-codebase-resolves", `codebase ${id} names no entry of meta.codebases`, ptr("elements", i, "codebase")));
+    }
+  }
+  return out;
+}
+
+type NamedFlow = { chain: Chain; index: number; flow: Flow };
+type NamedFlows = Map<number, NamedFlow[]>;
+
+function flowIdIssues(flows: Flow[]): Issue[] {
+  return duplicates(flows.map((f) => f.id), "flow-id-unique", (i) => ptr("flows", i, "id"), "flow");
+}
+
+/** The flow ids each chain names, resolved to their first occurrence and kept only for chains that
+ *  name at least one, so a flow no chain names is absent and the three rules below skip it. */
+function namedFlowIds(chains: Chain[], flows: Flow[]): NamedFlows {
+  const at = new Map(flows.map((f, i) => [f.id, i]));
+  return new Map(chains.flatMap((chain, ci) => {
+    const named = (chain.flows ?? []).flatMap((id) => {
+      const fi = at.get(id);
+      return fi === undefined ? [] : [{ chain, index: fi, flow: flows[fi] }];
+    });
+    return named.length === 0 ? [] : [[ci, named] as const];
+  }));
+}
+
+function chainFlowIssues(chains: Chain[], flowIds: Set<string>): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < chains.length; i++) {
+    const flows = chains[i].flows ?? [];
+    for (let j = 0; j < flows.length; j++) {
+      if (!flowIds.has(flows[j])) out.push(invariant("chain-flow-resolves", `flow ${flows[j]} does not exist`, ptr("chains", i, "flows", j)));
+    }
+  }
+  return out;
+}
+
+function flowStepIssues(flows: Flow[], functionIds: Set<string>): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < flows.length; i++) {
+    const steps = flows[i].steps ?? [];
+    for (let j = 0; j < steps.length; j++) {
+      if (!functionIds.has(steps[j])) out.push(invariant("flow-step-resolves", `function ${steps[j]} does not exist`, ptr("flows", i, "steps", j)));
+    }
+  }
+  return out;
+}
+
+function chainFlowsUniqueIssues(chains: Chain[]): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < chains.length; i++) {
+    const seen = new Set<string>();
+    const flows = chains[i].flows ?? [];
+    for (let j = 0; j < flows.length; j++) {
+      if (seen.has(flows[j])) out.push(invariant("chain-flows-unique", `flow ${flows[j]} is named more than once by chain ${chains[i].id}`, ptr("chains", i, "flows", j)));
+      else seen.add(flows[j]);
+    }
+  }
+  return out;
+}
+
+// flow-users-required, flow-sources-required and flow-users-review-by-date, each over the map
+// namedFlowIds builds, whose entry carries the flow's index and the chain that named it.
+function flowUsersIssues(named: NamedFlows): Issue[] {
+  const out: Issue[] = [];
+  for (const entries of named.values()) {
+    for (const { chain, index, flow } of entries) {
+      const users = flow.users;
+      const message = `flow ${flow.id} is named by chain ${chain.id} and needs users with a population`;
+      if (users === undefined) out.push(invariant("flow-users-required", message, ptr("flows", index, "users")));
+      else if ((users.population ?? "").trim() === "") out.push(invariant("flow-users-required", message, ptr("flows", index, "users", "population")));
+    }
+  }
+  return out;
+}
+
+function flowSourcesIssues(named: NamedFlows): Issue[] {
+  const out: Issue[] = [];
+  for (const entries of named.values()) {
+    for (const { chain, index, flow } of entries) {
+      if (!(flow.sources ?? []).some((s) => s.kind !== "catalog")) {
+        out.push(invariant("flow-sources-required", `flow ${flow.id} is named by chain ${chain.id} and needs a source whose kind is not catalog`, ptr("flows", index, "sources")));
+      }
+    }
+  }
+  return out;
+}
+
+function flowReviewIssues(named: NamedFlows): Issue[] {
+  const out: Issue[] = [];
+  for (const entries of named.values()) {
+    for (const { index, flow } of entries) {
+      const review = flow.users?.review;
+      if (review !== undefined && review.status !== "provisional" && (!review.by || !review.date)) {
+        out.push(invariant("flow-users-review-by-date", `flow ${flow.id} has status ${review.status} and needs by and date`, ptr("flows", index, "users", "review")));
+      }
     }
   }
   return out;
@@ -338,9 +440,12 @@ export function checkInvariants(doc: FmeaDocument): Issue[] {
   const elements = doc.elements;
   const functions = doc.functions;
   const chains = doc.chains;
+  const flows = doc.flows ?? [];
   const elementIds = new Set(elements.map((e) => e.id));
   const functionIds = new Set(functions.map((f) => f.id));
+  const flowIds = new Set(flows.map((f) => f.id));
   const index = indexDocument(doc);
+  const named = namedFlowIds(chains, flows);
   const codebaseIds = (doc.meta.codebases ?? []).map((c) => c.id);
 
   return [
@@ -357,6 +462,13 @@ export function checkInvariants(doc: FmeaDocument): Issue[] {
     ...securityRationaleIssues(elements),
     ...duplicates(codebaseIds, "codebase-id-unique", (i) => ptr("meta", "codebases", i, "id"), "codebase"),
     ...codebaseIssues(elements, new Set(codebaseIds)),
+    ...flowIdIssues(flows),
+    ...chainFlowIssues(chains, flowIds),
+    ...flowStepIssues(flows, functionIds),
+    ...chainFlowsUniqueIssues(chains),
+    ...flowUsersIssues(named),
+    ...flowSourcesIssues(named),
+    ...flowReviewIssues(named),
     ...edgeIssues(doc.dependencies, index.element),
     ...pairIssues(doc.dependencies),
     ...causeLinkIssues(chains, index.chain),

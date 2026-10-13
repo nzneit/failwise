@@ -38,14 +38,17 @@ test("INVARIANT_RULES lists every rule id this module can report", () => {
     "element-id-unique", "function-id-unique", "chain-id-unique", "action-id-unique",
     "function-element-resolves", "chain-function-resolves", "element-parent-resolves", "element-parent-matches-id",
     "element-source-non-catalog", "element-dependency-required", "element-security-rationale-required",
-    "codebase-id-unique", "element-codebase-resolves", "dependency-from-resolves", "dependency-to-resolves",
+    "codebase-id-unique", "element-codebase-resolves",
+    "flow-id-unique", "chain-flow-resolves", "flow-step-resolves", "chain-flows-unique",
+    "flow-users-required", "flow-sources-required", "flow-users-review-by-date",
+    "dependency-from-resolves", "dependency-to-resolves",
     "dependency-self", "dependency-pair-unique", "cause-chain-resolves", "cause-chain-self", "cause-chain-cycle",
     "rating-review-by-date", "post-ratings-without-completed", "post-priority-presence",
     "handoff-without-adversarial", "adversarial-without-handoff", "handoff-cause-mismatch",
     "stale-without-reason", "stale-version-ahead",
     "priority-table-mismatch", "priority-row-table-mismatch", "priority-value-mismatch", "priority-rpn-mismatch",
   ]);
-  assert.equal(INVARIANT_RULES.length, 32);
+  assert.equal(INVARIANT_RULES.length, 39);
 });
 
 test("element-id-unique flags the second occurrence", () => {
@@ -156,6 +159,70 @@ test("element-codebase-resolves flags every codebase while meta.codebases is abs
   ]);
   doc.meta.codebases = [CB_A];
   assert.deepEqual(found(checkInvariants(doc), "element-codebase-resolves"), [["/elements/1/codebase", "codebase cb-x names no entry of meta.codebases"]]);
+});
+
+test("flow-id-unique flags the second flow with the same id", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-1", name: "One", value_priority: "High" },
+    { id: "flow-1", name: "One again", value_priority: "Low" },
+  ];
+  assert.deepEqual(found(checkInvariants(doc), "flow-id-unique"), [["/flows/1/id", "flow id flow-1 is used more than once"]]);
+});
+
+test("chain-flow-resolves flags a chain naming a flow that does not exist", () => {
+  const doc = minimalDoc();
+  doc.chains[0].flows = ["flow-ghost"];
+  assert.deepEqual(found(checkInvariants(doc), "chain-flow-resolves"), [["/chains/0/flows/0", "flow flow-ghost does not exist"]]);
+});
+
+test("flow-step-resolves flags a flow step that is not a function", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", steps: ["fn-1", "fn-ghost"] }];
+  assert.deepEqual(found(checkInvariants(doc), "flow-step-resolves"), [["/flows/0/steps/1", "function fn-ghost does not exist"]]);
+});
+
+test("chain-flows-unique flags the second naming of the same flow on one chain", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High" }];
+  doc.chains[0].flows = ["flow-1", "flow-1"];
+  assert.deepEqual(found(checkInvariants(doc), "chain-flows-unique"), [["/chains/0/flows/1", "flow flow-1 is named more than once by chain ch-1"]]);
+});
+
+test("flow-users-required fires on a chain-named flow without users and accepts one no chain names", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-1", name: "One", value_priority: "High" },
+    { id: "flow-2", name: "Two", value_priority: "Low" },
+  ];
+  doc.chains[0].flows = ["flow-1"];
+  assert.deepEqual(found(checkInvariants(doc), "flow-users-required"), [["/flows/0/users", "flow flow-1 is named by chain ch-1 and needs users with a population"]]);
+  doc.flows[0].users = { population: "   " };
+  assert.deepEqual(found(checkInvariants(doc), "flow-users-required"), [["/flows/0/users/population", "flow flow-1 is named by chain ch-1 and needs users with a population"]]);
+  doc.flows[0].users = { population: "all shoppers at checkout" };
+  assert.deepEqual(only(checkInvariants(doc), "flow-users-required"), []);
+});
+
+test("flow-sources-required wants one non-catalog source on a chain-named flow", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" }, sources: [{ kind: "catalog", ref: "cat-service-01" }] },
+    { id: "flow-2", name: "Two", value_priority: "Low", sources: [{ kind: "catalog", ref: "cat-service-01" }] },
+  ];
+  doc.chains[0].flows = ["flow-1"];
+  assert.deepEqual(found(checkInvariants(doc), "flow-sources-required"), [["/flows/0/sources", "flow flow-1 is named by chain ch-1 and needs a source whose kind is not catalog"]]);
+  assert.deepEqual(only(checkInvariants(doc), "flow-sources-required").filter((i) => i.pointer.startsWith("/flows/1")), []);
+});
+
+test("flow-users-review-by-date wants by and date on a chain-named flow's rescored or authored review", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers", review: { status: "rescored" } } }];
+  doc.chains[0].flows = ["flow-1"];
+  assert.deepEqual(found(checkInvariants(doc), "flow-users-review-by-date"), [["/flows/0/users/review", "flow flow-1 has status rescored and needs by and date"]]);
+  doc.flows[0].users!.review = { status: "provisional" };
+  assert.deepEqual(only(checkInvariants(doc), "flow-users-review-by-date"), []);
+  doc.flows[0].users!.review = { status: "authored", by: "T. Tester", date: "2026-10-12" };
+  assert.deepEqual(only(checkInvariants(doc), "flow-users-review-by-date"), []);
 });
 
 test("dependency-from-resolves, dependency-to-resolves and dependency-self report edge by edge, in that order within an edge", () => {
