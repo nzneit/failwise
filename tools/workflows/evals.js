@@ -26,7 +26,9 @@
 // rather than absorbing it. A judge that covered fewer of its prompt's criteria
 // than it has, or scored one of them twice, is recorded the same way, and so is
 // a stability pair whose eval-stability.ts call failed: neither measured a
-// failure of the skill, so neither may read as one.
+// failure of the skill, so neither may read as one. A run that left no
+// analysis.json or report.html is not scored at all (rubric reading paragraph,
+// amended 2026-10-13) and is recorded unverified with the judge's account of why.
 //
 // Model capabilities (spec D10, amended 2026-09-10 by the user's ruling, and
 // again 2026-09-12 by the user's ruling at the eval re-run): every agent names
@@ -312,7 +314,7 @@ Read, in full, before scoring:
 - The run's outputs: ${item.dir}/analysis.json, ${item.dir}/report.html, ${item.dir}/validate.json (the validator's stdout for analysis.json), the "result" field of ${item.dir}/transcript.json (the run's final message; one small JSON object, read it in full), and ${item.dir}/invocations.json, read in full: every Bash tool_use block in the run's message stream ${item.dir}/transcript.jsonl whose command names one of the skill's scripts, extracted by tools/eval-invocations.ts, each with its line in transcript.jsonl, its command, its outcome (ran, error, denied or no_result) and the head of its result. Do not read or grep transcript.jsonl: it runs to megabytes, and almost every line of it that mentions a script is a file read or a thought, not a call. Those tool_use blocks are the only record of which of the skill's scripts the run actually ran, and they are the evidence the rubric requires for c6-priority-by-script and c8-html-renders; transcript.json carries no tool call and is never evidence that a script ran. A call invokes a script when its command runs it (node .../priority.ts ...), not when it only reads it (cat, sed, grep). A call whose outcome is denied was refused by the permission check and never ran, so it is not an invocation; a call whose outcome is error ran and failed, and its result head says how. A criterion whose rubric text asks for a script invocation scores at most 1 when invocations.json lists no call invoking that script; say so in the evidence rather than inferring the invocation from the artifacts. If invocations.json is missing or is not JSON, the run's script calls were never extracted: leave c6-priority-by-script and c8-html-renders out of your scores, score every other criterion, and say in notes that invocations.json was missing, so the run is recorded unverified rather than scored on a guess.
 - The catalog, for c9: ${SKILL}/references/design-failure-catalog.md (each row id and its provenance tag).${expected}${checker}
 
-Score exactly these criteria of rubric version ${RUBRIC}, by id: ${ids}, leaving out only the two the invocations.json clause above names when that file is missing. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json is missing or unparsable, score every criterion that reads it 0 and say so.
+Score exactly these criteria of rubric version ${RUBRIC}, by id: ${ids}, leaving out only the two the invocations.json clause above names when that file is missing, and every criterion when analysis.json or report.html is missing. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json or report.html is missing, do not score the run: return an empty scores list, total 0, max 0 and musts_at_2 0, and say in notes which of the two files is missing and what the run's final message gives as the reason, so the run is recorded unverified and never scored 0, as the rubric says. Where analysis.json exists but is not JSON, score every criterion that reads it 0 and say so.
 
 Unattended runs cannot ask questions: the rubric says how c1 and, where it applies, c5 are judged in that setting (open assumptions with owner "user" in meta.assumptions[] plus the question in the final message; ratings written provisional with a re-scoring request in the final message). Expect rating-provisional lint warnings in validate.json; they count against nothing.
 
@@ -377,6 +379,17 @@ const runs = await pipeline(
     // entries passed that as a complete judgment with a criterion still unjudged.
     const scored = new Set(scores.map((x) => x.id))
     const duplicated = [...new Set(scores.map((x) => x.id).filter((id, i, all) => all.indexOf(id) !== i))]
+    // A judge scores nothing when the run left no analysis.json or report.html (the
+    // rubric's reading paragraph, amended 2026-10-13): every criterion reads one of
+    // the two, so a row of zeros would measure only the absence. The run is recorded
+    // unverified with the judge's own account of which file is missing and why,
+    // never scored 0.
+    if (scored.size === 0) {
+      const detail = `the judge scored none of the prompt's ${known.size} criteria, as it does when the run left no analysis.json or report.html; its notes: ${judged.notes || '(none)'}; this run is recorded unverified, never scored 0`
+      unverified.push({ unit: `judge ${key}`, detail })
+      log(`${key}: ${detail}`)
+      return { ...item, scores: [], total: 0, max: 2 * known.size, musts_at_2: 0, notes: judged.notes, pass: false, unverified: true }
+    }
     const s = summarize(item.prompt, scores)
     // A judge that scored fewer of the prompt's criteria than it has did not judge
     // this run against the whole rubric. The criteria it left out score 0 in
