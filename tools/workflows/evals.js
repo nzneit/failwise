@@ -319,7 +319,7 @@ function summarize(prompt, scores) {
 // access, so one agent fetches the run's context.json and returns its text
 // verbatim; the reading is here, in code, and the agent decides nothing.
 function contextPrompt(item) {
-  return `Read ${item.dir}/context.json with the Read tool. If the file does not exist, return exists false and text "". Otherwise return exists true and, as text, the file's whole content exactly as read: byte for byte, no reformatting, no summarising, no truncation. Return nothing else and change nothing.`
+  return `Read ${item.dir}/context.json with the Read tool. If the file does not exist, return exists false and text "". Otherwise return exists true and, as text, the file's whole content exactly as read: byte for byte, no reformatting, no summarising, no truncation. The Read tool shows each line behind a line number and a tab for display; those prefixes are not part of the file, so return the content without them. Return nothing else and change nothing.`
 }
 
 // null when the context agent returned nothing; present false when the run has
