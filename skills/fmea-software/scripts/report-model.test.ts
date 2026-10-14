@@ -703,17 +703,18 @@ test("propagates to: each consumer once, in index order, on the first chain of t
   ]);
 });
 
-test("model.flows is in the presentational order and marks the provisional and chain-named flows", () => {
+test("model.flows is in the presentational order and marks provisional only a chain-named flow whose population is not re-scored", () => {
   const doc = docOf({}, {}, {});
   doc.flows = [
     { id: "flow-b", name: "B", value_priority: "Low" },
     { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers", review: { status: "provisional" } } },
     { id: "flow-c", name: "C", value_priority: "High", users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } },
   ];
-  doc.chains[0].flows = ["flow-a"];
+  // The chain names flow-a, provisional, and flow-c, re-scored; flow-b no chain names.
+  doc.chains[0].flows = ["flow-a", "flow-c"];
   const model = modelOf(doc);
   assert.deepEqual(model.flows.map((f) => f.id), ["flow-a", "flow-c", "flow-b"]);
-  assert.deepEqual(model.flows.map((f) => [f.provisional, f.namedByChain]), [[true, true], [false, false], [false, false]]);
+  assert.deepEqual(model.flows.map((f) => f.provisional), [true, false, false]);
 });
 
 test("a flow's steps resolve to the function's element and statement, and an unresolved step keeps its id", () => {

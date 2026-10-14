@@ -56,7 +56,7 @@ export const TOKEN_EXEMPT: readonly TokenExemption[] = [
 export const SCROLL_CONTAINERS: readonly string[] = [".frame"];
 
 /** The ids of the report's sections photographed one by one: every <section> but the chains. */
-export const SECTION_PARTS = ["header", "ground-rules", "assumptions", "reviews", "structure", "actions", "lints", "provenance"] as const;
+export const SECTION_PARTS = ["header", "ground-rules", "assumptions", "reviews", "structure", "flows", "actions", "lints", "provenance"] as const;
 /** The tallest a part image may be, in pixels; a taller part is written in consecutive pieces. */
 export const MAX_PART_HEIGHT = 1600;
 

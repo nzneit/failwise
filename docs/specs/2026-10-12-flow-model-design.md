@@ -256,31 +256,58 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
 
 ### 5.3 `render.ts` and `report-model.ts`
 
-- A **Flows section**: one record per flow — the tier badge, the name and the id on the left; on the right,
-  labelled lines for the users (`population`, plus `selecting_condition` and `share` if present), the sources as
-  recorded, the **chains** that name the flow (in the index order, each linked to its row with its priority badge;
-  "none" when no chain does), and the steps as an ordered list, each step the function's element id and statement
-  (a step that resolves to no function prints its id alone), with the `steps_partial` phrase when set. Each record
-  carries the anchor `flow-<id>`, which the chain annotation links to. It gets a TOC (`CONTENTS`) entry, a key in
-  the chains section's "How to read" form, an explicit empty-state ("No flows recorded.", with no key), and a fixed
-  record order (High first, then id), which is **presentational only**: the order ranks nothing, sets no
-  reliability ranking, and is the tier's only use (DF4). The key's first entry prints DF4's disclaimer sentence
-  verbatim, so the exclusions it names — not a rating, not a criticality analysis, not a safety or hazard analysis,
-  not a reliability target — are visible where the tier is read, then the order sentence; its Chains entry states
-  that a chain naming one flow reads its Severity over that flow's population and a chain naming several reads it
-  over the first, its row saying which; a chain-named flow whose `users.review` is absent or `provisional` is
-  marked `provisional` beside its population, the flow's own sentence as the mark's title and as the key's third
-  entry, so the reader can see which rows' Severity — and whose priority — rests on an unconfirmed population.
-  Every rendered string is escaped; `name` and `users.population` are free text. A partial flow renders an
-  explicit phrase ("a starting point only; the recorded steps are a prefix") rather than an empty list that reads
-  as broken — the phrase does not hardcode "broker", so it reads on any partial flow. The section is placed after
-  the element/dependencies block. *(Amended 2026-10-13. The section was first built as a five-column table — flow,
-  priority, population, sources, steps as function ids — with a caption and a one-line legend. Its function ids
-  resolved to nothing else on the page, it never said which chains rest on a flow, and its provisional mark reused
-  the chain mark's rating sentence; the records replace it with the same content and the same DF4 and provisional
-  guarantees. The mockup and the record are in the research repository, `docs/specs/2026-10-13-flows-section-design.md`.)*
-- A **chain annotation**: each chain that names flows lists them ("breaks: checkout"), each linked to its record, marks the flow whose band
-  was used, and notes the disjointness assumption where more than one flow is named. The existing
+- A **Flows section** holds one **record** per flow. A record has two columns. The left column holds the tier
+  badge, the flow's name as a heading, and its id. The right column holds labelled lines:
+  - **Population**: `users.population`. A chain-named flow whose `users.review` is absent or `provisional` carries
+    the provisional mark beside its population. The mark carries the flow's own sentence, the same sentence as the
+    key's third entry.
+  - **Selecting condition** and **Share**: `users.selecting_condition` and `users.share`, each only when recorded.
+  - **Sources**: the sources as recorded.
+  - **Chains**: every chain that names the flow, in the index order. Each chain shows its priority badge and its
+    row id, and the row id links to the chain's row. The Chains line reads "none" when no chain names the flow.
+  - **Steps**: an ordered list. A step that resolves to a function prints the function's element id, a colon and
+    the function's statement. A step that resolves to no function prints its id alone. A partial flow also prints
+    the phrase "a starting point only; the recorded steps are a prefix", so a short list does not read as broken.
+    The phrase does not hardcode "broker", so it reads on any partial flow.
+
+  Each record carries the anchor `flow-<id>`, and the chain annotation links to it. The records are listed High
+  first, then by id. This record order is **presentational only**. It ranks nothing and sets no reliability
+  ranking, and DF4 makes it the tier's only use. The section has a TOC entry in `CONTENTS` and is placed after the
+  element/dependencies block. An empty section prints "No flows recorded." and no key. Every rendered string is
+  escaped, and that includes free text such as `name` and `users.population`. In print a record does not split
+  across pages. Below 768 px the two columns stack.
+
+  The section's **key** has the "How to read" form of the chains section's key. It has three entries:
+  1. **The tier badges.** The entry prints DF4's disclaimer sentence verbatim, and a test asserts it. The
+     exclusions the sentence names are thus visible where the tier is read: not a rating, not a criticality
+     analysis, not a safety or hazard analysis, not a reliability target. One-line forms of the three tier tests
+     follow. High: losing the flow stops the business serving its external users at all. Medium: losing the flow
+     degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person. Low:
+     losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome
+     delivered. The entry ends with the order sentence: "Flows are listed High first, then by id, a presentational
+     order that ranks nothing."
+  2. **Chains.** The entry says that the Chains line lists the chains that name the flow, in the index order, each
+     with its priority from S, O and D as in the index. A chain that names one flow reads its Severity over that
+     flow's population, and never lower than over the function's own users. A chain that names several flows reads
+     its Severity over the flow whose population yields the highest radius class, as DF3 rules. The schema stores
+     that flow first in the chain's `flows`, and the chain's row marks it. A chain on one of the flow's steps that
+     does not name the flow is not listed.
+  3. **The provisional mark.** The entry prints the flow's own sentence: "The flow's population has not been
+     re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not
+     final." The reader can thus see which chains' Severity, and so their priority, rests on an unconfirmed
+     population.
+
+  *(Amended 2026-10-13. The section was first built as a five-column table with a caption and a one-line legend.
+  Its columns were the flow, the tier, the population, the sources, and the steps as function ids. Those function
+  ids resolved to nothing else on the page. The table never said which chains rest on a flow. Its provisional mark
+  reused the chain mark's rating sentence. The records replace the table. A step now prints the function's element
+  id and statement in place of the function id. The Chains line is new. Each record now carries an anchor, and the
+  chain annotation links to it. The provisional mark now carries the flow's own sentence. A key in the chains
+  section's form replaces the caption and the legend. The DF4 and provisional guarantees are unchanged. The key and
+  the record were revised after review on 2026-10-14.)*
+- A **chain annotation**: each chain row that names flows carries a "breaks:" line, for example
+  "breaks: checkout". The line links every flow the chain names to its record. It marks the flow whose band was
+  used, and it notes the disjointness assumption when the chain names more than one flow. The existing
   element/dependency/chain tables and the "By top-level element" summary are untouched. The model changes live in
   `report-model.ts` (`ReportModel`), not `render.ts` alone.
 
@@ -467,12 +494,14 @@ kinds in the skill's own words, never Azure's. That is also why the field is not
   function, read at subset before the floor); the **share-raise** case (a share stated in an incident record raising
   the flow's class before the floor); and the **single-client** case (a flow whose population is one named client,
   read at majority). Each fixture states the band it must produce.
-- `render.ts` / `report-model.ts` — Flows section, TOC entry, key (asserting DF4's sentence verbatim, including
-  "not a rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a reliability
-  target", and the several-flow reading), empty-state without the key, partial-flow phrase,
-  provisional-denominator marker beside the population with the flow's own sentence, the chains a record lists in
-  the index order with their badges, the steps as element and statement with an unresolved step kept as its id,
-  chain annotation naming and linking the chosen flow, `steps_partial` marker.
+- `render.ts` / `report-model.ts` — the Flows section and its TOC entry. The key: DF4's sentence verbatim, with
+  "not a rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a reliability target",
+  the three tier tests, the several-flow reading, and the sentence that a chain on one of the flow's steps that
+  does not name the flow is not listed. The empty state without the key. The record: the provisional mark beside
+  the population with the flow's own sentence, the Chains line in the index order with each chain's priority
+  badge and link, the steps as element id and statement with an unresolved step kept as its id, and the
+  partial-flow phrase for a `steps_partial` flow. The annotation: a link from the "breaks:" line to the record of
+  every flow the chain names, by its `flow-<id>` anchor, and the mark on the flow whose band was used.
 - `eval-stability` — the `flows` predicate, its tri-state (`pass`/`fail`/`unverified`) and the `verified` flag.
 - Pins that move: `invariants.test.ts`'s `INVARIANT_RULES` list and `INVARIANT_RULES.length` (32→39); `lib/lints.ts`
   `MACHINE_RULES` and `quality-and-lint.md`'s "fifteen machine lints" (→ nineteen) with its order test; and the
@@ -542,11 +571,13 @@ SRE Book adaptation); a second rating scale for flow priority.
    flow — and a chain-named flow that lost its last non-catalog source — by refusing the draft, flags
    `flow-changed` on a chain-named flow's `users` change and on a chain's `flows[]` change and nothing on the other
    field changes, and does not refuse a draft whose reason is at or above the reach it computes.
-4. The render adds a Flows section (with TOC entry, key printing the disclaimer verbatim and stating "not a
-   rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a reliability target", the
-   row order marked presentational, empty-state, provisional-denominator
-   marker) and chain annotations naming the chosen flow and noting the disjointness assumption; the checkout
-   fixture renders them.
+4. The render adds a Flows section with a TOC entry, an empty state and a key. The key prints the disclaimer
+   verbatim, stating "not a rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a
+   reliability target", and it marks the record order presentational. Each record carries the anchor `flow-<id>`,
+   the provisional mark beside its population, a Chains line that lists every chain naming the flow with its
+   priority and a link to its row, and the steps as element id and statement. Each chain annotation links every
+   flow it names to its record, marks the flow whose band was used, and notes the disjointness assumption when it
+   names more than one flow. The checkout fixture renders them.
 5. Rubric 4's c16 scores prompt 1 at band 2 on both capabilities (it is not a must); the flows stability predicate
    is `pass` across the two runs and the result's `verified` flag is true — or, where **both** runs legitimately
    carry no flows, the predicate is `unverified` and the acceptance note records it as unverified, never as a

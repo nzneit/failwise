@@ -79,6 +79,9 @@ function poisonedDocument(): FmeaDocument {
   const doc = golden();
   doc.chains[0].history.push({ version: 1, date: "2026-09-07", change: "seed" });
   doc.meta.codebases![0].path = "services/checkout";
+  // The golden flows record a population only; these two give the sweep the record's other free-text lines.
+  doc.flows![0].users!.selecting_condition = "a session at expiry";
+  doc.flows![0].users!.share = "4% of checkout sessions, per the incident record";
   return poison(doc, null, next) as FmeaDocument;
 }
 
@@ -192,13 +195,18 @@ function flowRecord(html: string, id: string): string {
   return html.slice(at, html.indexOf("</article>", at));
 }
 
-const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that rest on it, and the priority that follows, are not final.";
+const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
+const FLOWS_TIER_ENTRY = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
+  "High: losing the flow stops the business serving its external users at all. Medium: losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person. " +
+  "Low: losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered. " +
+  "Flows are listed High first, then by id, a presentational order that ranks nothing.";
 
 test("the Flows section prints one record per flow, High first then by id, with the key's disclaimer verbatim", () => {
   const section = flowsSection(renderHtml(golden(), table, template, vocabulary));
   assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the key prints DF4's sentence verbatim");
   assert.ok(section.includes("a presentational order that ranks nothing"), "the key states the order");
-  assert.ok(section.includes("a chain that names several reads it over the first, and its row says which"), "the key states the several-flow reading");
+  assert.ok(section.includes("reads it over the one whose population yields the highest radius class, listed first, and its row marks it"), "the key states the several-flow reading");
+  assert.ok(section.includes(`<dt><span class="pri pri-top">High</span> <span class="pri pri-mid">Medium</span> <span class="pri pri-low">Low</span></dt><dd>${escapeHtml(FLOWS_TIER_ENTRY)}</dd>`), "the tier entry reads the disclaimer, the three tiers and the order");
   const ids = [...section.matchAll(/<article class="flow" id="flow-(flow-[a-z-]+)">/g)].map((m) => m[1]);
   assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
   assert.ok(!section.includes("a starting point only; the recorded steps are a prefix"), "the golden fixture's flows are not partial");
@@ -219,11 +227,40 @@ test("a flow's steps print the function's element and statement in order, and an
   const first = doc.functions.find((f) => f.id === flow?.steps?.[0]);
   assert.ok(flow !== undefined && first !== undefined, "the golden flow-checkout has a resolvable first step");
   const record = flowRecord(renderHtml(doc, table, template, vocabulary), "flow-checkout");
-  assert.ok(record.includes(`<dt>Steps</dt><dd><ol class="steps"><li><code>${first.element}</code> ${escapeHtml(first.statement)}</li>`), "the first step names its element and statement");
+  assert.ok(record.includes(`<dt>Steps</dt><dd><ol class="steps"><li><code>${first.element}</code>: ${escapeHtml(first.statement)}</li>`), "the first step names its element and statement");
   assert.ok(!record.includes(`<code>${first.id}</code>`), "the function id leaves the page");
   const min = minimalDoc();
   min.flows = [{ id: "flow-1", name: "One", value_priority: "Low", steps: ["fn-1", "fn-missing"] }];
-  assert.ok(flowRecord(renderHtml(min, table, template, vocabulary), "flow-1").includes("<li><code>svc</code> serve requests</li><li><code>fn-missing</code></li>"), "an unresolved step prints its id alone");
+  assert.ok(flowRecord(renderHtml(min, table, template, vocabulary), "flow-1").includes("<li><code>svc</code>: serve requests</li><li><code>fn-missing</code></li>"), "an unresolved step prints its id alone");
+});
+
+test("a flow record with every field prints its tier badge and name as the head and every labelled line, and a re-scored flow carries no provisional mark", () => {
+  const doc = minimalDoc();
+  doc.flows = [{
+    id: "flow-1",
+    name: "A shopper submits a cart",
+    value_priority: "High",
+    sources: [{ kind: "document", ref: "inputs.md#critical-flows" }, { kind: "incident", ref: "INC-7" }],
+    users: {
+      population: "all shoppers at checkout",
+      selecting_condition: "a session at expiry",
+      share: "4% of checkout sessions, per INC-7",
+      review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" },
+    },
+    steps: ["fn-1"],
+  }];
+  doc.chains[0].flows = ["flow-1"];
+  const record = flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1");
+  assert.ok(record.includes('<div class="flow-head"><span class="pri pri-top">High</span><h3 class="flow-name">A shopper submits a cart</h3></div><code class="flow-id">flow-1</code>'), "the head holds the High badge and the name as a heading");
+  assert.equal(record.slice(record.indexOf('<dl class="flow-what">')), '<dl class="flow-what">' +
+    "<dt>Population</dt><dd>all shoppers at checkout</dd>" +
+    "<dt>Selecting condition</dt><dd>a session at expiry</dd>" +
+    "<dt>Share</dt><dd>4% of checkout sessions, per INC-7</dd>" +
+    '<dt>Sources</dt><dd><span class="muted">document</span> <code>inputs.md#critical-flows</code><br><span class="muted">incident</span> <code>INC-7</code></dd>' +
+    '<dt>Chains</dt><dd><span class="chain-list"><a class="chain-ref" href="#row-ch-1"><span class="pri pri-mid">M</span><code>ch-1</code></a></span></dd>' +
+    '<dt>Steps</dt><dd><ol class="steps"><li><code>svc</code>: serve requests</li></ol></dd>' +
+    "</dl>");
+  assert.ok(!record.includes("mark-provisional"), "a re-scored population is not marked provisional");
 });
 
 test("the Flows section has its empty state without the key, and a partial flow renders its phrase", () => {
@@ -835,6 +872,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
     "article.row, tr, .attn-item, .tile-group, .key, .el, .flow { break-inside: avoid; }",
     "thead { display: table-header-group; }",
     "a { color:inherit; text-decoration:none; }",
+    ".chain-ref code { text-decoration:none; }",
     ".frame { overflow-x:visible; }",
   ]) {
     assert.ok(print.includes(rule), `the print block is missing: ${rule}`);

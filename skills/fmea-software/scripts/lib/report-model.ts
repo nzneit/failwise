@@ -108,11 +108,10 @@ export interface FlowStep { id: string; element: string | null; statement: strin
 export interface FlowChain { id: string; priority: string; style: RankStyle }
 
 // One flow of the document, for the Flows section (§5.3): its tier, its referent population, the
-// chains that name it and the flags the key and the provisional mark read. `steps` holds the
-// resolved steps in order; `partial` records a prefix; `chains` lists the naming chains in the index
-// order; `provisional` is set when a chain names the flow and its `users.review` is absent or
-// `provisional`; `namedByChain` is set when any chain names it. The interface order is
-// presentational only and ranks nothing (DF4).
+// chains that name it and the flag the provisional mark reads. `steps` holds the resolved steps in
+// order; `partial` records a prefix; `chains` lists the naming chains in the index order;
+// `provisional` is set when a chain names the flow and its `users.review` is absent or
+// `provisional`. The interface order is presentational only and ranks nothing (DF4).
 export interface FlowRow {
   id: string;
   name: string;
@@ -125,7 +124,6 @@ export interface FlowRow {
   partial: boolean;
   chains: FlowChain[];
   provisional: boolean;
-  namedByChain: boolean;
 }
 
 export interface ReportModel {
@@ -593,13 +591,13 @@ function flowChains(rows: RowModel[], flowId: string): FlowChain[] {
 }
 
 // The flows in the report's fixed order — High first, then by id — a presentational order that ranks
-// nothing (§5.3, DF4). Each row carries the flags the legend and the provisional mark read.
+// nothing (§5.3, DF4). Each row carries the flag the record's provisional mark reads; the section's
+// key explains that mark.
 function flowRows(doc: FmeaDocument, docIndex: DocIndex, indexRows: RowModel[]): FlowRow[] {
   const rows = (doc.flows ?? []).map((flow): FlowRow => {
     const users = flow.users;
     const review = users?.review;
     const chains = flowChains(indexRows, flow.id);
-    const named = chains.length > 0;
     return {
       id: flow.id,
       name: flow.name,
@@ -611,8 +609,7 @@ function flowRows(doc: FmeaDocument, docIndex: DocIndex, indexRows: RowModel[]):
       steps: flowSteps(doc, docIndex, flow.steps ?? []),
       partial: flow.steps_partial === true,
       chains,
-      provisional: named && (review === undefined || review.status === "provisional"),
-      namedByChain: named,
+      provisional: chains.length > 0 && (review === undefined || review.status === "provisional"),
     };
   });
   return rows.sort((a, b) =>
