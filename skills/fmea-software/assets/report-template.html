@@ -42,9 +42,9 @@ ul.tree ul.tree { margin-left:.3rem; padding-left:.95rem; border-left:2px solid 
 .flow-head .pri { margin-top:.1rem; }
 h3.flow-name { font-size:inherit; font-weight:600; margin:0; }
 .flow-id { display:block; margin-top:.3rem; font-size:.86em; }
-.flow-what { display:grid; grid-template-columns:9.5rem minmax(0,1fr); gap:.3rem .9rem; margin:0; }
+.flow-what { display:grid; grid-template-columns:minmax(max-content, 10.5rem) minmax(0,1fr); gap:.3rem .9rem; margin:0; }
 .flow-what dt { font-size:.74rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); padding-top:.25em; }
-.flow-what dd { margin:0; max-width:84ch; }
+.flow-what dd { margin:0; max-width:84ch; overflow-wrap:anywhere; }
 .chain-list { display:flex; flex-wrap:wrap; gap:.25rem .8rem; }
 .chain-ref { display:inline-flex; align-items:center; gap:.35rem; text-decoration:none; }
 .chain-ref code { text-decoration:underline; }

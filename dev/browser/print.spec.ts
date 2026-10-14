@@ -28,11 +28,14 @@ test("print: the links back to the index are not displayed", async ({ page }) =>
 // link's is a fair expectation, and either comparison would fail on correct output. What would make a
 // descendant read as a link is an underline or the screen's link colour, so a descendant must have
 // no underline and, where its colour differs from its parent's, must not be the link colour. The
-// link colour is read from a probe styled with var(--link), so the check follows the template.
+// link colour is read from a probe styled with var(--link), so the check follows the template. The
+// probe's colour must differ from the body's: a renamed --link token leaves the probe the inherited
+// colour, and the check would then pass without testing anything. At least one <code> inside a chain
+// reference must be measured, so the check that matters cannot pass on a report that names no flow.
 test("print: a link has no underline and takes its parent's colour", async ({ page }) => {
   await page.emulateMedia({ media: "print" });
   await openReport(page, PRINT_WIDTH);
-  const { linkColor, elements } = await page.evaluate(() => {
+  const { linkColor, bodyColor, elements } = await page.evaluate(() => {
     const probe = document.createElement("span");
     probe.style.color = "var(--link)";
     document.body.append(probe);
@@ -40,12 +43,14 @@ test("print: a link has no underline and takes its parent's colour", async ({ pa
     probe.remove();
     return {
       linkColor: color,
+      bodyColor: getComputedStyle(document.body).color,
       elements: [...document.querySelectorAll("a, a *")].map((element) => ({
         tag: element.tagName.toLowerCase(),
         text: element.textContent.trim().slice(0, 30),
         line: getComputedStyle(element).textDecorationLine,
         color: getComputedStyle(element).color,
         parentColor: element.parentElement === null ? "" : getComputedStyle(element.parentElement).color,
+        inChainRef: element.closest(".chain-ref") !== null,
       })),
     };
   });
@@ -53,6 +58,8 @@ test("print: a link has no underline and takes its parent's colour", async ({ pa
   const inside = elements.filter((element) => element.tag !== "a");
   expect(links.length).toBeGreaterThan(0);
   expect(inside.length).toBeGreaterThan(0);
+  expect(linkColor).not.toBe(bodyColor);
+  expect(inside.filter((element) => element.tag === "code" && element.inChainRef).length).toBeGreaterThan(0);
   expect(links.filter((link) => link.line !== "none" || link.color !== link.parentColor)).toEqual([]);
   expect(inside.filter((element) => element.line !== "none" || (element.color !== element.parentColor && element.color === linkColor))).toEqual([]);
 });

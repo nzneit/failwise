@@ -200,13 +200,17 @@ const FLOWS_TIER_ENTRY = "Priority here is a flow-value priority label: not a ra
   "High: losing the flow stops the business serving its external users at all. Medium: losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person. " +
   "Low: losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered. " +
   "Flows are listed High first, then by id, a presentational order that ranks nothing.";
+const FLOWS_CHAINS_ENTRY = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. " +
+  "A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. " +
+  "A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. " +
+  "A chain on one of the flow's steps that does not name the flow is not listed.";
 
 test("the Flows section prints one record per flow, High first then by id, with the key's disclaimer verbatim", () => {
   const section = flowsSection(renderHtml(golden(), table, template, vocabulary));
   assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the key prints DF4's sentence verbatim");
   assert.ok(section.includes("a presentational order that ranks nothing"), "the key states the order");
-  assert.ok(section.includes("reads it over the one whose population yields the highest radius class, listed first, and its row marks it"), "the key states the several-flow reading");
   assert.ok(section.includes(`<dt><span class="pri pri-top">High</span> <span class="pri pri-mid">Medium</span> <span class="pri pri-low">Low</span></dt><dd>${escapeHtml(FLOWS_TIER_ENTRY)}</dd>`), "the tier entry reads the disclaimer, the three tiers and the order");
+  assert.ok(section.includes(`<dt><b>Chains</b></dt><dd>${escapeHtml(FLOWS_CHAINS_ENTRY)}</dd>`), "the Chains entry reads the badge, the one-flow and several-flow readings with their floor, and the steps not listed");
   const ids = [...section.matchAll(/<article class="flow" id="flow-(flow-[a-z-]+)">/g)].map((m) => m[1]);
   assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
   assert.ok(!section.includes("a starting point only; the recorded steps are a prefix"), "the golden fixture's flows are not partial");
@@ -880,7 +884,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
   assert.ok(!print.includes(".group"), "no group rule in the print block");
 });
 
-test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the name columns of the structure and the flows", () => {
+test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the name columns of the structure and the flows, and the flows' value column", () => {
   const start = template.indexOf("@media (max-width: 767px) {");
   assert.notEqual(start, -1);
   const end = template.indexOf("\n}\n", start);
@@ -890,10 +894,11 @@ test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frame
   // anywhere in a cell lets the table squeeze its columns until words split.
   assert.ok(inside.includes("main { overflow-wrap:anywhere; }"));
   assert.ok(inside.includes(".frame { overflow-wrap:normal; }"));
-  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 3);
+  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 4);
   assert.ok(outside.includes("table.index code { overflow-wrap:anywhere; }"));
   assert.ok(outside.includes(".el-who { min-width:0; overflow-wrap:anywhere; }"));
   assert.ok(outside.includes(".flow-who { min-width:0; overflow-wrap:anywhere; }"));
+  assert.ok(outside.includes(".flow-what dd { margin:0; max-width:84ch; overflow-wrap:anywhere; }"));
 });
 
 test("the template styles the stale notice and shrinks the post-action badge in a row header", () => {

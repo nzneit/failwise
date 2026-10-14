@@ -287,11 +287,11 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
      delivered. The entry ends with the order sentence: "Flows are listed High first, then by id, a presentational
      order that ranks nothing."
   2. **Chains.** The entry says that the Chains line lists the chains that name the flow, in the index order, each
-     with its priority from S, O and D as in the index. A chain that names one flow reads its Severity over that
-     flow's population, and never lower than over the function's own users. A chain that names several flows reads
-     its Severity over the flow whose population yields the highest radius class, as DF3 rules. The schema stores
-     that flow first in the chain's `flows`, and the chain's row marks it. A chain on one of the flow's steps that
-     does not name the flow is not listed.
+     with its row's priority badge, from S, O and D as in the index. A chain that names one flow reads its Severity
+     over that flow's population, and never lower than over the function's own users. A chain that names several
+     flows reads its Severity over the flow whose population yields the highest radius class, with the same floor,
+     as DF3 rules. The schema stores that flow first in the chain's `flows`, and the chain's row marks it. A chain
+     on one of the flow's steps that does not name the flow is not listed.
   3. **The provisional mark.** The entry prints the flow's own sentence: "The flow's population has not been
      re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not
      final." The reader can thus see which chains' Severity, and so their priority, rests on an unconfirmed
@@ -303,8 +303,9 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
   reused the chain mark's rating sentence. The records replace the table. A step now prints the function's element
   id and statement in place of the function id. The Chains line is new. Each record now carries an anchor, and the
   chain annotation links to it. The provisional mark now carries the flow's own sentence. A key in the chains
-  section's form replaces the caption and the legend. The DF4 and provisional guarantees are unchanged. The key and
-  the record were revised after review on 2026-10-14.)*
+  section's form replaces the caption and the legend. The DF4 and provisional guarantees are unchanged. The mockup
+  and the record are `docs/specs/2026-10-13-flows-section-design.md` in the private repository
+  nzneit/failwise-research. The key and the record were revised after review on 2026-10-14.)*
 - A **chain annotation**: each chain row that names flows carries a "breaks:" line, for example
   "breaks: checkout". The line links every flow the chain names to its record. It marks the flow whose band was
   used, and it notes the disjointness assumption when the chain names more than one flow. The existing
@@ -574,8 +575,9 @@ SRE Book adaptation); a second rating scale for flow priority.
 4. The render adds a Flows section with a TOC entry, an empty state and a key. The key prints the disclaimer
    verbatim, stating "not a rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a
    reliability target", and it marks the record order presentational. Each record carries the anchor `flow-<id>`,
-   the provisional mark beside its population, a Chains line that lists every chain naming the flow with its
-   priority and a link to its row, and the steps as element id and statement. Each chain annotation links every
+   the provisional mark beside its population when a chain names the flow and its population is not re-scored, a
+   Chains line that lists every chain naming the flow with its priority and a link to its row, and the steps as
+   element id and statement. Each chain annotation links every
    flow it names to its record, marks the flow whose band was used, and notes the disjointness assumption when it
    names more than one flow. The checkout fixture renders them.
 5. Rubric 4's c16 scores prompt 1 at band 2 on both capabilities (it is not a must); the flows stability predicate
