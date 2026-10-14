@@ -5,8 +5,9 @@
 // that drops the filtering, would leave every test green while handing the run
 // the answer keys again. So the script is run end to end with `claude` replaced
 // by a stub placed first on PATH — no model call is made — and the stub records
-// the argv it was given, its working directory, and a listing of the
-// --plugin-dir tree, which the assertions below read.
+// the argv it was given, its working directory, a listing of the --plugin-dir
+// tree, and the CLAUDE_CONFIG_DIR it was given with a listing of that directory,
+// which the assertions below read.
 //
 // The fail-closed guard needs two cases of its own. The clean copy the first
 // test inspects is the very condition the guard checks, so a guard edited into a
@@ -49,7 +50,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -66,6 +67,8 @@ interface Sandbox {
   argvFile: string;
   cwdFile: string;
   treeFile: string;
+  configFile: string;
+  configListFile: string;
   env: Record<string, string>;
 }
 
@@ -84,10 +87,14 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
   const argvFile = join(dir, "argv.txt");
   const cwdFile = join(dir, "cwd.txt");
   const treeFile = join(dir, "tree.txt");
+  const configFile = join(dir, "config.txt");
+  const configListFile = join(dir, "config-list.txt");
   const stub = [
     "#!/usr/bin/env bash",
     `printf '%s\\n' "$@" > '${argvFile}'`,
     `pwd > '${cwdFile}'`,
+    "printf '%s\\n' \"${CLAUDE_CONFIG_DIR:-}\" > '" + configFile + "'",
+    "if [ -n \"${CLAUDE_CONFIG_DIR:-}\" ]; then ls -A \"$CLAUDE_CONFIG_DIR\" > '" + configListFile + "'; fi",
     'plugin=""',
     'prev=""',
     'for a in "$@"; do',
@@ -110,7 +117,7 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     FMEA_EVAL_PUBLISH_ROOT: publish,
   };
   if (models !== undefined) env.FMEA_EVAL_MODELS = models;
-  return { dir, tmp, publish, argvFile, cwdFile, treeFile, env };
+  return { dir, tmp, publish, argvFile, cwdFile, treeFile, configFile, configListFile, env };
 }
 
 /**
@@ -184,6 +191,22 @@ test("the run gets a filtered plugin copy outside the repository, and the trap c
     assert.ok(!existsSync(work), `the work directory survived the run: ${work}`);
     assert.ok(!existsSync(pluginDir), `the plugin copy survived the run: ${pluginDir}`);
     assert.deepEqual(readdirSync(s.tmp).filter((n) => n.startsWith("fmea-")), []);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("the run gets a fresh, empty CLAUDE_CONFIG_DIR under its own TMPDIR, never ~/.claude, and the trap clears it", { skip: SKIP }, () => {
+  const s = sandbox();
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: { ...s.env, CLAUDE_CONFIG_DIR: join(homedir(), ".claude") }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const configDir = readFileSync(s.configFile, "utf8").trim();
+    assert.ok(configDir.startsWith(s.tmp + sep), `CLAUDE_CONFIG_DIR is not under the run's TMPDIR: ${configDir}`);
+    assert.ok(!configDir.startsWith(join(homedir(), ".claude")), `CLAUDE_CONFIG_DIR is the user's own: ${configDir}`);
+    assert.ok(!configDir.startsWith(ROOT + sep), `CLAUDE_CONFIG_DIR is inside the repository: ${configDir}`);
+    assert.equal(readFileSync(s.configListFile, "utf8"), "", "the harness put files into CLAUDE_CONFIG_DIR before the launch: it copies nothing in (what the CLI itself leaves there after a probe is the preflight's record)");
+    assert.ok(!existsSync(configDir), `the config directory survived the run: ${configDir}`);
   } finally {
     rmSync(s.dir, { recursive: true, force: true });
   }

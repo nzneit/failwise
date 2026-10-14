@@ -164,6 +164,9 @@ them with Claude Code's Workflow tool,
 `{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which writes
 `build/evals/results.json` for `eval-report.ts` to read.
 
-Sixteen unattended runs and their judging spend real model time and money. An eval run loads the
-runner's global Claude Code configuration (bare mode is not used) and grants Read with no path
-restriction, so run it from a machine and login you are content to expose.
+Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh,
+empty `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
+`~/.claude` (its CLAUDE.md, memory, skills, settings and login) stays out of the run. A run on the
+default Anthropic table therefore needs `ANTHROPIC_API_KEY` in the environment; a model behind a
+gateway needs `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`. A run still grants Read with no path
+restriction, so run it from a machine and with keys you are content to expose.

@@ -53,6 +53,8 @@
 # The copy is passed to --add-dir as well, so Bash calls into it (ls, cat, grep,
 # node <script>) are admitted; without it the file-access boundary denies them
 # whatever --allowedTools says — see the ALLOWED_TOOLS comment below.
+# The run's CLAUDE_CONFIG_DIR is a fresh, empty directory under $TMPDIR, made
+# beside the plugin copy and removed by the EXIT trap with it.
 #
 # Finished runs are published under $FMEA_EVAL_PUBLISH_ROOT, which defaults to
 # $ROOT/build/evals, the tree the rest of the plan reads. The variable exists so
@@ -206,19 +208,33 @@ fi
 # loads from the filtered plugin copy built below, and that copy's reference
 # files and scripts stay readable and runnable by absolute path.
 
-# Both scratch directories are removed by the EXIT trap. The trap is installed
-# before the first mktemp, and cleanup skips a variable that is still empty, so a
-# second mktemp that fails under `set -e` takes the first directory with it
-# instead of leaking it.
+# All three scratch directories are removed by the EXIT trap. The trap is
+# installed before the first mktemp, and cleanup skips a variable that is still
+# empty, so a later mktemp that fails under `set -e` takes the earlier
+# directories with it instead of leaking them.
 WORK=""
 PLUGIN=""
+CONFIG=""
 cleanup() {
   if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
   if [ -n "$PLUGIN" ]; then rm -rf "$PLUGIN"; fi
+  if [ -n "$CONFIG" ]; then rm -rf "$CONFIG"; fi
 }
 trap cleanup EXIT
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/fmea-eval-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
 PLUGIN="$(mktemp -d "${TMPDIR:-/tmp}/fmea-plugin-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
+CONFIG="$(mktemp -d "${TMPDIR:-/tmp}/fmea-config-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
+# The user's own ~/.claude stays out of the run: CLAUDE_CONFIG_DIR is a fresh,
+# empty directory made for this run (prose design 2026-10-14 §5.1). Nothing is
+# copied into it. The plugin under test arrives through --plugin-dir, and the
+# gateway route is the launcher's ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN,
+# which this directory does not touch; a Claude-model run needs
+# ANTHROPIC_API_KEY in the environment instead. In the 0.7.0 round, run
+# without this, eleven of twelve transcripts quoted or applied ~/.claude/CLAUDE.md.
+# The CLI still lists the plugins it bundles (source *@builtin) and the skills
+# it bundles under no namespace; neither comes from ~/.claude.
+# preflight 2026-10-14 (CLI 2.1.299): a -p run under a fresh CLAUDE_CONFIG_DIR authenticated through the gateway (apiKeySource none), listed the non-builtin plugin failwise and the namespaced skill failwise:fmea-software alone beside the CLI's builtin plugins and bundled skills, and /autocompact reported the 786.4k window, leaving .claude.json, backups, projects and sessions in the fresh directory; CLAUDE_CONFIG_DIR kept per run
+export CLAUDE_CONFIG_DIR="$CONFIG"
 mkdir -p "$WORK/inputs"
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
