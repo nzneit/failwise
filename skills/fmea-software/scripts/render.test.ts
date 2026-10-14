@@ -196,10 +196,14 @@ function flowRecord(html: string, id: string): string {
 }
 
 const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
-const FLOWS_TIER_ENTRY = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
-  "High: losing the flow stops the business serving its external users at all. Medium: losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person. " +
-  "Low: losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered. " +
-  "Flows are listed High first, then by id, a presentational order that ranks nothing.";
+const FLOWS_FIRST_ENTRY = `<dt><span class="pri pri-top">High</span> <span class="pri pri-mid">Medium</span> <span class="pri pri-low">Low</span></dt><dd>${escapeHtml(
+  "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
+  "Flows are listed High first, then by id, a presentational order that ranks nothing.")}</dd>`;
+const FLOWS_TIER_ENTRIES = [
+  `<dt><span class="pri pri-top">High</span></dt><dd>${escapeHtml("Losing the flow stops the business serving its external users at all.")}</dd>`,
+  `<dt><span class="pri pri-mid">Medium</span></dt><dd>${escapeHtml("Losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person.")}</dd>`,
+  `<dt><span class="pri pri-low">Low</span></dt><dd>${escapeHtml("Losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered.")}</dd>`,
+];
 const FLOWS_CHAINS_ENTRY = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. " +
   "A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. " +
   "A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. " +
@@ -209,8 +213,12 @@ test("the Flows section prints one record per flow, High first then by id, with 
   const section = flowsSection(renderHtml(golden(), table, template, vocabulary));
   assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the key prints DF4's sentence verbatim");
   assert.ok(section.includes("a presentational order that ranks nothing"), "the key states the order");
-  assert.ok(section.includes(`<dt><span class="pri pri-top">High</span> <span class="pri pri-mid">Medium</span> <span class="pri pri-low">Low</span></dt><dd>${escapeHtml(FLOWS_TIER_ENTRY)}</dd>`), "the tier entry reads the disclaimer, the three tiers and the order");
-  assert.ok(section.includes(`<dt><b>Chains</b></dt><dd>${escapeHtml(FLOWS_CHAINS_ENTRY)}</dd>`), "the Chains entry reads the badge, the one-flow and several-flow readings with their floor, and the steps not listed");
+  const chainsEntry = `<dt><b>Chains</b></dt><dd>${escapeHtml(FLOWS_CHAINS_ENTRY)}</dd>`;
+  assert.ok(section.includes(FLOWS_FIRST_ENTRY), "the first entry reads the disclaimer and the order");
+  assert.ok(section.includes(chainsEntry), "the Chains entry reads the badge, the one-flow and several-flow readings with their floor, and the steps not listed");
+  const at = [FLOWS_FIRST_ENTRY, ...FLOWS_TIER_ENTRIES, chainsEntry].map((entry) => section.indexOf(entry));
+  assert.ok(at.every((i) => i !== -1), "each tier entry prints its badge alone and its test");
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "the tier entries come after the first entry and before the Chains entry, High, Medium, Low");
   const ids = [...section.matchAll(/<article class="flow" id="flow-(flow-[a-z-]+)">/g)].map((m) => m[1]);
   assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
   assert.ok(!section.includes("a starting point only; the recorded steps are a prefix"), "the golden fixture's flows are not partial");

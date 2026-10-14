@@ -215,14 +215,19 @@ function dependenciesHtml(edges: DependencyEdge[]): string {
     frameHtml("Dependencies", `<table aria-labelledby="dependencies-caption">${head}<tbody>${edges.map(row).join("")}</tbody></table>`);
 }
 
-// The Flows section's key (§5.3). The tier entry reads DF4's disclaimer verbatim, then what each tier
-// means, then the order sentence. The Chains entry says what the record's Chains line lists, the
-// priority each chain carries, which flow's population a chain reads its Severity over (one flow,
-// several flows) and that a chain on a step that does not name the flow is left out. The mark entry
-// says why a chain-named flow is provisional while its population is not re-scored.
+// The Flows section's key (§5.3), six entries. The first reads DF4's disclaimer verbatim and the
+// order sentence. One entry per tier badge then gives that tier's test. The Chains entry says what
+// the record's Chains line lists, the priority each chain carries, which flow's population a chain
+// reads its Severity over (one flow, several flows) and that a chain on a step that does not name
+// the flow is left out. The mark entry says why a chain-named flow is provisional while its
+// population is not re-scored.
 const FLOWS_KEY_TITLE = "How to read this section";
 const FLOWS_DISCLAIMER = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
-const FLOWS_TIERS = "High: losing the flow stops the business serving its external users at all. Medium: losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person. Low: losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered.";
+const TIER_TESTS: Record<ValuePriority, string> = {
+  High: "Losing the flow stops the business serving its external users at all.",
+  Medium: "Losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person.",
+  Low: "Losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered.",
+};
 const FLOWS_ORDER = "Flows are listed High first, then by id, a presentational order that ranks nothing.";
 const FLOWS_CHAINS_NOTE = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. A chain on one of the flow's steps that does not name the flow is not listed.";
 const FLOW_PROVISIONAL = "The flow's population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
@@ -242,8 +247,14 @@ function flowMarkHtml(): string {
 }
 
 function flowsKeyHtml(): string {
-  const badges = VALUE_PRIORITIES.map((v) => badgeHtml(v, VALUE_PRIORITY_STYLE[v])).join(" ");
-  return keyBlockHtml(FLOWS_KEY_TITLE, [[badges, `${FLOWS_DISCLAIMER} ${FLOWS_TIERS} ${FLOWS_ORDER}`], ["<b>Chains</b>", FLOWS_CHAINS_NOTE], [flowMarkHtml(), FLOW_PROVISIONAL]]);
+  const badge = (v: ValuePriority): string => badgeHtml(v, VALUE_PRIORITY_STYLE[v]);
+  const tiers: [string, string][] = VALUE_PRIORITIES.map((v) => [badge(v), TIER_TESTS[v]]);
+  return keyBlockHtml(FLOWS_KEY_TITLE, [
+    [VALUE_PRIORITIES.map(badge).join(" "), `${FLOWS_DISCLAIMER} ${FLOWS_ORDER}`],
+    ...tiers,
+    ["<b>Chains</b>", FLOWS_CHAINS_NOTE],
+    [flowMarkHtml(), FLOW_PROVISIONAL],
+  ]);
 }
 
 // The population, with the provisional mark beside it while the flow is chain-named and not re-scored.

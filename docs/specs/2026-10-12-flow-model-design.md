@@ -260,7 +260,7 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
   badge, the flow's name as a heading, and its id. The right column holds labelled lines:
   - **Population**: `users.population`. A chain-named flow whose `users.review` is absent or `provisional` carries
     the provisional mark beside its population. The mark carries the flow's own sentence, the same sentence as the
-    key's third entry.
+    key's last entry.
   - **Selecting condition** and **Share**: `users.selecting_condition` and `users.share`, each only when recorded.
   - **Sources**: the sources as recorded.
   - **Chains**: every chain that names the flow, in the index order. Each chain shows its priority badge and its
@@ -277,22 +277,22 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
   escaped, and that includes free text such as `name` and `users.population`. In print a record does not split
   across pages. Below 768 px the two columns stack.
 
-  The section's **key** has the "How to read" form of the chains section's key. It has three entries:
+  The section's **key** has the "How to read" form of the chains section's key. It has six entries, of four kinds:
   1. **The tier badges.** The entry prints DF4's disclaimer sentence verbatim, and a test asserts it. The
      exclusions the sentence names are thus visible where the tier is read: not a rating, not a criticality
-     analysis, not a safety or hazard analysis, not a reliability target. One-line forms of the three tier tests
-     follow. High: losing the flow stops the business serving its external users at all. Medium: losing the flow
-     degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person. Low:
-     losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome
-     delivered. The entry ends with the order sentence: "Flows are listed High first, then by id, a presentational
-     order that ranks nothing."
-  2. **Chains.** The entry says that the Chains line lists the chains that name the flow, in the index order, each
+     analysis, not a safety or hazard analysis, not a reliability target. The entry ends with the order sentence:
+     "Flows are listed High first, then by id, a presentational order that ranks nothing."
+  2. **One entry per tier badge.** Each prints the tier's test in one line. High: losing the flow stops the
+     business serving its external users at all. Medium: losing the flow degrades it while a stated alternative
+     path still delivers the outcome, and restoring it needs a person. Low: losing the flow is absorbed, because it
+     reaches no external user or an evidenced control keeps the outcome delivered.
+  3. **Chains.** The entry says that the Chains line lists the chains that name the flow, in the index order, each
      with its row's priority badge, from S, O and D as in the index. A chain that names one flow reads its Severity
      over that flow's population, and never lower than over the function's own users. A chain that names several
      flows reads its Severity over the flow whose population yields the highest radius class, with the same floor,
      as DF3 rules. The schema stores that flow first in the chain's `flows`, and the chain's row marks it. A chain
      on one of the flow's steps that does not name the flow is not listed.
-  3. **The provisional mark.** The entry prints the flow's own sentence: "The flow's population has not been
+  4. **The provisional mark.** The entry prints the flow's own sentence: "The flow's population has not been
      re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not
      final." The reader can thus see which chains' Severity, and so their priority, rests on an unconfirmed
      population.
@@ -305,7 +305,8 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
   chain annotation links to it. The provisional mark now carries the flow's own sentence. A key in the chains
   section's form replaces the caption and the legend. The DF4 and provisional guarantees are unchanged. The mockup
   and the record are `docs/specs/2026-10-13-flows-section-design.md` in the private repository
-  nzneit/failwise-research. The key and the record were revised after review on 2026-10-14.)*
+  nzneit/failwise-research. The key and the record were revised after review on 2026-10-14, and the tier tests
+  became entries of their own the same day.)*
 - A **chain annotation**: each chain row that names flows carries a "breaks:" line, for example
   "breaks: checkout". The line links every flow the chain names to its record. It marks the flow whose band was
   used, and it notes the disjointness assumption when the chain names more than one flow. The existing
@@ -497,7 +498,7 @@ kinds in the skill's own words, never Azure's. That is also why the field is not
   read at majority). Each fixture states the band it must produce.
 - `render.ts` / `report-model.ts` — the Flows section and its TOC entry. The key: DF4's sentence verbatim, with
   "not a rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a reliability target",
-  the three tier tests, the several-flow reading, and the sentence that a chain on one of the flow's steps that
+  the three tier entries, the several-flow reading, and the sentence that a chain on one of the flow's steps that
   does not name the flow is not listed. The empty state without the key. The record: the provisional mark beside
   the population with the flow's own sentence, the Chains line in the index order with each chain's priority
   badge and link, the steps as element id and statement with an unresolved step kept as its id, and the
