@@ -1,0 +1,320 @@
+// tools/eval-context.ts
+//
+// The context one unattended eval run ran in, recorded as context.json beside its
+// transcript (prose design 2026-10-14 §5.3). The window and the compactions are
+// the verification basis of a run: the CLI gives a gateway model it does not know
+// a 200k window, and 13 of the capped round's 16 runs compacted near 167k on
+// 2026-10-13. So the record keeps the two window settings the run was given, the
+// probe's window line verbatim, the count of compact_boundary lines, and the peak
+// context over the top-level assistant lines (input plus cache read plus cache
+// creation; a subagent's lines carry its own context and are left out). The init
+// line's isolation facts follow (the CLI version, every plugin with its source,
+// the namespaced and the unnamespaced skills, and whether the auto memory lies
+// under the run's CLAUDE_CONFIG_DIR), with the count of transcript lines naming
+// CLAUDE.md or ~/.claude, a secondary leak check that is reported, never gated.
+//
+// From invocations.json (tools/eval-invocations.ts) come the denied calls, split
+// on whether the command holds the word bun, and, for each lint id asked for,
+// the number of validate.ts calls whose full result carries the rule: that shows
+// whether a warning fired during the run, while validate.json, which says whether
+// the final document still carries it, shows the end state only. validate.ts
+// prints its lints on exit 2 as well, so a call that errored counts beside one
+// that ran; the 400-character result_head of invocations.json is too short, so
+// the results are read from the transcript. A missing invocations.json or
+// validate.json leaves those counts null rather than 0.
+//
+// A line that is not JSON refuses the whole stream, and so do a missing
+// transcript, a missing autocompact.txt and a probe reply with no window line: a
+// run whose context cannot be read is unverified at judging, never scored.
+//
+// Usage: node tools/eval-context.ts <run-dir> --config-dir <path> [--lint <id>]...
+// Writes <run-dir>/context.json and prints nothing; exits 0 on success, 1 on a
+// usage error, 3 when the transcript or the probe reply cannot be read, the
+// transcript holds a line that is not JSON, or the reply has no window line.
+//
+// tools/ imports nothing from skills/fmea-software/scripts/ (the skill stays
+// self-contained); the transcript reader is tools/lib/transcript.ts.
+
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { isEntry } from "./lib/entry.ts";
+import { blocksOf, parseLine, refuse, resultText, type Message } from "./lib/transcript.ts";
+
+export interface EvalContext {
+  config_dir: string;
+  cli_version: string | null;
+  settings: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: string | null; CLAUDE_CODE_MAX_CONTEXT_TOKENS: string | null };
+  window_line: string;
+  compactions: number;
+  peak_context_tokens: number;
+  assistant_lines: number;
+  init: {
+    present: boolean;
+    plugins: { name: string; source: string }[];
+    skills_namespaced: string[];
+    skills_unnamespaced: string[];
+    memory_auto: string | null;
+    memory_under_config_dir: boolean;
+  };
+  leak_grep: { "CLAUDE.md": number; "~/.claude": number };
+  invocations: "present" | "missing";
+  denied: { bun: number; other: number };
+  lints: { id: string; fired: number | null; final: boolean | null }[];
+}
+
+export interface TranscriptFacts {
+  cli_version: string | null;
+  compactions: number;
+  peak_context_tokens: number;
+  assistant_lines: number;
+  init: EvalContext["init"];
+  leak_grep: EvalContext["leak_grep"];
+  lint_fired: Record<string, number>;
+}
+
+const WINDOW_TEXT = "auto-compact window for";
+const USAGE = "usage: node tools/eval-context.ts <run-dir> --config-dir <path> [--lint <id>]...";
+
+/** value[key] when value is an object, else undefined. */
+function fieldOf(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+}
+
+function textOf(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** What one pass over the stream collects. */
+interface Scan {
+  init: Message | null;
+  compactions: number;
+  peak: number;
+  assistantLines: number;
+  leaks: EvalContext["leak_grep"];
+  /** The first result text of each wanted tool_use id. */
+  results: Map<string, string>;
+}
+
+function contextTokens(usage: unknown): number {
+  const count = (key: string) => {
+    const n = fieldOf(usage, key);
+    return typeof n === "number" ? n : 0;
+  };
+  return count("input_tokens") + count("cache_read_input_tokens") + count("cache_creation_input_tokens");
+}
+
+function recordSystem(scan: Scan, m: Message): void {
+  if (m.subtype === "init" && scan.init === null) scan.init = m;
+  if (m.subtype === "compact_boundary") scan.compactions++;
+}
+
+/** A top-level assistant line counts toward the peak; a subagent's line names the tool call it serves. */
+function recordAssistant(scan: Scan, m: Message): void {
+  if (m.parent_tool_use_id !== null && m.parent_tool_use_id !== undefined) return;
+  scan.assistantLines++;
+  scan.peak = Math.max(scan.peak, contextTokens(m.message?.usage));
+}
+
+function recordResults(scan: Scan, m: Message, wanted: Set<string>): void {
+  for (const b of blocksOf(m)) {
+    const id = b.tool_use_id;
+    if (b.type === "tool_result" && typeof id === "string" && wanted.has(id) && !scan.results.has(id)) scan.results.set(id, resultText(b.content));
+  }
+}
+
+function scanLine(scan: Scan, line: string, n: number, wanted: Set<string>): void {
+  const m = parseLine(line, n);
+  if (line.includes("CLAUDE.md")) scan.leaks["CLAUDE.md"]++;
+  if (line.includes("~/.claude")) scan.leaks["~/.claude"]++;
+  if (m?.type === "system") recordSystem(scan, m);
+  if (m?.type === "assistant") recordAssistant(scan, m);
+  if (m?.type === "user") recordResults(scan, m, wanted);
+}
+
+function versionOf(init: Message | null): string | null {
+  const version = init?.claude_code_version;
+  return typeof version === "string" ? version : null;
+}
+
+function pluginOf(p: unknown): { name: string; source: string } {
+  return { name: textOf(fieldOf(p, "name")), source: textOf(fieldOf(p, "source")) };
+}
+
+function initOf(m: Message | null, configDir: string): EvalContext["init"] {
+  if (m === null) return { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false };
+  const skills = Array.isArray(m.skills) ? m.skills.filter((s): s is string => typeof s === "string") : [];
+  const auto = fieldOf(m.memory_paths, "auto");
+  const memoryAuto = typeof auto === "string" ? auto : null;
+  return {
+    present: true,
+    plugins: Array.isArray(m.plugins) ? m.plugins.map(pluginOf) : [],
+    skills_namespaced: skills.filter((s) => s.includes(":")),
+    skills_unnamespaced: skills.filter((s) => !s.includes(":")).sort(),
+    memory_auto: memoryAuto,
+    memory_under_config_dir: memoryAuto !== null && memoryAuto.startsWith(`${configDir.replace(/\/+$/, "")}/`),
+  };
+}
+
+/** How many of the collected results carry the rule, as validate.ts prints a lint. */
+function firedCount(results: Map<string, string>, id: string): number {
+  const needle = `"rule": "${id}"`;
+  return [...results.values()].filter((text) => text.includes(needle)).length;
+}
+
+/** The facts the transcript alone gives, in one pass. Throws on a line that is not JSON. */
+export function extractContext(text: string, options: { configDir: string; lintIds: string[]; validateCallIds: string[] }): TranscriptFacts {
+  const scan: Scan = { init: null, compactions: 0, peak: 0, assistantLines: 0, leaks: { "CLAUDE.md": 0, "~/.claude": 0 }, results: new Map() };
+  const wanted = new Set(options.validateCallIds);
+  text.split("\n").forEach((line, i) => scanLine(scan, line, i + 1, wanted));
+  return {
+    cli_version: versionOf(scan.init),
+    compactions: scan.compactions,
+    peak_context_tokens: scan.peak,
+    assistant_lines: scan.assistantLines,
+    init: initOf(scan.init, options.configDir),
+    leak_grep: scan.leaks,
+    lint_fired: Object.fromEntries(options.lintIds.map((id) => [id, firedCount(scan.results, id)])),
+  };
+}
+
+/** A file the record cannot do without. */
+function readRequired(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (err) {
+    throw new Error(`cannot read ${path}: ${String(err)}`);
+  }
+}
+
+/** An optional file's JSON value, or undefined when it is missing or does not parse. */
+function readOptionalJson(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The first line of the probe's reply naming the auto-compact window, verbatim. */
+function windowLineOf(path: string): string {
+  const line = readRequired(path)
+    .split("\n")
+    .find((l) => l.toLowerCase().includes(WINDOW_TEXT));
+  if (line === undefined) throw new Error(`${path} holds no line containing "${WINDOW_TEXT}"`);
+  return line;
+}
+
+interface CallRecord {
+  tool_use_id?: unknown;
+  scripts?: unknown;
+  command?: unknown;
+  outcome?: unknown;
+}
+
+/** The calls invocations.json lists, or null when it is missing, does not parse, or holds no calls array. */
+function callsOf(path: string): CallRecord[] | null {
+  const calls = fieldOf(readOptionalJson(path), "calls");
+  return Array.isArray(calls) ? calls.filter((c): c is CallRecord => typeof c === "object" && c !== null) : null;
+}
+
+/** The validate.ts calls whose result says what the validator found: those that ran or errored. */
+function validateCallIdsOf(calls: CallRecord[]): string[] {
+  return calls
+    .filter((c) => Array.isArray(c.scripts) && c.scripts.includes("validate.ts") && (c.outcome === "ran" || c.outcome === "error"))
+    .map((c) => c.tool_use_id)
+    .filter((id): id is string => typeof id === "string");
+}
+
+function deniedOf(calls: CallRecord[]): EvalContext["denied"] {
+  const denied = calls.filter((c) => c.outcome === "denied");
+  const bun = denied.filter((c) => typeof c.command === "string" && /\bbun\b/.test(c.command)).length;
+  return { bun, other: denied.length - bun };
+}
+
+/** The lints validate.json lists, or null when it is missing, does not parse, or holds no lints array. */
+function finalLintsOf(path: string): unknown[] | null {
+  const lints = fieldOf(readOptionalJson(path), "lints");
+  return Array.isArray(lints) ? lints : null;
+}
+
+/** Each lint id's count over the run, null without invocations.json, and its end state, null without validate.json. */
+function lintsOf(lintIds: string[], fired: Record<string, number>, calls: CallRecord[] | null, finals: unknown[] | null): EvalContext["lints"] {
+  return lintIds.map((id) => ({
+    id,
+    fired: calls === null ? null : fired[id],
+    final: finals === null ? null : finals.some((l) => fieldOf(l, "rule") === id),
+  }));
+}
+
+/** The run's context record, or an Error naming the file that cannot be read. Never writes. */
+export function contextFor(runDir: string, options: { configDir: string; lintIds: string[]; env: Record<string, string | undefined> }): EvalContext {
+  const transcript = join(runDir, "transcript.jsonl");
+  const text = readRequired(transcript);
+  const windowLine = windowLineOf(join(runDir, "autocompact.txt"));
+  const calls = callsOf(join(runDir, "invocations.json"));
+  let facts: TranscriptFacts;
+  try {
+    facts = extractContext(text, { configDir: options.configDir, lintIds: options.lintIds, validateCallIds: validateCallIdsOf(calls ?? []) });
+  } catch (err) {
+    throw new Error(`${transcript} ${(err as Error).message}`);
+  }
+  return {
+    config_dir: options.configDir,
+    cli_version: facts.cli_version,
+    settings: {
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW ?? null,
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: options.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS ?? null,
+    },
+    window_line: windowLine,
+    compactions: facts.compactions,
+    peak_context_tokens: facts.peak_context_tokens,
+    assistant_lines: facts.assistant_lines,
+    init: facts.init,
+    leak_grep: facts.leak_grep,
+    invocations: calls === null ? "missing" : "present",
+    denied: deniedOf(calls ?? []),
+    lints: lintsOf(options.lintIds, facts.lint_fired, calls, finalLintsOf(join(runDir, "validate.json"))),
+  };
+}
+
+interface Args {
+  runDir: string;
+  configDir: string;
+  lintIds: string[];
+}
+
+/** The arguments, or null when they do not fit the usage line. */
+function parseArgs(argv: string[]): Args | null {
+  const positional: string[] = [];
+  const values: Record<"--config-dir" | "--lint", string[]> = { "--config-dir": [], "--lint": [] };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const value = argv[i + 1];
+    if (arg !== "--config-dir" && arg !== "--lint") {
+      if (arg.startsWith("--")) return null;
+      positional.push(arg);
+      continue;
+    }
+    if (value === undefined || value === "" || value.startsWith("--")) return null;
+    values[arg].push(value);
+    i++;
+  }
+  const [configDir, ...extra] = values["--config-dir"];
+  if (positional.length !== 1 || configDir === undefined || extra.length > 0) return null;
+  return { runDir: positional[0], configDir, lintIds: values["--lint"] };
+}
+
+function main(argv: string[]): number {
+  const args = parseArgs(argv);
+  if (args === null) return refuse("USAGE", USAGE);
+  let context: EvalContext;
+  try {
+    context = contextFor(args.runDir, { configDir: args.configDir, lintIds: args.lintIds, env: process.env });
+  } catch (err) {
+    return refuse("IO_READ", (err as Error).message);
+  }
+  writeFileSync(join(args.runDir, "context.json"), JSON.stringify(context, null, 2) + "\n");
+  return 0;
+}
+
+if (isEntry(import.meta)) process.exit(main(process.argv.slice(2)));

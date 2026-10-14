@@ -8,10 +8,11 @@
 # tree), saves the CLI's message stream as transcript.jsonl and its final result
 # object as transcript.json, runs the validator on analysis.json into
 # validate.json, extracts the skill's script calls from the stream into
-# invocations.json (tools/eval-invocations.ts), copies the finished run into
+# invocations.json (tools/eval-invocations.ts), records the run's context into
+# context.json (tools/eval-context.ts), copies the finished run into
 # build/evals/p<id>/<capability>/run<n>/,
 # and prints one summary line:
-#   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n>
+#   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n> invocations=<present|missing> context=<present|missing>
 #
 # Model capabilities, not model names (amended 2026-09-12 by the user's ruling
 # at the eval re-run: the eval axis is a capability level, and the model that
@@ -387,10 +388,22 @@ INVOCATIONS_EXIT=$?
 set -e
 [ "$INVOCATIONS_EXIT" -eq 0 ] || echo "p$PID $MODEL_CAPABILITY run$RUN: tools/eval-invocations.ts exited $INVOCATIONS_EXIT (see invocations.stderr)" >&2
 
+# The run's context record (prose design 2026-10-14 §5.3): the window it ran
+# under, its compactions and peak, the init line's isolation facts, the denied
+# calls and the new lints' counts. A run with no context.json is unverified at
+# judging, never scored.
+set +e
+node "$ROOT/tools/eval-context.ts" "$WORK" --config-dir "$CONFIG" --lint edge-reliability-unstated --lint conversion-substitution-unrecorded 2> context.stderr
+CONTEXT_EXIT=$?
+set -e
+[ "$CONTEXT_EXIT" -eq 0 ] || echo "p$PID $MODEL_CAPABILITY run$RUN: tools/eval-context.ts exited $CONTEXT_EXIT (see context.stderr)" >&2
+
 # Publish the run into the repository tree the rest of the plan reads.
 mkdir -p "$RUN_DIR"
 cp -R "$WORK/." "$RUN_DIR/"
 
-ANALYSIS=missing; [ -f analysis.json ] && ANALYSIS=present
-REPORT=missing;   [ -f report.html ]   && REPORT=present
-echo "p$PID $MODEL_CAPABILITY run$RUN: model=$MODEL_NAME basis=$MODELS_BASIS effort=$EFFORT analysis=$ANALYSIS report=$REPORT validate_exit=$VALIDATE_EXIT"
+ANALYSIS=missing;    [ -f analysis.json ]    && ANALYSIS=present
+REPORT=missing;      [ -f report.html ]      && REPORT=present
+INVOCATIONS=missing; [ -f invocations.json ] && INVOCATIONS=present
+CONTEXT=missing;     [ -f context.json ]     && CONTEXT=present
+echo "p$PID $MODEL_CAPABILITY run$RUN: model=$MODEL_NAME basis=$MODELS_BASIS effort=$EFFORT analysis=$ANALYSIS report=$REPORT validate_exit=$VALIDATE_EXIT invocations=$INVOCATIONS context=$CONTEXT"

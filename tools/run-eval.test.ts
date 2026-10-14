@@ -169,13 +169,18 @@ test("the run gets a filtered plugin copy outside the repository, and the trap c
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present$/m);
     assert.ok(existsSync(join(s.publish, "p1", "medium", "run1", "transcript.json")), "the run was not published under $FMEA_EVAL_PUBLISH_ROOT");
     // The stub's stream holds one result line and no tool call, so the extracted
     // record is published and lists no call.
     const invocations = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "invocations.json"), "utf8")) as { scripts: string[]; calls: unknown[] };
     assert.ok(invocations.scripts.includes("priority.ts"), "invocations.json searched for no priority.ts");
     assert.deepEqual(invocations.calls, []);
+    // The context record is published beside it; the stub's stream holds no init
+    // line and no compaction.
+    const context = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "context.json"), "utf8")) as { init: { present: boolean }; compactions: number };
+    assert.equal(context.init.present, false);
+    assert.equal(context.compactions, 0);
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
     const pluginDir = argv[argv.indexOf("--plugin-dir") + 1];
@@ -285,7 +290,7 @@ test("the default model table keeps the provider's names while every record stay
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present$/m);
     assert.ok(existsSync(join(s.publish, "p1", "high", "run1", "transcript.json")), "the run was not published under the capability");
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
@@ -307,7 +312,7 @@ test("FMEA_EVAL_MODELS replaces the whole table: its names reach --model and mod
   try {
     const r = spawnSync("bash", [SCRIPT, "5", "medium", "2"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p5 medium run2: model=glm-5\.3-flash basis=FMEA_EVAL_MODELS effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p5 medium run2: model=glm-5\.3-flash basis=FMEA_EVAL_MODELS effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present$/m);
     assert.ok(existsSync(join(s.publish, "p5", "medium", "run2", "transcript.json")), "the run was not published under the capability");
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
@@ -331,7 +336,7 @@ test("the run pins effort high: the flag reaches the CLI and the record carries 
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present$/m);
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
     assert.equal(argv[argv.indexOf("--effort") + 1], "high", "--effort did not carry the pinned effort");
@@ -415,7 +420,7 @@ test('a $TMPDIR whose own name holds "expected" does not trip the guard', { skip
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present$/m);
   } finally {
     rmSync(s.dir, { recursive: true, force: true });
   }
