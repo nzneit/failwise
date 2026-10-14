@@ -196,7 +196,7 @@ function flowRecord(html: string, id: string): string {
 }
 
 const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
-const FLOWS_FIRST_ENTRY = `<dt><span class="pri pri-top">High</span> <span class="pri pri-mid">Medium</span> <span class="pri pri-low">Low</span></dt><dd>${escapeHtml(
+const FLOWS_FIRST_ENTRY = `<dt><b>Priority</b></dt><dd>${escapeHtml(
   "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
   "Flows are listed High first, then by id, a presentational order that ranks nothing.")}</dd>`;
 const FLOWS_TIER_ENTRIES = [

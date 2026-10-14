@@ -278,7 +278,9 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
   across pages. Below 768 px the two columns stack.
 
   The section's **key** has the "How to read" form of the chains section's key. It has six entries, of four kinds:
-  1. **The tier badges.** The entry prints DF4's disclaimer sentence verbatim, and a test asserts it. The
+  1. **Priority.** The entry is labelled with that word, as the Chains entry is with its own, so no label in the
+     key is wider than the provisional mark and each tier badge below sits beside its text. The entry prints
+     DF4's disclaimer sentence verbatim, and a test asserts it. The
      exclusions the sentence names are thus visible where the tier is read: not a rating, not a criticality
      analysis, not a safety or hazard analysis, not a reliability target. The entry ends with the order sentence:
      "Flows are listed High first, then by id, a presentational order that ranks nothing."
@@ -306,7 +308,7 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
   section's form replaces the caption and the legend. The DF4 and provisional guarantees are unchanged. The mockup
   and the record are `docs/specs/2026-10-13-flows-section-design.md` in the private repository
   nzneit/failwise-research. The key and the record were revised after review on 2026-10-14, and the tier tests
-  became entries of their own the same day.)*
+  became entries of their own the same day, with the first entry labelled Priority.)*
 - A **chain annotation**: each chain row that names flows carries a "breaks:" line, for example
   "breaks: checkout". The line links every flow the chain names to its record. It marks the flow whose band was
   used, and it notes the disjointness assumption when the chain names more than one flow. The existing

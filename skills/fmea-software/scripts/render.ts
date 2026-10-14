@@ -215,8 +215,9 @@ function dependenciesHtml(edges: DependencyEdge[]): string {
     frameHtml("Dependencies", `<table aria-labelledby="dependencies-caption">${head}<tbody>${edges.map(row).join("")}</tbody></table>`);
 }
 
-// The Flows section's key (§5.3), six entries. The first reads DF4's disclaimer verbatim and the
-// order sentence. One entry per tier badge then gives that tier's test. The Chains entry says what
+// The Flows section's key (§5.3), six entries. The first, labelled Priority, reads DF4's disclaimer
+// verbatim and the order sentence. One entry per tier badge then gives that tier's test, the badge
+// beside its text, since no label is wider than the provisional mark. The Chains entry says what
 // the record's Chains line lists, the priority each chain carries, which flow's population a chain
 // reads its Severity over (one flow, several flows) and that a chain on a step that does not name
 // the flow is left out. The mark entry says why a chain-named flow is provisional while its
@@ -250,7 +251,7 @@ function flowsKeyHtml(): string {
   const badge = (v: ValuePriority): string => badgeHtml(v, VALUE_PRIORITY_STYLE[v]);
   const tiers: [string, string][] = VALUE_PRIORITIES.map((v) => [badge(v), TIER_TESTS[v]]);
   return keyBlockHtml(FLOWS_KEY_TITLE, [
-    [VALUE_PRIORITIES.map(badge).join(" "), `${FLOWS_DISCLAIMER} ${FLOWS_ORDER}`],
+    ["<b>Priority</b>", `${FLOWS_DISCLAIMER} ${FLOWS_ORDER}`],
     ...tiers,
     ["<b>Chains</b>", FLOWS_CHAINS_NOTE],
     [flowMarkHtml(), FLOW_PROVISIONAL],
