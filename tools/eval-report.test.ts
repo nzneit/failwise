@@ -293,6 +293,11 @@ test("the stability table gains a Flows column only when an entry carries flows,
   assert.match(md, /\| Prompt \| Model capability \| Jaccard \| Max rows \| Bound \| Count diffs \| Flows \| Pass \|/);
   assert.match(md, /1\.000 pass/);
   assert.match(md, /unverified/);
+  r.stability[1] = { ...r.stability[1], flows: { jaccard: 1, pass: "not_applicable" }, verified: true, pass: true, unverified: false };
+  const applicable = renderReport(r);
+  assert.match(applicable, /\| 1 \| medium \| 0\.600 \| 7 \| 1\.400 \| H: 2, M: 0, L: 2 \| 1\.000 not_applicable \| pass \|/);
+  const run = reportOn(JSON.stringify(r), "eval-report-not-applicable-");
+  assert.equal(run.status, 0, run.stderr);
 });
 
 test("a stability flows that is not {jaccard, pass} is one coded IO_READ line", () => {
@@ -337,11 +342,16 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /Prompt 5 reads `checkout-inputs\.md` and its critical flows, but its postmortem-seeded baseline is scored on c1 to c10 only, the convention that keeps c13 and c14 off it, so c16 scores prompt 1 alone\./);
   assert.match(rubric, /at least one chain names both `flow-checkout` and `flow-retry`/);
   assert.match(rubric, /\(Amended 2026-10-13, before any run was judged under rubric 4:/);
+  assert.match(rubric, /passes when all three hold, or, on a prompt whose inputs name no flows, when the first two hold and the third is reported `not_applicable`:/);
+  assert.match(rubric, /on a prompt whose inputs name no flows \(prompt 6\), the judging workflow passes `--flows-not-applicable`/);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c14-edges-and-codebases"), { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 });
   assert.deepEqual(CRITERIA.find((c) => c.id === "c15-cross-service-trace"), { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 });
   assert.deepEqual(CRITERIA.find((c) => c.id === "c16-flows"), { id: "c16-flows", must: false, prompts: [1], rubric: 4 });
   const workflow = readFileSync(join(import.meta.dirname, "workflows", "evals.js"), "utf8");
   assert.match(workflow, /^const RUBRIC = 4$/m);
+  assert.match(workflow, /^const FLOWS_NOT_APPLICABLE_PROMPTS = \[6\]$/m);
+  assert.match(workflow, /pass: \{ enum: \['pass', 'fail', 'unverified', 'not_applicable'\] \}/);
+  assert.match(workflow, /node tools\/eval-stability\.ts \$\{a\} \$\{b\}\$\{FLOWS_NOT_APPLICABLE_PROMPTS\.includes\(pair\.prompt\) \? ' --flows-not-applicable' : ''\}/);
   assert.match(workflow, /node \$\{SKILL\}\/scripts\/update-check\.ts \$\{SKILL\}\/evals\/fixtures\/update\/before\.fmea\.json \$\{item\.dir\}\/analysis\.json/);
   const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (\d+))? \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]), rubric: m[4] === undefined ? undefined : Number(m[4]) }));

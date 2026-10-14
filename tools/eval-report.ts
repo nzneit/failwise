@@ -490,7 +490,7 @@ export interface StabilityResult {
   unverified?: boolean;
   /** Of the element ids both runs carry, how many agree on role and boundary (eval-stability.ts). */
   typing?: { shared: number; agreeing: number; pass: boolean };
-  /** The two runs' flow id sets at the 0.8 floor, tri-state: pass, fail or unverified (eval-stability.ts). */
+  /** The two runs' flow id sets at the 0.8 floor, tri-state plus not_applicable: pass, fail, unverified or not_applicable (eval-stability.ts). */
   flows?: FlowComparison;
   /** False when a stability predicate could not run; the workflow sets unverified from it (eval-stability.ts). */
   verified?: boolean;
@@ -1218,9 +1218,9 @@ function isTyping(t: unknown): boolean {
   return isObject(t) && typeof t.shared === "number" && typeof t.agreeing === "number" && typeof t.pass === "boolean";
 }
 
-/** A stability entry's flows as eval-stability.ts writes it: the id-set overlap and its tri-state. */
+/** A stability entry's flows as eval-stability.ts writes it: the id-set overlap and its tri-state or not_applicable. */
 function isFlows(f: unknown): boolean {
-  return isObject(f) && typeof f.jaccard === "number" && (f.pass === "pass" || f.pass === "fail" || f.pass === "unverified");
+  return isObject(f) && typeof f.jaccard === "number" && (f.pass === "pass" || f.pass === "fail" || f.pass === "unverified" || f.pass === "not_applicable");
 }
 
 /** The top-level rubric version: absent (rubric 1), or a whole number of at least 1. */

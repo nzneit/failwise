@@ -29,6 +29,10 @@
 // failure of the skill, so neither may read as one. A run that left no
 // analysis.json or report.html is not scored at all (rubric reading paragraph,
 // amended 2026-10-13) and is recorded unverified with the judge's account of why.
+// On prompt 6, whose inputs name no flows, the stability command carries
+// --flows-not-applicable (ruling 4 of 2026-10-13): the flows predicate is
+// reported not_applicable and verified, and each prompt-6 pair is judged on the
+// element and count predicates.
 //
 // Model capabilities (spec D10, amended 2026-09-10 by the user's ruling, and
 // again 2026-09-12 by the user's ruling at the eval re-run): every agent names
@@ -215,7 +219,7 @@ const STABILITY_SCHEMA = {
     },
     flows: {
       type: 'object',
-      properties: { jaccard: { type: 'number' }, pass: { enum: ['pass', 'fail', 'unverified'] } },
+      properties: { jaccard: { type: 'number' }, pass: { enum: ['pass', 'fail', 'unverified', 'not_applicable'] } },
       required: ['jaccard', 'pass'],
     },
     verified: { type: 'boolean' },
@@ -321,16 +325,21 @@ Unattended runs cannot ask questions: the rubric says how c1 and, where it appli
 Return: scores (one entry per criterion id above, no others), total (sum of scores), max (2 × number of criteria), musts_at_2 (how many must criteria scored 2), notes (anything a reader of the scores should know, or an empty string).`
 }
 
+// Ruling 4 of 2026-10-13: on a prompt whose inputs name no flows the flows
+// predicate is not applicable and the pair is judged on the element and count
+// predicates; the flag is per prompt, whatever the runs carry.
+const FLOWS_NOT_APPLICABLE_PROMPTS = [6]
+
 function stabilityPrompt(pair) {
   const a = `${ROOT}/${EVALS_DIR}/p${pair.prompt}/${pair.model_capability}/run1/analysis.json`
   const b = `${ROOT}/${EVALS_DIR}/p${pair.prompt}/${pair.model_capability}/run2/analysis.json`
   return `Run this command exactly, from ${ROOT}, and return the JSON it prints as your structured result:
 
-cd ${ROOT} && node tools/eval-stability.ts ${a} ${b}
+cd ${ROOT} && node tools/eval-stability.ts ${a} ${b}${FLOWS_NOT_APPLICABLE_PROMPTS.includes(pair.prompt) ? ' --flows-not-applicable' : ''}
 
 The command needs Node 24.2 or later on PATH. On a machine where Node is installed only through nvm, run \`source ~/.nvm/nvm.sh\` first, in the same shell call as the command, because PATH does not carry over from one call to the next.
 
-It prints {jaccard, maxRows, countDiffs, bound, pass, typing, flows, verified}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. flows is {jaccard, pass}: the Jaccard of the two runs' flow id sets and its verdict, pass, fail or unverified, where two runs that both carry no flows is unverified and one side carrying none is a fail; verified is false exactly when flows is unverified. Return those eight fields verbatim, with countDiffs as an object with exactly the keys H, M and L, typing as an object with exactly the keys shared, agreeing and pass, and flows as an object with exactly the keys jaccard and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}, flows: {jaccard: 0, pass: 'unverified'}, verified: false} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one. A flows comparison that never ran is unverified, not a failure.`
+It prints {jaccard, maxRows, countDiffs, bound, pass, typing, flows, verified}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. flows is {jaccard, pass}: the Jaccard of the two runs' flow id sets and its verdict, pass, fail or unverified, where two runs that both carry no flows is unverified and one side carrying none is a fail; on prompt 6 the command carries --flows-not-applicable and flows.pass is not_applicable, which is verified and does not fail the pair; verified is false exactly when flows is unverified. Return those eight fields verbatim, with countDiffs as an object with exactly the keys H, M and L, typing as an object with exactly the keys shared, agreeing and pass, and flows as an object with exactly the keys jaccard and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}, flows: {jaccard: 0, pass: 'unverified'}, verified: false} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one. A flows comparison that never ran is unverified, not a failure.`
 }
 
 function criticPrompt(runs, stabilityResults, unverifiedUnits) {

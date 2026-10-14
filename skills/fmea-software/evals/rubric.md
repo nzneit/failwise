@@ -229,11 +229,11 @@ A chain that names no flow is not a defect here. (Amended 2026-10-13, before any
 
 ## Stability between the two runs at the same model capability
 
-`tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when all three hold:
+`tools/eval-stability.ts` compares run 1 and run 2 of a (prompt, model capability) pair and passes when all three hold, or, on a prompt whose inputs name no flows, when the first two hold and the third is reported `not_applicable`:
 
 - Jaccard similarity of the element id sets is at least **0.8**, where the id set is `elements[].id` after trimming and case-folding. The basis is the id and not `elements[].name` because a name is free text and two runs of one prompt word the same element differently, while the id is the element's structural identity — the schema keeps it stable across versions and the update mode diffs elements by it — so a difference in wording alone is not instability. (The schema's grammar already makes an id lowercase kebab-case; the trim and case-fold guard unvalidated run output.)
 - For each value v in the priority table's `vocabulary`, |count_v(run 1) − count_v(run 2)| ≤ **0.2** × max(chain rows in run 1, chain rows in run 2).
-- Jaccard similarity of the flow id sets is at least **0.8**, where the id set is `flows[].id` after trimming and case-folding, reported `pass` / `fail` / `unverified`: both runs carrying no flows is `unverified` and is named in the acceptance note rather than counted a pass, and one side carrying none is a `fail`.
+- Jaccard similarity of the flow id sets is at least **0.8**, where the id set is `flows[].id` after trimming and case-folding, reported `pass` / `fail` / `unverified`: both runs carrying no flows is `unverified` and is named in the acceptance note rather than counted a pass, and one side carrying none is a `fail`; on a prompt whose inputs name no flows (prompt 6), the judging workflow passes `--flows-not-applicable` and the predicate is reported `not_applicable` whatever the two runs carry, so the pair is judged on the element and count predicates (ruling 4 of 2026-10-13, amended 2026-10-14 before the prose rounds; this stays rubric 4).
 
 Run-to-run instability is one of the three documented failure modes of AI-generated FMEAs (design §3, guardrails); the check exists so a skill that produces a different analysis every time cannot pass on a lucky run.
 
