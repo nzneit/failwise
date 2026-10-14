@@ -1,7 +1,8 @@
 # Prose: design
 
 **Date:** 2026-10-14
-**Status:** approved in conversation section by section; written for review before planning
+**Status:** approved in conversation section by section; revised after two Fable reviews (§13); three decisions
+pending the user's confirmation, each written with its default (D13 to D15)
 **Precedes:** implementation (via the writing-plans skill), then one results note per round and an acceptance note
 **Branch:** `prose`, stacked on `flow-model` at `97261fc`, in the worktree `.claude/worktrees/prose`
 **Evidence:** the flow-model eval round of 2026-10-13 (`docs/specs/2026-10-12-flow-model-eval-results.md`,
@@ -19,10 +20,14 @@ Make the skill's instructions land in unattended runs, and make the text easier 
 and maintain. The first is the primary goal and carries the acceptance; the second is the secondary goal and is
 checked for regression.
 
-The 0.7.0 round failed every (prompt, capability) pair. Three must criteria account for every scored failure:
-c1, the missing scaling limit of the pricing service is not recorded as an open assumption; c5, a priority is
-named in the hand-over without the provisional caveat; c11, a rationale substitution is left out of
-`meta.history`. The c1 failure has recurred since 0.1.0 in text that predates the flow-model branch.
+In the 0.7.0 round no (prompt, capability) pair passed: three failed and three were unverified. Three must
+criteria account for every c1, c5 and c11 failure: c1, the missing scaling limit of the pricing service is not
+recorded as an open assumption; c5, a priority is named in the hand-over without the provisional caveat; c11, a
+rationale substitution is left out of `meta.history`. The c1 failure has recurred since 0.1.0 in text that
+predates the flow-model branch. A fourth must, c2, also fails two prompt-1 runs (p1/high/run1 and p1/medium/run2
+cite repositories the run was not given; ruling 7 of 2026-10-13 keeps that reading strict). c2 is a content
+finding outside this design (§4.2), so the (1, medium) pair is not expected to pass the rubric's pair rule after
+stage 1; §8.3 measures the three criteria, not the pair.
 
 The brainstorm started from the hypothesis that long sentences and buried rules caused the failures, and that
 ASD-STE100 Simplified Technical English was the lever. The workflow's transcript analysis revised that premise
@@ -41,13 +46,16 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D3 | Three eval rounds, one per stage, on DeepSeek Flash at both capabilities, 16 runs each, prompt 5 included. | §8 |
 | D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13). `rubric.md` is otherwise out of scope: it is the instrument. | §5.2, §4 |
 | D5 | The descriptive sections of the references and all frozen text (§4.3) are out of stage 2; the prose checker's ratchet holds them from getting worse. | §7.3 |
-| D6 | The two new lints are warnings, not blockers, so a valid document still renders and the c1 reading of rubric 4 is unchanged. | §6.4 |
+| D6 | The two new lints are warnings, not blockers, so a valid document still renders, the quality score is untouched and the c1 reading of rubric 4 is unchanged. | §6.4 |
 | D7 | The prose checker is a ratchet against a baseline file, not a set of hard caps, and fails closed. | §7.6 |
 | D8 | Fable judges at three gates only; drafting, critique, implementation and eval judging run on Opus and Sonnet. | §9 |
-| D9 | The twelve pre-existing inconsistencies the readers found (§11.3) are logged, not fixed on this branch. | §11 |
-| D10 | STE is applied as structure plus five vocabulary substitutions. The rest of the STE dictionary is not applied, because it collides with domain terms (§7.5). | §7 |
+| D9 | The pre-existing inconsistencies the readers found (§11.3) are logged, not fixed on this branch. | §11 |
+| D10 | STE is applied as structure plus five vocabulary substitutions in skill-authored sentences. The rest of the STE dictionary is not applied, because it collides with domain terms (§7.5). | §7 |
 | D11 | The context-window gate moves from the gitignored round scripts into the tracked harness, each run records its window and compactions, and a run that compacted is unverified. | §5.3 |
 | D12 | Stage 1 changes nothing in the prose beyond what §6 names, so its round measures placement, wording and the checks alone. | §6 |
+| D13 | Pending the user: the two shipped fixtures the c1 lint would fire on are amended to agree with their inputs, rather than the lint narrowed. Default: amend. | §6.4 |
+| D14 | Pending the user: `evals/rubric.md` is outside the prose checker, because it carries no provenance tags and changes by dated ruling. Default: outside. | §7.6 |
+| D15 | Pending the user: the stricter c5 reading the acceptance note left unruled is not applied; the 2026-10-13 lenient reading stands and every note names the open reading. Default: lenient stands. | §8.5 |
 
 ## 3. Evidence
 
@@ -94,18 +102,19 @@ its document about 143k tokens after reading `SKILL.md`, the three that failed a
 
 | Run | Criterion | Mechanism after the skeptic's review |
 |---|---|---|
-| p1/high/run1 | c1 | never engaged: no reasoning touches pricing's limit; searches for "item 4", "checklist" and "scaling limits" return 0 |
+| p1/high/run1 | c1 | never engaged: no reasoning in the run's own text or thinking touches pricing's limit; searches of that text for "item 4", "checklist" and "scaling limits" return 0 |
 | p1/high/run2 | c1 | engaged, misapplied: wrote `"limits": "no rate limit published in the inputs"` into the edge and asked nothing |
 | p1/medium/run1 | c1 | engaged, misapplied: "no limit stated, so the capacity rule doesn't apply"; read "an input the analysis needs" as "an input a rating rule consumes" |
 | p1/medium/run2 | c1 met | found the gap while filling the edge's `sla` and `limits` slots; wrote the assumption and a placeholder in the field; fails c2 instead |
-| p7/high/run1 | c5 | never engaged: zero hits for caveat, "never presented" or hand-over near the final message; the T28 checklist restated the first clause of `SKILL.md:41` and dropped the priority clause |
+| p7/high/run1 | c5 | never engaged: zero hits in the run's own text for caveat, "never presented" or hand-over near the final message; the T28 checklist restated the first clause of `SKILL.md:41` and dropped the priority clause |
 | p6/high/run2 | c11 | engaged, misapplied: noticed the empty cell, routed it to an open assumption, counted as substitutions only "fields with no column" |
 | p6/medium/run2 | c11 | engaged, misapplied: quoted `SKILL.md:71`, asked whether "where one exists" means the column or the cell, wrote "Record substitution.", then enumerated only missing columns |
 
-Three facts from the skill's own text fed the c1 failures: item 4 says scaling limits for every edge provider
-"whatever its boundary", while `references/design-inputs.md:44` and the reviewer rule at
-`references/quality-and-lint.md:84` say "for internal dependencies", and pricing is outside the boundary; the
-schema's descriptions of `sla` and `limits` end "Nothing computes on it."; and no lint checks an edge for a
+Three facts from the skill's own text fed the c1 failures. Two places argue both ways: item 4 at
+`references/design-inputs.md:14` asks scaling limits of every edge provider "whatever its boundary", and
+`references/design-inputs.md:45` restates that extension, while the reviewer rule `design-inputs-declared` at
+`references/quality-and-lint.md:84` says "for internal dependencies" alone, and pricing is outside the boundary.
+The schema's descriptions of `sla` and `limits` end "Nothing computes on it." No lint checks an edge for a
 missing value. The runs recorded the gaps a named rule, a lint or the fixture's own wording raised, fixed every
 validator finding, and treated clean validation as done.
 
@@ -118,31 +127,36 @@ validator finding, and treated clean validation as done.
 - `schemas/fmea.schema.json`: the descriptions of `sla`, `limits`, `rationale` and `history.change` (§6.2). No change to validation.
 - `scripts/lib/lints.ts` and `scripts/render.ts`: two lints and one printed line (§6.4).
 - `tools/run-eval.sh` and a new `tools/eval-context.ts`: the harness changes (§5).
-- `tools/workflows/evals.js`, `tools/eval-stability.ts`, `tools/eval-report.ts` and `evals/rubric.md`: the `not_applicable` flows state only (§5.2).
+- `tools/workflows/evals.js` and `rejudge.js` in code, not in their judge prompts: the `context.json` gate (§5.3) and the `not_applicable` flag (§5.2); `tools/eval-stability.ts` and `tools/eval-report.ts` for the same; `evals/rubric.md:232` and `:236` for the `not_applicable` state only.
+- `docs/specs/2026-09-07-fmea-software-design.md`: three dated inline amendments in the repository's convention: the `MACHINE_RULES` count (18 to 20, the stated sentence to twenty-one), the Convert bullet's "where one exists" clause, and `render.ts`'s stdout line after a successful render.
+- The two fixtures of §6.4 and their regenerated `computed` blocks.
 - A new `docs/style.md` and a new `tools/check-prose.ts` with its baseline under `dev/` (§7.4 to §7.6).
 - Tests for all of the above.
 
 ### 4.2 Out of scope
 
 - `evals/rubric.md` beyond §5.2, and `evals/prompts.json`, whose texts tests pin verbatim.
-- The descriptive sections of the references (D5).
 - The judge prompts in `tools/workflows/evals.js` and `rejudge.js`.
-- The twelve inconsistencies of §11.3, the other skill findings of the 0.7.0 acceptance note (the update summaries' missing inventory controls, the converter's boundary typing of the payment gateway, `cat-dependency-01`'s cause column), and the shape of the report.
+- The descriptive sections of the references (D5).
+- c2, repository references to repositories the run was not given, a content finding of the 0.7.0 round; the other skill findings of its acceptance note (the update summaries' missing inventory controls, the converter's boundary typing of the payment gateway, `cat-dependency-01`'s cause column); the inconsistencies of §11.3; and the shape of the report.
 - An after round on Claude models (§8.5), which stays an option once stage 2 passes.
 
 ### 4.3 Frozen text
 
 Text no stage changes, because a test, a licence, a script or the private audit depends on its exact form:
 
-- every `sourced:` reproduction (the DORA definitions, the Howie tables), the NASA quotation, the licence attribution blocks and their statements of changes, and the register cells on the audit allow-list;
+- every `sourced:` reproduction (the DORA definitions, the Howie tables), the NASA quotation, the licence attribution blocks of `references/provenance.md` (MIL-STD-1629A L139, dora.dev L147, Howie L154) and their statements of changes, and the register cells on the audit allow-list;
 - every anchor row of `references/scales-software.md`: a change bumps the scales version, breaks the test pinned at version 2 and marks every rated row stale;
 - the generated region of `references/structure-elements.md` between the `vocabulary:start` and `vocabulary:end` markers, which changes only through its JSON;
-- the 61 literals the pinned-literal scan found in tests under `scripts/` and `tools/` (`build/prose/brief.md`, "Pinned literals"), among them: the Scripts block and its command lines, the `### Migrate a v1 document` and `### Migrate a v2 document` headings and the stale-reason precedence line in `SKILL.md`; the validator-id and lint-id sentences and the reviewer rows matched by line prefix in `references/quality-and-lint.md`; `scales version: 2`, the two scale headings and the range sentence in `references/scales-software.md`; the DF4 disclaimer row in `references/methodology.md`; rule 7 of `references/work-tracking.md`, which a test finds as the first column-0 line starting `7. `;
-- twin text that two files carry identically on purpose: `SKILL.md:36`, `:62-63`, `:110`, `:117-119` and `:129` against `references/structure-elements.md`, and `SKILL.md:35` against `references/design-inputs.md` and `references/quality-and-lint.md:67`. Stage 2 may shorten the `SKILL.md` copy only by the rule of §7.1, never the reference's copy.
+- the first fenced block under `## Scripts` in `SKILL.md`, which `tools/skill-commands.test.ts` reads line by line and requires each command to open with `node ${CLAUDE_SKILL_DIR}/scripts/` at column 0;
+- the other pinned literals the scan found, 61 in tests under `scripts/` and `tools/` (`build/prose/brief.md`, "Pinned literals"), among them: the `### Migrate a v1 document` and `### Migrate a v2 document` headings and the stale-reason precedence line in `SKILL.md`; the validator-id and lint-id sentences and the reviewer rows matched by line prefix in `references/quality-and-lint.md`; `scales version: 2`, the two scale headings and the range sentence in `references/scales-software.md`; the DF4 disclaimer row in `references/methodology.md`; rule 7 of `references/work-tracking.md`, which a test finds as the first column-0 line starting `7. `;
+- twin text that two files carry identically on purpose: `SKILL.md:36`, `:62-63`, `:110`, `:117-119` and `:129` against `references/structure-elements.md`, and `SKILL.md:35` against `references/design-inputs.md` and `references/quality-and-lint.md:67`. No test compares the twins; stage 2 may shorten the `SKILL.md` copy by the rule of §7.1 and never the reference's copy.
 
-Two pinned literals change by design and their tests with them: the sentence at `references/quality-and-lint.md:25`,
-"The machine lints the scripts implement are nineteen:", becomes twenty-one with the two new ids in its list
-(§6.4), and the frontmatter description of `SKILL.md` is shortened in stage 2 if §11.2 confirms the limit.
+Literals that change by design, with their tests: the sentence at `references/quality-and-lint.md:25`, "The
+machine lints the scripts implement are nineteen:", becomes twenty-one, with the two new ids appended to
+`MACHINE_RULES` and placed before `priority-table-property` in its list, so `scripts/quality-and-lint.test.ts:27`
+and `scripts/lints.test.ts:37` change with it (§6.4); the `computed` blocks of the two fixtures of §6.4; and the
+frontmatter description of `SKILL.md`, shortened in stage 2 if §11.2 confirms the limit.
 
 ## 5. Stage 0: the harness and the baseline
 
@@ -150,20 +164,33 @@ Two pinned literals change by design and their tests with them: the sentence at 
 
 `tools/run-eval.sh` runs the CLI without `--bare` (its 2026-09-11 preflight found `--bare` dropped the skill), so
 eleven of the twelve 0.7.0 transcripts quote or apply `~/.claude/CLAUDE.md`, and one run lost its scores to it.
-The fix is a `CLAUDE_CONFIG_DIR` per run: a fresh directory holding only what the run needs, with no `CLAUDE.md`,
-no memory, no user skills and no plugin other than the one under test, which `--plugin-dir` already supplies. The
-plan settles by inspection what the gateway route to `deepseek-flash` needs from the user's settings and copies
-only that. A test asserts the directory the harness builds holds no `CLAUDE.md` and no memory, and the round's
-pass line (§8.2) asserts no transcript contains any of three sentinel phrases from the user's file: "Never add AI
-attribution", "Tier the models" and "Verification fails closed".
+The fix is a `CLAUDE_CONFIG_DIR` per run: a fresh, empty directory. Nothing is copied from `~/.claude`: the user's
+settings hold no env block and no API key helper, the plugin under test arrives through `--plugin-dir`, and the
+gateway route to `deepseek-flash` is the launcher's environment (`ANTHROPIC_BASE_URL` and
+`ANTHROPIC_AUTH_TOKEN`), which the fresh directory does not touch; the 0.7.0 runs authenticated with
+`apiKeySource: none` through that route. A dated preflight, recorded in a comment above the `CLAUDE_CONFIG_DIR`
+line of `run-eval.sh` as the `BARE` preflight is, confirms before the baseline round that a `-p` run under a fresh
+directory authenticates through the gateway and lists the skill from `--plugin-dir`. A Claude-model round under
+the same harness needs `ANTHROPIC_API_KEY` in the environment or a credentials file copied under the fresh
+directory, stated in §8.5.
+
+Two checks prove the fix. The harness test asserts the directory the run is launched with holds no `CLAUDE.md`, no
+memory and no skills. The round's pass line (§8.2) reads each transcript's init line: `plugins` holds exactly the
+plugin under test, `skills` exactly `failwise:fmea-software`, and `memory_paths.auto` lies under the run's
+`CLAUDE_CONFIG_DIR`. A grep of each transcript for the literals `CLAUDE.md` and `~/.claude` is reported as a
+secondary, quoting check: it reproduces the 0.7.0 count of eleven leaked runs exactly, but it cannot prove
+absence, because the system prompt is not recorded in the transcript.
 
 ### 5.2 The `not_applicable` flows state
 
-The user ruled on 2026-10-13 that the flows stability predicate is not applicable to a prompt whose inputs name
-no flows, so a prompt-6 pair can pass stability. `evals/rubric.md:236` gains the state, `tools/eval-stability.ts`
-reports it when both runs carry no flows and the prompt's inputs name none, `tools/workflows/evals.js` and
-`tools/eval-report.ts` treat it as a pass of that predicate, and their tests follow. This is the only rubric change
-on the branch and it lands before the baseline round, so all three rounds judge under the same text (D4).
+The user ruled on 2026-10-13 (ruling 4) that on a prompt whose inputs name no flows the flows stability predicate
+is not applicable and the pair is judged on the element and count predicates, the state set from a per-prompt flag
+the workflow passes. `tools/eval-stability.ts` takes two documents and a table and knows no prompt, so it gains an
+argument for the flag; `tools/workflows/evals.js` passes it for prompt 6; with the flag the comparison reports
+`not_applicable` whatever the two runs carry, as the ruling reads. `evals/rubric.md:232` ("passes when all three
+hold") gains the clause and `:236` gains the state; the `STABILITY_SCHEMA` enum in `evals.js` and `isFlows` in
+`tools/eval-report.ts` gain the value, and their tests follow. This is the only rubric change on the branch and
+it lands before the baseline round, so all three rounds judge under the same text (D4).
 
 ### 5.3 The context window is recorded and gated
 
@@ -171,38 +198,47 @@ The gitignored round scripts set `CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000` and `C
 for `deepseek-flash`, whose window the CLI would otherwise take as 200k, and refuse the round unless the CLI
 reports the window. Nothing tracked does this, and no run records the window it ran under. The design moves it:
 
-- `tools/run-eval.sh` carries a per-model table of the two settings; a Claude model needs neither and gets neither.
-- Before each run the harness runs `claude -p "/autocompact" --model <model> --max-turns 1` and refuses to start unless the reply contains `786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)` and does not contain `capped`.
-- After each run a new `tools/eval-context.ts` writes `context.json` beside `invocations.json`: the two settings, the probe's line verbatim, `compactions`, the count of `transcript.jsonl` system lines with `"subtype":"compact_boundary"`, and `peak_context_tokens`, the maximum over assistant lines of `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` in `message.usage`. On the uncapped 0.7.0 round that computation gives 238,429 for p1/medium/run2, the figure recorded on 2026-10-13.
-- The judge in `evals.js` reads `context.json`. A run with no `context.json`, or with `compactions` above 0, is unverified and never scored, the rule 2fea11a set for a run with no report. `tools/eval-report.ts` prints the window and the peak per run.
+- `tools/run-eval.sh` carries a per-model table: model, the two settings, and the text the probe must report. `deepseek-flash` has the row above with `786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)`. A model with no row gets neither setting.
+- Before each run the harness runs `claude -p "/autocompact" --model <model> --max-turns 1` under the run's `CLAUDE_CONFIG_DIR` and environment, takes the first line of the reply containing `auto-compact window for`, and refuses to start when that line is absent, contains `capped`, or, for a model with a row, does not contain the row's text.
+- After each run a new `tools/eval-context.ts` writes `context.json` beside `invocations.json`: the two settings or their absence, the probe's line verbatim, `compactions`, the count of `transcript.jsonl` system lines with `"subtype":"compact_boundary"`, and `peak_context_tokens`, the maximum over assistant lines whose `parent_tool_use_id` is unset of `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` in `message.usage`, so a subagent's context never counts as the parent's. On the uncapped 0.7.0 round that computation gives 238,429 and 0 compactions for p1/medium/run2, the figures recorded on 2026-10-13, and 2 compactions on the capped p1/medium/run2.
+- The same file records, for each of the two new lint ids, the number of `validate.ts` calls in `invocations.json` whose result head carries the id, and whether the run's final `validate.json` carries it. `validate.json` is written by the harness after the run from the final document, so it shows the end state only; `invocations.json` shows whether a warning fired during the run.
+- `evals.js` reads `context.json` in code before it dispatches a judge, copies the window, the compactions and the peak into the run's entry in `results.json`, and records a run with no `context.json` or with `compactions` above 0 as unverified with no scores, the rule 2fea11a set for a run with no report. `rejudge.js` applies the same gate. `tools/eval-report.ts` prints the window and the peak per run.
 
 ### 5.4 The baseline round
 
-The round of §8.1 on the current text, under the harness above. It passes when every run has `invocations.json`
-and `context.json` with zero compactions, no transcript contains a sentinel phrase, no script call is denied for
-the `bun` reason, and the prompt-6 stability check reports `not_applicable`. The baseline is recorded, not graded.
-It should reproduce the c1 failure on prompts 1 and 5; if it does not, the premise is weaker than §3 says and the
-user decides before stage 1 starts.
+The round of §8.1 on the current text, under the harness above. It passes when it meets §8.2. The baseline is
+recorded, not graded. It should reproduce the c1 failure on prompts 1 and 5; if it does not, the premise is weaker
+than §3 says and the user decides before stage 1 starts.
 
 ## 6. Stage 1: behaviour
 
 Each criterion gets the same three-part treatment: the rule stated where the output is written, a "before you
 write" list the model runs before the Write, and a machine check the validator reports. Nothing else in the prose
-changes (D12). Every new or changed sentence carries its provenance tag.
+changes (D12). Every new or changed sentence carries its provenance tag, and every bullet of a new list ends with
+`[skill-authored]`, since the private checker's coverage unit is the sentence, the bullet or the table row.
 
 ### 6.1 Wording and placement in `SKILL.md`
 
-**c1, missing limits.**
-- Step 2's edge sentence (`SKILL.md:36`, "Write every dependency the inputs classify as an edge…") gains, as its own sentences: a provider whose SLA or scaling limits the inputs do not state gets an open assumption owned by `user` naming the provider and the missing value; nothing is written into `sla` or `limits` for a value the inputs do not state, a placeholder included. `[skill-authored]`
-- Step 1 ends with a list headed "Before you write the document:": every input the checklist of design-inputs asks for that the inputs do not supply is an open assumption owned by `user`, status open, and a question in your final message.
-- Step 2 ends with a list headed the same way: every edge carries `sla` and `limits` from the inputs, or an open assumption names its provider and the missing value; no field holds a placeholder.
-- `references/design-inputs.md:14`, item 4, keeps its cell and gains a second sentence: the source states this for internal dependencies `[paraphrased:C014]`; this skill asks it of every edge provider, inside or outside the boundary `[skill-authored]`. The same skill-authored sentence follows `references/design-inputs.md:44` and is added to the `design-inputs-declared` cell at `references/quality-and-lint.md:84`, so the three places no longer argue both ways.
+**c1, missing limits.** The inputs can do three things with a provider's SLA or limits: state a value, state that
+there is none, or state nothing. The 0.7.0 runs conflated the last two, and the order store shows why they must
+be told apart: `checkout-inputs.md:42` states "no published request ceiling", which rubric 4 reads as a datum
+supplied, while pricing's limit is stated nowhere, the planted gap.
 
-**c5, the priority caveat.**
-- The clause at `SKILL.md:41` is replaced by explicit sentences: when you name a priority in a message, say in the same sentence that it rests on provisional ratings, while any rating under it is provisional. Then name, as the next step, a named person re-scoring each rating against the anchors, one rating at a time.
-- Step 7 gains a list headed "Before you send the final message:", and that sentence is its first item, followed by: list every open assumption as a question.
+- Step 2's edge sentence (`SKILL.md:36`, "Write every dependency the inputs classify as an edge…") gains, as its own sentences: when the inputs do not state a provider's SLA or limits, leave the field out and record an open assumption owned by `user` naming the provider and the field; when the inputs state that there is none, copy their words into the field; never write a placeholder of your own. `[skill-authored]`
+- Step 1 ends with a list headed "Before you write the document:": every input the checklist of design-inputs asks for that the inputs do not supply is an open assumption owned by `user`, status open, and a question in your final message.
+- Step 2 ends with a list headed the same way: every edge carries `sla` and `limits` from the inputs, or an open assumption names its provider and the missing field; no field holds a placeholder.
+- `references/design-inputs.md:14`, item 4, gains a second sentence in its cell: the source states this for internal dependencies, and this skill asks it of every edge provider, inside or outside the boundary. The row's Provenance cell already reads `[paraphrased:C014] [skill-authored]` and does not change. `references/design-inputs.md:45` already carries the extension and is not touched. The `design-inputs-declared` cell at `references/quality-and-lint.md:84` gains the same sentence, and its Provenance cell becomes `[paraphrased:C014] [skill-authored]`, the mixed-row form item 4 already uses.
+
+**c5, the priority caveat.** The clause at `SKILL.md:41` is replaced by explicit sentences in the rubric's own
+substitute wording for an unattended run, which never invents a re-scorer, since c5 band 0 scores a run that names
+a person the inputs never mention:
+
+- When you name a priority in a message, say in the same sentence that it rests on provisional ratings, while any rating under it is provisional. Say that every rating is provisional and that a named person is to re-score each one against the anchors, one at a time, as the next step. Never name a person the inputs do not name. `[skill-authored]`
+- Step 7 gains a list headed "Before you send the final message:", and that rule is its first item, followed by: list every open assumption as a question.
+- The update mode has its own hand-over sentences (`SKILL.md:89`, `:101`, `:112`) and none restates the caveat, and the only c5 failure was an update run. The sentence at `SKILL.md:112` gains "and ends with step 7's 'Before you send the final message' list". The seed section (`SKILL.md:48-57`) gains the same pointer, so prompt 5 is reached by placement and not by the render line alone.
 
 **c11, substitutions.**
+
 - `SKILL.md:71`'s "where one exists" becomes: where the column exists and the cell is filled; an empty cell takes the default and counts as a substitution on that row.
 - The Convert section ends with a list headed "Before you write a converted document:": `meta.history` names every column used, every field substituted and on how many rows, an empty cell counted like a missing column; the final message repeats the count.
 
@@ -210,7 +246,7 @@ changes (D12). Every new or changed sentence carries its provenance tag.
 
 The model reads field descriptions at the point of writing, so they carry the rule too. No validation changes.
 
-- `$defs/dependencyEdge/properties/sla/description` and `…/limits/description`: "Nothing computes on it." is replaced by: when the inputs state none, leave the field out and record an open assumption owned by `user` naming the provider; never write a placeholder.
+- `$defs/dependencyEdge/properties/sla/description` and `…/limits/description`: "Nothing computes on it." is replaced by: when the inputs do not state it, leave the field out and record an open assumption owned by `user` naming the provider and the field; when they state that there is none, copy their words; never write a placeholder of your own.
 - `$defs/rating/properties/rationale/description` gains: an empty cell in a sheet that has a rationale column takes this default too, and that row counts as a substitution recorded in `meta.history`.
 - `$defs/historyEntry/properties/change/description`: "the fields it substituted with row counts" becomes "the fields it substituted with row counts, empty cells included".
 
@@ -218,74 +254,110 @@ A test asserts each new sentence is present, so a later schema edit cannot drop 
 
 ### 6.3 Stage 1 leaves alone
 
-The paragraph shapes, every other sentence, the rubric, and the references outside the three cells named above.
+The paragraph shapes, every other sentence, the rubric, and the references outside the two cells named above.
 The stage-1 round therefore attributes any change in scores to §6.1, §6.2 and §6.4 together.
 
 ### 6.4 The machine checks
 
 Two lints in `scripts/lib/lints.ts`, warnings, reported by `validate.ts` and in the report's lints section like the
-nineteen existing ones, and one printed line in `render.ts`.
+nineteen existing ones, and one printed line in `render.ts`. Both lints are text heuristics at warning severity;
+their predicates were checked against the 0.7.0 documents and the shipped fixtures, and the reach stated below is
+what that check found.
 
 **`edge-reliability-unstated`** (warning). For each edge in `dependencies[]`, a field among `sla` and `limits` is
-unstated when it is absent, empty, or matches the placeholder pattern: case-insensitive, `not stated`,
-`none stated`, `no … stated|published|given|known|provided|recorded`, `unknown`, `n/a` or `tbd` as whole words.
-The lint fires when at least one field is unstated and no entry of `meta.assumptions[]` with `status: open` and
-`owner: user` names the provider, by its element id or its name, case-insensitive. Message:
-`edge <from> -> <to>: <field> is not stated and no open assumption names <to>; record the missing value as an open assumption owned by user, or copy it from the inputs`.
-An unstated field beside such an assumption does not fire, matching the c1 ruling of 2026-10-13 that a field
-beside an open assumption is not scored 0.
+unstated when it is absent, empty, or matches the run-placeholder pattern: case-insensitive, whole words,
+`not stated`, `none stated`, `not given`, `not provided`, `not documented`, `not recorded`, `not published`,
+`unknown`, `n/a`, `tbd`, or any text containing `in the inputs`. A stated absence in the inputs' own words, such as
+`no published request ceiling`, does not match. The lint fires when at least one field is unstated and no entry of
+`meta.assumptions[]` with `status: open` and `owner: user` both names the provider, by its element id or its name,
+case-insensitive, and names the field, by containing one of `limit`, `limits`, `ceiling`, `scaling`, `rate`,
+`sla`, `availability` or `latency`. Message:
+`edge <from> -> <to>: <field> is not stated and no open assumption names <to> and the field; record the missing value as an open assumption owned by user, or copy the inputs' words`.
+An unstated field beside such an assumption does not fire, matching the 2026-10-13 ruling that a field beside an
+open assumption is not scored 0. Reach on the 0.7.0 documents: fires on p1/high/run1, p1/high/run2 and
+p1/medium/run1, the three c1 failures; silent on p1/medium/run2, whose assumption names pricing and its scaling
+limits. A predicate that required the assumption to name only the provider reached none of the three, because
+every run carried an unrelated assumption about pricing's repository.
+
+Two shipped fixtures fire today and are amended to agree with their inputs (D13): the golden
+`evals/fixtures/checkout-service.fmea.json` gains `limits: "no published request ceiling"` on the
+`checkout -> checkout.order-store` edge, the inputs' words at `checkout-inputs.md:42`; and the prompt-7 stored
+document `evals/fixtures/update/before.fmea.json` gains an open `user` assumption on pricing's scaling limit,
+which its own inputs omit. Both get a regenerated `computed` block through `validate.ts --write`, since a stale
+block makes `render.ts` refuse. A test asserts that no shipped fixture carries either new warning. The
+alternative the user may prefer is to narrow the lint instead.
 
 **`conversion-substitution-unrecorded`** (warning). Let `r` be the number of chains with at least one rating whose
-`rationale` matches `^converted from .+; no rationale recorded$`. The lint fires when `r > 0` and no
-`meta.history[]` entry's `change` text contains both the word `rationale` and the integer `r` as digits. Message:
-`<r> row(s) carry the default rationale and meta.history records no rationale substitution with that count`.
+`rationale` matches `^converted from .+; no rationale recorded$`. Split the `change` text of every `meta.history[]`
+entry into clauses on `.` and `;`. The lint fires when `r > 0` and no clause contains the word `rationale`
+together with one of: `r` as a standalone integer, not adjacent to a letter, `-` or `_` (so a chain id such as
+`ch-1` does not count and a date does not count); the number word for `r` from one to ten; or the id or name of
+every chain whose rationale carries the default. Message:
+`<r> row(s) carry the default rationale and no history clause records a rationale substitution with that count or those rows`.
+A document the rubric passes by naming the rows is silent, as c11 allows a record "by count or by naming them".
+Reach: fires on p6/high/run2 and p6/medium/run2, whose only `rationale` clause is the column mapping; silent on
+p6/high/run1 ("on 1 rating column"), p6/medium/run1 ("on the one row whose Justification cell is empty") and
+`evals/fixtures/legacy-rpn-sheet.expected.fmea.json` ("on 1 of 4 rows"). Those five documents' history entries
+become the fire and no-fire fixtures of `scripts/lints.test.ts`. A substring match on digits would have been
+silenced by every history date, and a whole-token match by chain ids ending in `-1`.
 
 **The render line.** After a successful render, when `n > 0` ratings are provisional, `render.ts` prints one line
-to stdout: `provisional: <n> of <m> ratings are provisional. Every priority you state rests on provisional ratings: say so in the same sentence, and name a person re-scoring each rating against the anchors, one at a time, as the next step.`
-`render.ts` is the last script output the model reads before it composes the message.
+to stdout: `provisional: <n> of <m> ratings are provisional. Every priority you state rests on provisional ratings: say so in the same sentence, and say that a named person is to re-score each rating against the anchors, one at a time, as the next step.`
+The line is printed with the render result; the 0.7.0 runs read such output within a few turns of the final
+message, two of the three scored prompt-7 runs having run `validate.ts` once more after `render.ts`.
 
-`references/quality-and-lint.md:25` and its id list become twenty-one with the two ids, and the test that pins
-them follows. The two lints get rows in that file's machine-lint table with their severity and `[skill-authored]`.
+The two ids are appended to `MACHINE_RULES` and the sentence at `references/quality-and-lint.md:25` becomes
+twenty-one with them placed before `priority-table-property`; the two lints get rows in that file's machine-lint
+table with their severity and `[skill-authored]`.
 
 ## 7. Stage 2: readability
 
 ### 7.1 The structure pass on `SKILL.md`
 
 - Each step of the spine becomes one lead sentence stating what the step produces, then a vertical list of rules in the order the model acts, one rule per bullet, each starting with the command verb, the rule before its reason, a warning before the step it guards, and the stage-1 "before you write" list closing it.
-- The other modes, seed, convert, update and the two migrations, take the same shape. The Scripts section and the Reference files section become tables, with the pinned command lines kept byte for byte as single lines.
-- A reason that is not a rule, such as the IEC 60812 clause-order citation and the LLM-rating study in step 5, moves to the reference file that owns its topic with its tags, and `SKILL.md` keeps a one-line pointer. `SKILL.md` is the one file every run loads whole, 46k characters at the skill load in the 0.7.0 round, and this is what shortens it.
+- A sentence stage 1 placed keeps its position relative to the output it guards: the edge rule stays in the edge bullet, the hand-over rule first in the hand-over list, each list last in its step. The rule-preservation critic of §9 checks this.
+- The other modes, seed, convert, update and the two migrations, take the same shape. In the Scripts section the first fenced block stays byte for byte (§4.3); only the prose after it may become a table. The Reference files section becomes a table.
+- A reason that is not a rule, such as the IEC 60812 clause-order citation and the LLM-rating study in step 5, moves to the reference file that owns its topic with its tags, and `SKILL.md` keeps a one-line pointer. A moved sentence meets the cap in its new home, by a clause-boundary split where it is sourced. `SKILL.md` is the one file every run loads whole, 46k characters at the skill load in the 0.7.0 round, and this is what shortens it.
 - Where `SKILL.md` repeats a reference near-verbatim (§4.3), the reference keeps the full text and `SKILL.md` keeps the short imperative with a pointer. The twin in the reference is not touched.
 - Numbering other files cite stays: steps 1 to 7, the migrations' headings, and every heading a test or a script message names.
 
 ### 7.2 The sentence pass on the procedural sections of the references
 
-The sections the inventory marked lead-plus-list: in `design-inputs.md`, "Flows, components and dependencies",
-"Incident history", "The control inventory", "Ground rules and assumptions", "Contracts and data flows" and "The
-non-catalog source rule"; the role, boundary and security tests of `structure-elements.md`; the reviewer-rule
-prose of `quality-and-lint.md`; the rules of `work-tracking.md`; the procedure of `method-selection.md`; "Reading
-a row" in `design-failure-catalog.md`; "Why severity-first" and "What this file never carries" in
-`methodology.md`; and the procedural sections of `scales-software.md` and `provenance.md` the brief's section
-tables mark, anchor rows excepted. The full list with line numbers is the brief's "Sections per file".
+The sections, by heading and start line as the brief's "Sections per file" lists them:
+
+- `design-inputs.md`: Flows, components and dependencies L28; Incident history L50; The control inventory L58; Ground rules and assumptions L68; Contracts and data flows L82; The non-catalog source rule L108.
+- `structure-elements.md`: The three questions L6; Dependencies L72; Role L81; Conversion from a sheet L98; Migrating a v1 document L109; Migrating a v2 document L134; Runs over several codebases L154. The generated region and the Boundary and Security relevance prose sections stay.
+- `quality-and-lint.md`: The skill applies these to itself L264.
+- `work-tracking.md`: The three commands L7; The rules L18, keeping rule 7 as the first column-0 line starting `7. `.
+- `method-selection.md`: Which incidents seed a chain L20; What a postmortem hands over L42; Learning and action are fenced apart L51; Identifiers a seeded chain carries L60; What incident data may rate, and what may not L67; The threat-model handoff L92; The interface L98; What the handoff does not do L107.
+- `design-failure-catalog.md`: Reading a row L7; ML or LLM elements L86; What this catalog does not carry L162.
+- `methodology.md`: Why severity-first L136; What this file never carries L149.
+- `scales-software.md`: Rules common to the three scales L29; the prose, not the anchor rows, of Severity L39, Occurrence L66 and Detection L91; The review gate L131; Versioning L135.
+- `provenance.md`: the preamble L1; Tag syntax L21; Tag-permission rule L28; Refuted records L49; Sources with no license status in evidence L170; Never ships L198. The three licence sections are frozen (§4.3).
+- `process-stub.md`: The answer to a PFMEA request L7; Incident data that is not rating evidence L92; Actions carried over from a postmortem L101. The DORA section is left alone for its reproductions.
 
 For each: a sentence over 25 words is split at a clause boundary; the voice is active; one rule per sentence; a
-paragraph of more than six sentences becomes a list. Only the five safe substitutions of §7.5 apply. Every stated
-uncertainty, every caveat that is content ("stays provisional until", "no standard in the corpus binds", a licence
-condition) and every "may" that grants permission stays.
+paragraph of more than six sentences becomes a list. Only the five substitutions of §7.5 apply, and only in
+skill-authored sentences. Every stated uncertainty, every caveat that is content ("stays provisional until", "no
+standard in the corpus binds", a licence condition) and every "may" that grants permission stays.
 
 ### 7.3 Left alone
 
 The descriptive sections of every reference, the frozen text of §4.3, and `rubric.md` (D5). The prose checker's
-ratchet (§7.6) keeps their counts from rising.
+ratchet (§7.6) keeps the references' counts from rising; `rubric.md` is outside the checker (D14).
 
 ### 7.4 Tags
 
-- One tag per sentence, bullet or table cell, as the private checker's rule reads. A bullet carries one tag at its end and may hold several sentences. A bullet that would mix sources is split into two bullets, so no bullet carries a mixed tag.
+- One tag per sentence, per bullet, and per table row in its Provenance column, as the private checker's rule reads; the register is the one exempt table. A bullet carries one tag at its end and may hold several sentences. A bullet that would mix sources is split into two bullets, so no bullet carries a mixed tag.
 - A split sentence keeps its tag on each part. A `paraphrased:`, `adapted-from:` or `cites:` sentence is split at a clause boundary only and never reworded on this branch, so the private distill check meets no new claim.
-- A changed reference file still goes through the private repository's distill check stage before commit, with the verdict in the commit body, and the restricted-wording audit runs from the private checkout before the user pushes.
+- `SKILL.md` and every changed reference file go through the private repository's distill check stage, its Recheck covering both, after stage 1 and after stage 2, before the commit that lands each, with the verdict in the commit body. The restricted-wording audit runs from the private checkout before the user pushes.
 
 ### 7.5 Vocabulary
 
-The dictionary scan found the STE substitutions safe in five cases and damaging elsewhere.
+The dictionary scan found the STE substitutions safe in five cases and damaging elsewhere. They apply to
+skill-authored sentences only; a sourced sentence keeps its word, which leaves alone `SKILL.md:15`,
+`references/quality-and-lint.md:114` and `:179`, `cat-component-05` at `references/design-failure-catalog.md:84`
+and `references/scales-software.md:133`.
 
 | Apply | Do not apply |
 |---|---|
@@ -293,7 +365,7 @@ The dictionary scan found the STE substitutions safe in five cases and damaging 
 | do or make for perform, outside the MIL-STD-1629A title and Occurrence anchor row 8 | end or stop for terminate: collides with `effects.end` and "a stopped `apply`" |
 | through for via | change for modify: collides with the `*-changed` reasons, `--change-table`, `IO_CHANGED` and `history[].change` |
 | more for additional | start for initiate: breaks "initiating event" |
-| obey for follow, only where the sense is obey (`SKILL.md:15`, `:156`, `quality-and-lint.md:179`, `:180`, `scales-software.md:133`, `methodology.md:5`, `cat-component-05`) | try for attempt: the skill's "attempt" is a noun; test as a verb: the four verb uses are rewritten, the noun stays; near for close: only `design-failure-catalog.md:66` |
+| obey for follow, only where the sense is obey and the sentence is skill-authored (`SKILL.md:156`, `references/methodology.md:5`, `references/quality-and-lint.md:180`) | try for attempt: the skill's "attempt" is a noun; test as a verb: the four verb uses are rewritten, the noun stays; near for close: only `design-failure-catalog.md:66` |
 
 Words the skill uses in more than one sense (record, state, flag, control, review, check, end, change, open, status,
 and sixteen more in the brief's "Vocabulary") are not unified on this branch. The style rule asks that no new sense
@@ -307,13 +379,14 @@ procedural paragraph; rule before reason, warning before the step; the same word
 schema's word preferred; the table of §7.5; the tag rules of §7.4; the frozen-text list of §4.3; and what a change
 to a sourced sentence requires.
 
-**`tools/check-prose.ts`**, run by `tools/check.ts` after the three existing checks, over `SKILL.md`,
-`references/*.md` and `evals/rubric.md`:
+**`tools/check-prose.ts`**, run by `tools/check.ts` after the three existing checks, over `SKILL.md` and
+`references/*.md`. `evals/rubric.md` is outside it (D14): it carries no provenance tags, and it changes by dated
+ruling, which a ratchet would block.
 
-- One measurement basis for every file: tags stripped, a code span one word, parentheticals kept, table cells measured, headings and code fences skipped, the register table and the generated region exempt.
-- Three counts per file: sentences, bullets and cells with no tag outside the exempt regions; sentences over 25 words; and occurrences of the filler list, `basically`, `essentially`, `simply`, `actually`, `in order to`, never a modal.
-- A baseline file `dev/prose-baseline.json` holds each file's three counts. The check fails when any count rises above its baseline. A test asserts no baseline entry is above the measured count, so lowering the baseline is the only edit that passes, and the baseline cannot drift up.
-- It fails closed: a file it cannot read or parse, a file in the baseline that is missing, a file in scope that the baseline lacks, or a run that measures nothing, is a failure. Every run prints the counts per file.
+- One measurement basis for every file: tags stripped, a code span one word, parentheticals kept, table cells measured for length, headings, frontmatter and code fences skipped, the register table and the generated region exempt.
+- Three counts per file: untagged items, where an item is a sentence outside a table, a bullet, or a table row whose Provenance cell is empty, outside the exempt regions; sentences over 25 words; and occurrences of the filler list, `basically`, `essentially`, `simply`, `actually`, `in order to`, never a modal. The counts are printed per heading as well as per file, so §8.4 can be read per section.
+- A baseline file `dev/prose-baseline.json` holds each file's three counts. It is first written on the stage-1 text, before the first stage-2 edit, and lowered at the end of stage 2. The check fails when any count rises above its baseline. A test asserts no baseline entry is above the measured count, so lowering the baseline is the only edit that passes, and the baseline cannot drift up.
+- It fails closed: the baseline file missing or not JSON, a file it cannot read or parse, a file in the baseline that is missing, a file in scope that the baseline lacks, or a run that measures nothing, is a failure. Every run prints the counts.
 - It is the same command in bash and fish, like the other runners.
 
 ## 8. Measurement and acceptance
@@ -325,32 +398,47 @@ capabilities as in the 0.7.0 round, judged by `tools/workflows/evals.js` under r
 to all four, with `rejudge.js` for a disputed criterion as before. Prompt 5 is scored on c1 to c10 and shares the
 planted gap with prompt 1; its last result predates the flows table of 23eb1c4. Each round's directory is
 `build/evals/prose-<stage>/`, its note `docs/specs/2026-10-14-prose-eval-results-<stage>.md`, generated by
-`tools/eval-report.ts`.
+`tools/eval-report.ts`. Every note reports, per run, the window and peak from `context.json`, the denied script
+calls of any reason from `invocations.json`, and the new lints' fired and final counts.
+
+A run is verified when it was scored (it left `analysis.json` and `report.html`) and its `context.json` records
+zero compactions. A pair passes a criterion when both of its runs are verified and each scores 2 on it in
+`results.json` `runs[].scores[]`. An unverified run makes every criterion of its pair unverified, and a stage does
+not pass until that cell is re-run. The rubric's own pair rule, both runs passing their musts and the 80% total
+and stability passing, as `pairOutcome` in `tools/eval-report.ts` computes it, is reported in every note but is
+not a stage gate, because c2 and the non-must criteria are outside this branch.
 
 ### 8.2 Stage 0 passes when
 
-Every run has `invocations.json` and `context.json` with `compactions: 0`; no transcript contains a sentinel
-phrase from the user's global file; no script call is denied for the `bun` reason; the prompt-6 stability check
-reports `not_applicable`. Recorded, not graded.
+Every run has `invocations.json` and `context.json` with `compactions: 0`; every transcript's init line shows
+`plugins` as exactly the plugin under test, `skills` as exactly `failwise:fmea-software` and `memory_paths.auto`
+under the run's `CLAUDE_CONFIG_DIR`; no script call is denied for the `bun` reason, read from `invocations.json`
+outcomes; and the prompt-6 stability check reports `not_applicable`. The secondary grep of §5.1 and the denials of
+any other reason are reported. Recorded, not graded.
 
 ### 8.3 Stage 1 passes when
 
-- Every pair that c1, c5 or c11 applies to passes that criterion in both runs: c1 on all four prompts, c5 on prompts 1, 5 and 7, c11 on prompt 6.
-- No pair that passed a criterion at baseline fails it after.
-- Each run's `validate.json` shows whether the new warnings fired and whether the run resolved them, read in the note.
+- Every pair that c1, c5 or c11 applies to passes that criterion by the definition of §8.1: c1 on all four prompts, c5 on prompts 1, 5 and 7, c11 on prompt 6.
+- No pair that passed a criterion at baseline, by the same definition, fails it after.
+- The note's per-run table shows, from `context.json`, whether each new warning fired during the run and whether the final document still carries it.
 - On a failure: the failing transcripts go through the analyst-and-skeptic read of the brief's premise phase, the change is revised once, the round runs once more. A second failure goes to the user.
 
 ### 8.4 Stage 2 passes when
 
-- No pair scores worse than at stage 1 on any criterion, and stability holds where it held.
-- `dev/prose-baseline.json` is lowered to the new counts, with zero over-cap sentences and zero untagged items in `SKILL.md` and the sections of §7.2 outside frozen text.
+- No pair scores worse than at stage 1 on any criterion, by the definition of §8.1, and stability holds where it held.
+- `dev/prose-baseline.json` is lowered to the new counts, and the per-heading counts show zero over-cap sentences and zero untagged items in `SKILL.md` and under the §7.2 headings, frozen text excepted.
 - The note reports `SKILL.md`'s size at the skill load before and after.
 
 ### 8.5 What the rounds cannot separate
 
 Stated in every note: stage 1 measures placement, wording and the checks together (D12); judge variance is bounded
-by the pair rule and by rejudging; the model is the one the 0.7.0 round used, so a gain on Flash is not yet a gain
-on Claude, and an after round on Opus at high and Sonnet at medium remains an option once stage 2 passes.
+by the pair rule and by rejudging; the stricter c5 reading the acceptance note left to the user, whether a run
+that edits the rationale text of carried-forward rescored ratings "authored" them, is not applied, the 2026-10-13
+lenient reading stands, and the open reading is named (D15); the model is the one the 0.7.0 round used, so a gain
+on Flash is not yet a gain on Claude. An after round on Opus at high and Sonnet at medium remains an option once
+stage 2 passes; under this harness it needs `ANTHROPIC_API_KEY` in the environment or a credentials file under the
+fresh `CLAUDE_CONFIG_DIR`, and the per-model table has no row for either, so the probe gate asserts only that the
+window line exists and is not capped.
 
 ## 9. Tiers and workflow
 
@@ -365,8 +453,8 @@ artefacts and the criteria, not the controller's conclusions.
 | Stage 1 draft gate | one judge rules whether the wording closes the readings of §3.3 without opening new ones, before the round | Fable (1) |
 | Stage 1 implementation | one implementer per lint and for the render line, test-first, with a reviewer each | Opus |
 | Stage 1 result gate | one judge reads the diff, the results note and §8.3 and rules pass, revise or escalate | Fable (2) |
-| Stage 2 drafting | one drafter per `SKILL.md` section and per §7.2 section; one rule-preservation critic per draft listing every rule before and after, flagging any rule lost, added or changed, checking tags | Opus |
-| Stage 2 checks | the prose checker and the pinned-literal tests after every file; the private distill check per changed reference | scripts |
+| Stage 2 drafting | one drafter per `SKILL.md` section and per §7.2 section; one rule-preservation critic per draft listing every rule before and after, flagging any rule lost, added, moved from its stage-1 position or changed, checking tags | Opus |
+| Stage 2 checks | the prose checker and the pinned-literal tests after every file; the private distill Recheck over `SKILL.md` and each changed reference | scripts |
 | Stage 2 result gate, final acceptance | one judge reads the diff, the results note, §8.4 and the rewritten `SKILL.md` as one document, asking whether a model acting from it would do the right thing in the right order | Fable (3) |
 | Eval judging | the existing workflow: Opus judges, Sonnet stability and persist, Opus critic | Opus, Sonnet |
 
@@ -375,24 +463,26 @@ runs on Fable throughout.
 
 ## 10. Testing
 
-- The two lints: fixtures that fire and do not fire in `scripts/lints.test.ts`, the placeholder pattern, the id-or-name match, the `r` count against chains not ratings, and the output in `validate.test.ts`.
-- The render line in `scripts/render.test.ts`: printed when `n > 0`, absent when `n = 0`, exact text.
+- The two lints in `scripts/lints.test.ts`: the five history entries of §6.4 as the c11 fire and no-fire set; for c1, the three 0.7.0 edge-and-assumption shapes that fire, the p1/medium/run2 shape that is silent, the order-store stated absence that is silent, and the provider-only assumption that must not silence; the `MACHINE_RULES` order test at `:37` updated; the output in `scripts/validate.test.ts`.
+- The render line in `scripts/render.test.ts`: printed when `n > 0`, absent when `n = 0`, exact text; the two existing empty-stdout assertions are on refused renders and stand.
 - The schema sentences of §6.2 in `scripts/schema.test.ts`.
-- `tools/eval-context.ts`: a fixture transcript with and without a `compact_boundary` line, the peak computation, a missing transcript fails closed; the unverified rule in `tools/eval-report.test.ts`; the probe gate and the config directory in `tools/run-eval.test.ts`.
-- The `not_applicable` state in `tools/eval-stability.test.ts`, `tools/eval-report.test.ts` and the `CRITERIA` sync test.
-- `tools/check-prose.ts`: the three counts on a fixture, the exempt regions, the ratchet, every fail-closed case, the baseline-not-above-measured test.
-- The pinned-literal tests stay green through stage 2 except the two changed by design (§4.3).
-- `node tools/run-tests.ts` and `node tools/check.ts` before every commit. The browser gate and the comparison when the new warnings change the checkout fixture's report, which the plan checks by rendering it.
+- The two amended fixtures: `checkout-service.fmea.json` and `update/before.fmea.json` re-validated with `--write`; a test asserts no shipped fixture carries either new warning; `scripts/render.test.ts`, `tools/skill-commands.test.ts` and `tools/check-browser.ts` all read the golden and are run after the change.
+- `tools/eval-context.ts`: a fixture transcript with and without a `compact_boundary` line, the peak computation with and without subagent lines, the lint fired-and-final counts from a fixture `invocations.json`, a missing transcript fails closed; the unverified rule in `tools/eval-report.test.ts`; the probe gate, the per-model table and the empty config directory in `tools/run-eval.test.ts`, which already stubs `claude` on PATH.
+- The `not_applicable` flag in `tools/eval-stability.test.ts`, `tools/eval-report.test.ts` and the `CRITERIA` sync test.
+- `tools/check-prose.ts`: the three counts on a fixture, the row rule for tables, the exempt regions, the per-heading output, the ratchet, every fail-closed case, the baseline-not-above-measured test.
+- The pinned-literal tests stay green through stage 2 except those §4.3 names as changing by design.
+- `node tools/run-tests.ts` and `node tools/check.ts` before every commit. The browser gate and the comparison after stage 1, since the golden's report changes with the order-store edge, and again after any later change to the renderer or the template.
 - Verification fails closed throughout: an unverified run or an unrun check is reported as such in every note.
 
 ## 11. Risks, follow-ups and open items
 
 ### 11.1 Risks carried
 
-- A warning the runs ignore. If stage 1's round shows the new warnings fired and unresolved, the revision makes them blockers.
-- Judge variance masking or faking a gain, bounded by the pair rule and rejudging.
+- A warning the runs ignore. If stage 1's round shows the new warnings fired and unresolved, the revision makes them blockers, with the pointer moved onto a chain or `qualityScore` taught non-row blockers, since a blocker whose pointer is outside `chains[]` zeroes the score (`scripts/lib/quality.ts:18`).
+- Judge variance masking or faking a gain, bounded by the pair rule and rejudging, and the open c5 reading of D15.
 - Twin text and line-number citations in older documents going stale under the stage-2 restructure. The plans and the flow-model acceptance note are historical records and are not rewritten; the spec notes it.
-- The private checks are the only verification of reworded sourced text; the branch avoids rewording it (§7.4), and every changed reference file still passes the distill check before commit.
+- The private checks are the only verification of reworded sourced text; the branch avoids rewording it (§7.4), and `SKILL.md` and every changed reference file still pass the distill Recheck before commit.
+- How an Opus judge reads a fired warning in `validate.json` is untested: the judge prompt names only `rating-provisional` as counting against nothing, and the prompt is out of scope. The stage-1 note reads the c1 and c14 scores of runs whose final document carries a new warning.
 
 ### 11.2 To verify in stage 2
 
@@ -407,23 +497,68 @@ The readers found these while inventorying; each is a content question for its o
 
 - the catalog's 60% at `design-failure-catalog.md:55` against `quality-and-lint.md:103`'s "59 percent";
 - `NOTICES.md` saying `adapted-from:C090` appears once in `quality-and-lint.md`, where it appears twice;
-- `SKILL.md:109` and `:111` identical;
+- `SKILL.md:109` and `:111`, which differ only in their last word;
 - `SKILL.md:122` against `:123`;
 - the dangling §5.5 reference at `SKILL.md:98`;
 - `provenance.md`'s row counts (44 rows described of 64);
 - `scales-software.md:129`'s "refused only when its shape fails" against `TABLE_ID_MISMATCH`;
 - where the ML or LLM questions live, catalog `component` against a structure-elements `service`;
 - `cat-dependency-01`'s cause column restating its own mode (already an agreed follow-up);
-- the update summaries' missing inventory controls and the converter's boundary typing (0.7.0 skill findings);
+- the update summaries' missing inventory controls, the converter's boundary typing, and c2's bare repository references (0.7.0 skill findings);
 - the differing word-count bases in the inventory, which the checker's single basis replaces;
 - the frontmatter description length (§11.2).
 
 ## 12. Acceptance criteria
 
-1. Stage 0's harness changes are merged on the branch with tests, and the baseline round meets §8.2.
-2. Stage 1's changes are exactly those of §6, every new sentence tagged, the two lints and the render line tested, and the round meets §8.3, or the user has ruled on its failure.
-3. Stage 2's rewrite touches only §7.1 and §7.2, keeps every frozen literal of §4.3, lowers the baseline per §8.4, and the round meets §8.4, or the user has ruled on its failure.
+1. Stage 0's harness changes are merged on the branch with tests, the dated preflight of §5.1 is recorded, and the baseline round meets §8.2.
+2. Stage 1's changes are exactly those of §6, every new sentence and bullet tagged, the two lints and the render line tested against the documents §6.4 names, the two fixtures amended per D13 or the lint narrowed per the user's ruling, and the round meets §8.3, or the user has ruled on its failure.
+3. Stage 2's rewrite touches only §7.1 and §7.2, keeps every frozen literal of §4.3 and every stage-1 placement, lowers the baseline per §8.4, and the round meets §8.4, or the user has ruled on its failure.
 4. `docs/style.md` exists and `CONTRIBUTING.md` points to it; `tools/check-prose.ts` runs under `tools/check.ts` and fails closed.
-5. Every changed reference file passed the private distill check, with the verdict in the commit body, and the audit passed from the private checkout before the user pushes.
-6. Each round has its results note; the acceptance note lists every unverified cell, names the tier per phase and the Fable count, and states §8.5.
-7. No commit carries AI attribution, and nothing is pushed by the agent.
+5. `SKILL.md` and every changed reference file passed the private distill Recheck, with the verdict in the commit body, and the audit passed from the private checkout before the user pushes.
+6. `docs/specs/2026-09-07-fmea-software-design.md` carries the three dated amendments of §4.1.
+7. Each round has its results note; the acceptance note lists every unverified cell, names the tier per phase and the Fable count, and states §8.5.
+8. No commit carries AI attribution, and nothing is pushed by the agent.
+
+## 13. Review record
+
+Two Fable reviewers read the first version of this spec on 2026-10-14 (workflow `wf_6e47fb13-046`, read-only,
+0.49M tokens), one through the lens "will it work", one through "what will it break". Both returned "revise": 17
+findings from the first, 22 from the second, 39 in all, 4 flagged as the user's decision. Every file claim the
+fixes rest on was re-checked against the files before this revision.
+
+| Finding | Disposition |
+|---|---|
+| c1 lint silenced by any assumption mentioning the provider, and firing on the order store's stated absence (A1 of both lenses, A3 of the second) | applied: the field word, the three-way split and the run-placeholder pattern in §6.4 and §6.1; the fixtures amended under D13 |
+| c11 lint's digit match defeated by dates and chain ids (A2, B11) | applied: the clause rule of §6.4 with the five verified documents as fixtures |
+| tag unit for tables is the row, not the cell (A10, second lens A1) | applied in §6, §7.4 and §7.6 |
+| rubric.md has no tags, so the untagged ratchet would block its own amendments (second lens A2) | applied as D14, pending the user |
+| c2 also fails two prompt-1 runs (A3) | applied in §1, §4.2, §11.3 |
+| design-inputs.md:45 already carries the extension (A4, B5) | applied in §3.3 and §6.1 |
+| render line not always last; "name a person" invites an invented re-scorer; the update and seed modes do not reach step 7's list (A5) | applied in §6.1 and §6.4 |
+| the pass line defined on no artefact (A6) | applied in §8.1 |
+| validate.json shows the end state only (A7) | applied: the counts in `context.json`, §5.3 |
+| sentinel phrases weak; the init line is the mechanical check; the gateway is environment (A8, B1, B2) | applied in §5.1, §8.2, §8.5 |
+| the probe gate refuses Claude models; the match is on one line; the probe runs under the run's directory (A9, B3) | applied in §5.3 |
+| "state none" ambiguous (A11) | applied in §6.1 and §6.2 |
+| fixtures' computed blocks and the tests that read the golden (A12, B12, second lens A3) | applied in §4.3, §6.4, §10 |
+| blockers outside chains zero the quality score (A13) | applied in §11.1 |
+| the open c5 reading is a variance source (A14) | applied as D15, pending the user |
+| stage 2 could move a stage-1 placement (A15) | applied in §7.1 and §9 |
+| not_applicable needs a per-prompt flag, regardless of what the runs carry (A16, B4) | applied in §5.2 per ruling 4 as the acceptance note records it |
+| "failed every pair" and the search wording (A17) | applied in §1 and §3.3 |
+| substitutions would reword sourced sentences (B6) | applied in §7.5 |
+| the Scripts fenced block is pinned (B7) | applied in §4.3 and §7.1 |
+| SKILL.md goes through the distill Recheck (B8) | applied in §7.4, §12 |
+| the base design needs its inline amendments (B9) | applied in §4.1, §12 |
+| the baseline's first write and per-heading counts; moved sentences (B10) | applied in §7.6 and §7.1 |
+| §7.2 sections by heading and line; licence sections excluded (C1) | applied |
+| list bullets need tags (C2) | applied in §6 |
+| SKILL.md:109 and :111 differ in the last word (C3) | applied in §11.3 |
+| evals.js reads context.json in code; rejudge.js gets the gate (C4) | applied in §4.1 and §5.3 |
+| denials of any reason reported (C5) | applied in §8.1 and §8.2 |
+| subagent lines excluded from the peak (C6) | applied in §5.3 |
+| baseline file missing fails closed; frontmatter skipped (C7) | applied in §7.6 |
+
+Not checked by either reviewer and still open: whether `claude -p "/autocompact"` prints the window line in print
+mode under a fresh `CLAUDE_CONFIG_DIR` on the gateway route, which the dated preflight of §5.1 settles; the
+1,024-character description limit (§11.2); whether the private audit allow-list pins register cells.
