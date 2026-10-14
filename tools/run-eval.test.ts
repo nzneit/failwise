@@ -6,8 +6,11 @@
 // the answer keys again. So the script is run end to end with `claude` replaced
 // by a stub placed first on PATH — no model call is made — and the stub records
 // the argv it was given, its working directory, a listing of the --plugin-dir
-// tree, and the CLAUDE_CONFIG_DIR it was given with a listing of that directory,
-// which the assertions below read.
+// tree, the CLAUDE_CONFIG_DIR it was given with a listing of that directory, and
+// the two context-window settings it was given, which the assertions below read.
+// The stub answers the harness's /autocompact probe with a window line a case
+// can replace (FMEA_STUB_AUTOCOMPACT, on stderr when FMEA_STUB_AUTOCOMPACT_STREAM
+// is stderr) and records nothing for the probe.
 //
 // The fail-closed guard needs two cases of its own. The clean copy the first
 // test inspects is the very condition the guard checks, so a guard edited into a
@@ -69,6 +72,7 @@ interface Sandbox {
   treeFile: string;
   configFile: string;
   configListFile: string;
+  envFile: string;
   env: Record<string, string>;
 }
 
@@ -89,12 +93,20 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
   const treeFile = join(dir, "tree.txt");
   const configFile = join(dir, "config.txt");
   const configListFile = join(dir, "config-list.txt");
+  const envFile = join(dir, "env.txt");
   const stub = [
     "#!/usr/bin/env bash",
+    'if [ "$2" = "/autocompact" ]; then',
+    "  reply=\"${FMEA_STUB_AUTOCOMPACT-Auto-compact window for stub: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)}\"",
+    '  if [ -z "$reply" ]; then exit 0; fi',
+    "  if [ \"${FMEA_STUB_AUTOCOMPACT_STREAM:-}\" = stderr ]; then printf '%s\\n' \"$reply\" >&2; else printf '%s\\n' \"$reply\"; fi",
+    "  exit 0",
+    "fi",
     `printf '%s\\n' "$@" > '${argvFile}'`,
     `pwd > '${cwdFile}'`,
     "printf '%s\\n' \"${CLAUDE_CONFIG_DIR:-}\" > '" + configFile + "'",
     "if [ -n \"${CLAUDE_CONFIG_DIR:-}\" ]; then ls -A \"$CLAUDE_CONFIG_DIR\" > '" + configListFile + "'; fi",
+    "printf '%s\\n' \"CLAUDE_CODE_AUTO_COMPACT_WINDOW=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}\" \"CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-}\" > '" + envFile + "'",
     'plugin=""',
     'prev=""',
     'for a in "$@"; do',
@@ -117,7 +129,7 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     FMEA_EVAL_PUBLISH_ROOT: publish,
   };
   if (models !== undefined) env.FMEA_EVAL_MODELS = models;
-  return { dir, tmp, publish, argvFile, cwdFile, treeFile, configFile, configListFile, env };
+  return { dir, tmp, publish, argvFile, cwdFile, treeFile, configFile, configListFile, envFile, env };
 }
 
 /**
@@ -207,6 +219,62 @@ test("the run gets a fresh, empty CLAUDE_CONFIG_DIR under its own TMPDIR, never 
     assert.ok(!configDir.startsWith(ROOT + sep), `CLAUDE_CONFIG_DIR is inside the repository: ${configDir}`);
     assert.equal(readFileSync(s.configListFile, "utf8"), "", "the harness put files into CLAUDE_CONFIG_DIR before the launch: it copies nothing in (what the CLI itself leaves there after a probe is the preflight's record)");
     assert.ok(!existsSync(configDir), `the config directory survived the run: ${configDir}`);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("a model with no table row runs with neither window setting, whatever the launcher carries, and the probe's reply is published", { skip: SKIP }, () => {
+  const s = sandbox();
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1", CLAUDE_CODE_MAX_CONTEXT_TOKENS: "2" }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=", "CLAUDE_CODE_MAX_CONTEXT_TOKENS="]);
+    assert.equal(readFileSync(join(s.publish, "p1", "high", "run1", "autocompact.txt"), "utf8"), "Auto-compact window for stub: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)\n");
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("deepseek-flash gets the 786.4k window settings and runs only when the probe reports that window", { skip: SKIP }, () => {
+  const s = sandbox(undefined, "high=deepseek-flash,medium=deepseek-flash");
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000"]);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("the probe gate refuses before any model call, printing the reply: no window line, a capped window, or another window than the row's", { skip: SKIP }, () => {
+  const cases: [string, string | undefined, RegExp, string | null][] = [
+    ["", "high=deepseek-flash", /^error: the CLI reported no auto-compact window line; its reply follows$/m, null],
+    ["API Error: 401 authentication failed", "high=deepseek-flash", /^error: the CLI reported no auto-compact window line; its reply follows$/m, "API Error: 401 authentication failed"],
+    ["Auto-compact window for deepseek-flash: 200k tokens (capped at the model's window)", "high=deepseek-flash", /^error: the CLI caps the auto-compact window: Auto-compact window for deepseek-flash: 200k tokens \(capped at the model's window\)$/m, null],
+    ["Auto-compact window for deepseek-flash: 160k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", "high=deepseek-flash", /^error: the CLI did not report the window the table expects for deepseek-flash, 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\): Auto-compact window for deepseek-flash: 160k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\)$/m, null],
+    ["", undefined, /^error: the CLI reported no auto-compact window line; its reply follows$/m, null],
+  ];
+  for (const [line, models, want, reply] of cases) {
+    const s = sandbox(undefined, models);
+    try {
+      const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_AUTOCOMPACT: line }, encoding: "utf8" });
+      assert.equal(r.status, 1, r.stderr);
+      assert.match(r.stderr, want);
+      if (reply !== null) assert.ok(r.stderr.includes(reply), `the probe's reply was not printed: ${r.stderr}`);
+      assert.ok(!existsSync(s.argvFile), "the run was launched although the probe gate refused");
+      assert.deepEqual(readdirSync(s.tmp).filter((n) => n.startsWith("fmea-")), []);
+    } finally {
+      rmSync(s.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("the probe line is read from stderr as well as stdout, and case-insensitively", { skip: SKIP }, () => {
+  const s = sandbox(undefined, "high=deepseek-flash");
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_AUTOCOMPACT: "AUTO-COMPACT WINDOW FOR deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", FMEA_STUB_AUTOCOMPACT_STREAM: "stderr" }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
   } finally {
     rmSync(s.dir, { recursive: true, force: true });
   }

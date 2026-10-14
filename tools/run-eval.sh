@@ -56,6 +56,19 @@
 # The run's CLAUDE_CONFIG_DIR is a fresh, empty directory under $TMPDIR, made
 # beside the plugin copy and removed by the EXIT trap with it.
 #
+# The context window is set per model, never inherited (prose design 2026-10-14
+# §5.3). A table below gives each model it names a
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW, a CLAUDE_CODE_MAX_CONTEXT_TOKENS and the text
+# its probe must report; its one row is deepseek-flash, a gateway model the CLI
+# does not know. A model with no row runs with neither setting, whatever the
+# launcher's environment carries. Before every run, `claude -p "/autocompact"`
+# is asked for the window under the run's own CLAUDE_CONFIG_DIR and window
+# settings, and its whole reply, stdout and stderr, is kept as autocompact.txt
+# and published with the run. The run is refused before it is launched when the
+# reply has no auto-compact window line, when that line says the window is
+# capped, or, for a model with a row, when it is not the row's window; the
+# refusal prints the reply or its line.
+#
 # Finished runs are published under $FMEA_EVAL_PUBLISH_ROOT, which defaults to
 # $ROOT/build/evals, the tree the rest of the plan reads. The variable exists so
 # tools/run-eval.test.ts can point a stubbed run at a temporary directory and
@@ -235,6 +248,21 @@ CONFIG="$(mktemp -d "${TMPDIR:-/tmp}/fmea-config-p${PID}-${MODEL_CAPABILITY}-run
 # it bundles under no namespace; neither comes from ~/.claude.
 # preflight 2026-10-14 (CLI 2.1.299): a -p run under a fresh CLAUDE_CONFIG_DIR authenticated through the gateway (apiKeySource none), listed the non-builtin plugin failwise and the namespaced skill failwise:fmea-software alone beside the CLI's builtin plugins and bundled skills, and /autocompact reported the 786.4k window, leaving .claude.json, backups, projects and sessions in the fresh directory; CLAUDE_CONFIG_DIR kept per run
 export CLAUDE_CONFIG_DIR="$CONFIG"
+# The context window per model (prose design 2026-10-14 §5.3). The CLI does not
+# know a gateway model and takes a 200k window for it, which caps
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW: 13 of the capped round's 16 runs compacted
+# near 167k on 2026-10-13. A model with a row gets its two settings and the
+# text its probe must report; a model with no row gets neither setting, so the
+# launcher's environment never decides the window.
+unset CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_CODE_MAX_CONTEXT_TOKENS
+WINDOW_EXPECT=""
+case "$MODEL_NAME" in
+  deepseek-flash)
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432
+    export CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000
+    WINDOW_EXPECT="786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)"
+    ;;
+esac
 mkdir -p "$WORK/inputs"
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
@@ -276,6 +304,32 @@ fi
 # The validator the run's output is checked with is the copied one: same file,
 # and running it never reaches back into the repository.
 VALIDATOR="$PLUGIN/skills/fmea-software/scripts/validate.ts"
+
+# The /autocompact probe (prose design 2026-10-14 §5.3), made before every run
+# with the model, the CLAUDE_CONFIG_DIR and the window settings the run gets.
+# Its whole reply is kept as autocompact.txt, which the publish copy below
+# carries. The gate takes the first line naming the auto-compact window and
+# refuses the run, for every model, when there is no such line or the CLI caps
+# the window, and, for a model with a row, when the line is not the row's
+# window. A refusal prints the reply or its line, because the EXIT trap removes
+# $WORK before anything is published.
+set +e
+claude -p "/autocompact" --model "$MODEL_NAME" --max-turns 1 > "$WORK/autocompact.txt" 2>&1
+set -e
+WINDOW_LINE="$(grep -i -m1 "auto-compact window for" "$WORK/autocompact.txt" || true)"
+if [ -z "$WINDOW_LINE" ]; then
+  { echo "error: the CLI reported no auto-compact window line; its reply follows"; sed -n '1,20p' "$WORK/autocompact.txt"; } >&2
+  exit 1
+fi
+case "$WINDOW_LINE" in
+  *capped*) echo "error: the CLI caps the auto-compact window: $WINDOW_LINE" >&2; exit 1 ;;
+esac
+if [ -n "$WINDOW_EXPECT" ]; then
+  case "$WINDOW_LINE" in
+    *"$WINDOW_EXPECT"*) ;;
+    *) echo "error: the CLI did not report the window the table expects for $MODEL_NAME, $WINDOW_EXPECT: $WINDOW_LINE" >&2; exit 1 ;;
+  esac
+fi
 
 cd "$WORK"
 # The run may exhaust --max-turns or fail; the summary line is still printed,
