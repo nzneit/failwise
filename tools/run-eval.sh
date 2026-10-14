@@ -62,12 +62,12 @@
 # its probe must report; its one row is deepseek-flash, a gateway model the CLI
 # does not know. A model with no row runs with neither setting, whatever the
 # launcher's environment carries. Before every run, `claude -p "/autocompact"`
-# is asked for the window under the run's own CLAUDE_CONFIG_DIR and window
-# settings, and its whole reply, stdout and stderr, is kept as autocompact.txt
-# and published with the run. The run is refused before it is launched when the
-# reply has no auto-compact window line, when that line says the window is
-# capped, or, for a model with a row, when it is not the row's window; the
-# refusal prints the reply or its line.
+# is asked for the window in the run's working directory, under its own
+# CLAUDE_CONFIG_DIR and window settings, and its whole reply, stdout and stderr,
+# is kept as autocompact.txt and published with the run. The run is refused
+# before it is launched when the reply has no auto-compact window line, when
+# that line says the window is capped, or, for a model with a row, when it is
+# not the row's window; the refusal prints the reply or its line.
 #
 # Finished runs are published under $FMEA_EVAL_PUBLISH_ROOT, which defaults to
 # $ROOT/build/evals, the tree the rest of the plan reads. The variable exists so
@@ -305,8 +305,11 @@ fi
 # and running it never reaches back into the repository.
 VALIDATOR="$PLUGIN/skills/fmea-software/scripts/validate.ts"
 
+cd "$WORK"
 # The /autocompact probe (prose design 2026-10-14 §5.3), made before every run
-# with the model, the CLAUDE_CONFIG_DIR and the window settings the run gets.
+# in the run's working directory, with the model, the CLAUDE_CONFIG_DIR and the
+# window settings the run gets: the CLI reads project-level settings from the
+# working directory, so the probe sees what the run sees.
 # Its whole reply is kept as autocompact.txt, which the publish copy below
 # carries. The gate takes the first line naming the auto-compact window and
 # refuses the run, for every model, when there is no such line or the CLI caps
@@ -331,7 +334,6 @@ if [ -n "$WINDOW_EXPECT" ]; then
   esac
 fi
 
-cd "$WORK"
 # The run may exhaust --max-turns or fail; the summary line is still printed,
 # so the CLI's exit status is reported rather than aborting the script.
 # stream-json is the only --print output format that records tool_use blocks,
