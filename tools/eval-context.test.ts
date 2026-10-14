@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -104,6 +104,31 @@ test("init records the CLI version, every plugin with its source, the namespaced
   const none = extractContext(assistantLine(SMALL), OPTIONS);
   assert.equal(none.cli_version, null);
   assert.deepEqual(none.init, { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false });
+});
+
+test("memory_under_config_dir compares resolved paths, and the config dir's real path when it exists, so a trailing slash, a // or a symlinked TMPDIR is still under it", () => {
+  const text = initLine([], [], "/tmp/cfg/projects/x/memory/");
+  for (const configDir of ["/tmp/cfg/", "/tmp//cfg", "/tmp/cfg//"]) {
+    assert.equal(extractContext(text, { ...OPTIONS, configDir }).init.memory_under_config_dir, true, configDir);
+  }
+
+  // The CLI names the memory under the real path while the harness passes the
+  // symlink it was handed as TMPDIR.
+  const base = mkdtempSync(join(tmpdir(), "eval-context-link-"));
+  const real = join(base, "real");
+  const link = join(base, "link");
+  mkdirSync(real);
+  symlinkSync(real, link);
+  const dir = runDir({ "transcript.jsonl": initLine([], [], `${realpathSync(real)}/projects/x/memory/`) + "\n", "autocompact.txt": `${WINDOW_LINE}\n` });
+  try {
+    const r = runCli([dir, "--config-dir", link]);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(join(dir, "context.json"), "utf8")) as EvalContext;
+    assert.equal(written.init.memory_under_config_dir, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test("leak_grep counts the transcript lines holding CLAUDE.md and ~/.claude", () => {

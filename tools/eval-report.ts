@@ -958,17 +958,21 @@ function overallRow(results: EvalResults, p: number, m: string): string {
  */
 type ContextRead = EvalContext | "missing" | "unreadable";
 
+/** One run of the Harness table with its context.json as read. */
+interface HarnessRun { r: RunResult; ctx: ContextRead }
+
 /**
  * `## Harness`: one row per run, or no lines when no run carries a context
  * field, so a results file written before 2026-10-14 renders as it always did
  * (prose design §5.3). Window, compactions and peak are the copies the judging
- * wrote into results.json; the other cells are read from the run's own
- * context.json, and the lines under the table name each file that could not be
- * read and each copy its file does not bear out.
+ * wrote into results.json; the CLI version and the other cells are read from
+ * the run's own context.json. The lines under the table name the CLI versions
+ * when the readable files carry more than one, each file that could not be
+ * read, and each copy its file does not bear out.
  */
 function harnessSection(results: EvalResults): string[] {
   if (!results.runs.some((r) => r.context !== undefined)) return [];
-  const rows = [...results.runs]
+  const rows: HarnessRun[] = [...results.runs]
     .sort((a, b) => a.prompt - b.prompt || a.model_capability.localeCompare(b.model_capability) || a.run - b.run)
     .map((r) => ({ r, ctx: readContextFile(r.dir) }));
   const firstFile = rows.map((x) => x.ctx).find((ctx): ctx is EvalContext => typeof ctx !== "string");
@@ -977,12 +981,12 @@ function harnessSection(results: EvalResults): string[] {
   const lines = [
     "## Harness",
     "",
-    `| Prompt | Model capability | Run | Window | Compactions | Peak context | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
-    `|${"---|".repeat(9 + lintIds.length)}`,
+    `| Prompt | Model capability | Run | CLI | Window | Compactions | Peak context | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
+    `|${"---|".repeat(10 + lintIds.length)}`,
   ];
   for (const { r, ctx } of rows) lines.push(harnessRow(r, ctx, lintIds));
   lines.push("");
-  const notes = rows.flatMap(({ r, ctx }) => [unreadableLine(r, ctx), disagreementLine(r, ctx)].filter((l): l is string => l !== null));
+  const notes = [versionsLine(rows), ...rows.flatMap(({ r, ctx }) => [unreadableLine(r, ctx), disagreementLine(r, ctx)])].filter((l): l is string => l !== null);
   if (notes.length > 0) lines.push(...notes, "");
   return lines;
 }
@@ -1020,12 +1024,31 @@ function harnessRunLabel(r: RunResult): string {
   return `p${r.prompt} ${r.model_capability} run ${r.run}`;
 }
 
-/** One row of the Harness table: the three copied cells, then the cells read from context.json, dashes when it could not be read. */
+/** One row of the Harness table: the CLI version, the three copied cells, then the cells read from context.json, dashes when it could not be read. */
 function harnessRow(r: RunResult, ctx: ContextRead, lintIds: string[]): string {
   const read = typeof ctx === "string"
     ? Array<string>(3 + lintIds.length).fill("—")
     : [cell(isolationText(ctx)), String(ctx.init.skills_unnamespaced.length), deniedText(ctx), ...lintIds.map((id) => lintCell(ctx.lints.find((l) => l.id === id)))];
-  return `| ${[String(r.prompt), r.model_capability, String(r.run), ...copiedCells(r.context), ...read].join(" | ")} |`;
+  return `| ${[String(r.prompt), r.model_capability, String(r.run), cell(cliVersionOf(ctx) ?? "—"), ...copiedCells(r.context), ...read].join(" | ")} |`;
+}
+
+/** The CLI version a run's context.json records, or null when the file could not be read or records none. */
+function cliVersionOf(ctx: ContextRead): string | null {
+  return typeof ctx !== "string" && typeof ctx.cli_version === "string" ? ctx.cli_version : null;
+}
+
+/** The line naming each CLI version the readable files carry, versions sorted, with its runs; null unless there are two or more. */
+function versionsLine(rows: HarnessRun[]): string | null {
+  const runsByVersion = new Map<string, string[]>();
+  for (const { r, ctx } of rows) {
+    const version = cliVersionOf(ctx);
+    if (version !== null) runsByVersion.set(version, [...(runsByVersion.get(version) ?? []), harnessRunLabel(r)]);
+  }
+  if (runsByVersion.size < 2) return null;
+  const parts = [...runsByVersion]
+    .sort(([a], [b]) => a.localeCompare(b, "en", { numeric: true }))
+    .map(([version, runs]) => `${version} on ${runs.join(", ")}`);
+  return `- CLI versions differ across the round: ${parts.join("; ")}`;
 }
 
 /** The Window, Compactions and Peak context cells, from the copy in results.json; UNVERIFIED in all three when the run has none. */
@@ -1090,17 +1113,22 @@ function unreadableLine(r: RunResult, ctx: ContextRead): string | null {
 /**
  * The line naming a run whose copied context its context.json does not bear
  * out, or null: the file missing or unreadable while the copy is not null, or
- * the file's compactions or peak differing from the copy. A run with no copy
- * makes no claim, so it never disagrees.
+ * the file's window line, compactions or peak differing from the copy. A run
+ * with no copy makes no claim, so it never disagrees.
  */
 function disagreementLine(r: RunResult, ctx: ContextRead): string | null {
   const copy = r.context;
   if (!copy) return null;
   const lead = `- ${harnessRunLabel(r)}: results.json context disagrees with context.json`;
   if (typeof ctx === "string") return `${lead} (file ${ctx})`;
-  const differing = (["compactions", "peak_context_tokens"] as const)
-    .filter((field) => copy[field] !== ctx[field])
-    .map((field) => `${field}: ${copy[field]} vs ${ctx[field]}`);
+  const compared: [string, string | number, string | number][] = [
+    ["window", copy.window, ctx.window_line],
+    ["compactions", copy.compactions, ctx.compactions],
+    ["peak_context_tokens", copy.peak_context_tokens, ctx.peak_context_tokens],
+  ];
+  const differing = compared
+    .filter(([, copied, file]) => copied !== file)
+    .map(([field, copied, file]) => `${field}: ${copied} vs ${file}`);
   return differing.length === 0 ? null : `${lead} (${differing.join("; ")})`;
 }
 

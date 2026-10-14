@@ -54,8 +54,10 @@
 # The copy is passed to --add-dir as well, so Bash calls into it (ls, cat, grep,
 # node <script>) are admitted; without it the file-access boundary denies them
 # whatever --allowedTools says — see the ALLOWED_TOOLS comment below.
-# The run's CLAUDE_CONFIG_DIR is a fresh, empty directory under $TMPDIR, made
-# beside the plugin copy and removed by the EXIT trap with it.
+# The run's CLAUDE_CONFIG_DIR is a fresh directory under $TMPDIR, made beside
+# the plugin copy and removed by the EXIT trap with it. The harness copies
+# nothing into it; the /autocompact probe leaves the CLI's own state files there
+# before the run, which the dated preflight comment above its export names.
 #
 # The context window is set per model, never inherited (prose design 2026-10-14
 # §5.3). A table below gives each model it names a
@@ -249,6 +251,9 @@ CONFIG="$(mktemp -d "${TMPDIR:-/tmp}/fmea-config-p${PID}-${MODEL_CAPABILITY}-run
 # it bundles under no namespace; neither comes from ~/.claude.
 # preflight 2026-10-14 (CLI 2.1.299): a -p run under a fresh CLAUDE_CONFIG_DIR authenticated through the gateway (apiKeySource none), listed the non-builtin plugin failwise and the namespaced skill failwise:fmea-software alone beside the CLI's builtin plugins and bundled skills, and /autocompact reported the 786.4k window, leaving .claude.json, backups, projects and sessions in the fresh directory; CLAUDE_CONFIG_DIR kept per run
 export CLAUDE_CONFIG_DIR="$CONFIG"
+# The CLI updated itself during the prose-0 round on 2026-10-14 (p1, p5 on 2.1.299; p6, p7 on 2.1.300); a round
+# must run on one version. Other sessions can still update the shared install, so context.json records cli_version.
+export DISABLE_AUTOUPDATER=1
 # The context window per model (prose design 2026-10-14 §5.3). The CLI does not
 # know a gateway model and takes a 200k window for it, which caps
 # CLAUDE_CODE_AUTO_COMPACT_WINDOW: 13 of the capped round's 16 runs compacted

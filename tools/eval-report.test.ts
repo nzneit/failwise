@@ -337,17 +337,19 @@ function contextFile(overrides: Partial<EvalContext> = {}): EvalContext {
   };
 }
 
-test("a run that carries context prints the Harness table with its window, compactions and peak, reads isolation, denials and lint counts from its context.json, and marks the gaps", () => {
+test("a run that carries context prints the Harness table with its window, compactions and peak, reads the CLI version, isolation, denials and lint counts from its context.json, and marks the gaps and the CLI versions when they differ", () => {
   const r = sampleResults();
   // Four absolute temp run directories: A holds a full context.json; B one that
-  // compacted twice (the copy below says once), with no init line, no
-  // invocations.json and no validate.json; C none, while its copied context is
-  // non-null; D a full one like A, while its run entry has no context key.
+  // compacted twice (the copy below says once) under another window line than
+  // its copy's, with no init line, so no CLI version, no invocations.json and no
+  // validate.json; C none, while its copied context is non-null; D a full one
+  // like A, while its run entry has no context key.
   const root = mkdtempSync(join(tmpdir(), "eval-report-harness-"));
   const [A, B, C, D] = ["a", "b", "c", "d"].map((name) => join(root, name));
   for (const dir of [A, B, C, D]) mkdirSync(dir);
-  writeFileSync(join(A, "context.json"), JSON.stringify(contextFile(), null, 2));
+  writeFileSync(join(A, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.299" }), null, 2));
   writeFileSync(join(B, "context.json"), JSON.stringify(contextFile({
+    cli_version: null,
     compactions: 2,
     peak_context_tokens: 170039,
     init: { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false },
@@ -355,7 +357,7 @@ test("a run that carries context prints the Harness table with its window, compa
     denied: { bun: 0, other: 0 },
     lints: [{ id: "edge-reliability-unstated", fired: null, final: null }, { id: "conversion-substitution-unrecorded", fired: null, final: null }],
   }), null, 2));
-  writeFileSync(join(D, "context.json"), JSON.stringify(contextFile(), null, 2));
+  writeFileSync(join(D, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.299" }), null, 2));
   try {
     r.runs[0] = { ...r.runs[0], dir: A, context: { window: "Auto-compact window for deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", compactions: 0, peak_context_tokens: 238429 } };
     r.runs[1] = { ...r.runs[1], dir: B, context: { window: "x: 200k tokens", compactions: 1, peak_context_tokens: 170039 } };
@@ -363,15 +365,20 @@ test("a run that carries context prints the Harness table with its window, compa
     r.runs[3] = { ...r.runs[3], dir: D };
     const md = renderReport(r);
     assert.match(md, /^## Harness$/m);
-    assert.match(md, /\| Prompt \| Model capability \| Run \| Window \| Compactions \| Peak context \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|/);
-    assert.match(md, /\| 1 \| high \| 1 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
-    assert.match(md, /\| 1 \| high \| 2 \| 200k tokens \| 1 \| 170,039 \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
-    assert.match(md, /^- p1 high run 2: results\.json context disagrees with context\.json \(compactions: 1 vs 2\)$/m);
-    assert.match(md, /\| 1 \| medium \| 1 \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \|/);
+    assert.match(md, /\| Prompt \| Model capability \| Run \| CLI \| Window \| Compactions \| Peak context \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|/);
+    assert.match(md, /\| 1 \| high \| 1 \| 2\.1\.299 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
+    assert.match(md, /\| 1 \| high \| 2 \| — \| 200k tokens \| 1 \| 170,039 \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
+    assert.match(md, /^- p1 high run 2: results\.json context disagrees with context\.json \(window: x: 200k tokens vs Auto-compact window for deepseek-flash: 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\); compactions: 1 vs 2\)$/m);
+    assert.match(md, /\| 1 \| medium \| 1 \| — \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \|/);
     assert.match(md, /^- p1 medium run 1: context\.json unreadable at [^/].*$/m);   // a repository-relative path, never /home
     assert.match(md, /^- p1 medium run 1: results\.json context disagrees with context\.json \(file missing\)$/m);
-    assert.match(md, /\| 1 \| medium \| 2 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
+    assert.match(md, /\| 1 \| medium \| 2 \| 2\.1\.299 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
     assert.ok(!md.includes("p1 medium run 2: results.json context disagrees"), "a run with no context key is never a disagreement");
+    assert.ok(!md.includes("CLI versions differ"), "the readable files carry one CLI version");
+
+    // A round whose readable files carry two CLI versions says so under the table.
+    writeFileSync(join(D, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.300" }), null, 2));
+    assert.match(renderReport(r), /^- CLI versions differ across the round: 2\.1\.299 on p1 high run 1; 2\.1\.300 on p1 medium run 2$/m);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -451,6 +458,59 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]) }));
   assert.deepEqual(fromRejudge, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts })));
   for (const script of [workflow, rejudge]) assert.ok(script.includes("!ctx || ctx.present !== true || ctx.compactions !== 0"), "the context gate predicate");
+});
+
+/** The two judging workflow scripts as text: evals.js, then rejudge.js. */
+function workflowScripts(): string[] {
+  return ["evals.js", "rejudge.js"].map((name) => readFileSync(join(import.meta.dirname, "workflows", name), "utf8"));
+}
+
+/** One definition of a workflow script, from its `const NAME = ` or `function NAME(` start through the brace that closes it. */
+function definitionText(script: string, name: string): string {
+  const forms = [`const ${name} = `, `function ${name}(`];
+  const count = forms.reduce((n, form) => n + script.split(form).length - 1, 0);
+  assert.equal(count, 1, `${name} is defined ${count} times`);
+  const start = Math.max(...forms.map((form) => script.indexOf(form)));
+  let depth = 0;
+  for (let i = script.indexOf("{", start); i < script.length; i++) {
+    if (script[i] === "{") depth++;
+    if (script[i] === "}" && --depth === 0) return script.slice(start, i + 1);
+  }
+  assert.fail(`${name} has no closing brace`);
+}
+
+// The context gate is copied into rejudge.js from evals.js; the workflows
+// cannot import, so the two copies are compared as text and run here.
+test("the context gate's five definitions are byte-identical in evals.js and rejudge.js", () => {
+  const [evals, rejudge] = workflowScripts();
+  for (const name of ["CONTEXT_SCHEMA", "contextPrompt", "parseContext", "gated", "contextDetail"]) {
+    assert.equal(definitionText(rejudge, name), definitionText(evals, name), `${name} differs between the workflows`);
+  }
+});
+
+test("the context gate closes on every reply but a context.json read in full with no compaction, in both workflows", () => {
+  const full = { window_line: "x", compactions: 0, peak_context_tokens: 1 };
+  const file = (fields: unknown) => ({ exists: true, text: JSON.stringify(fields) });
+  const closing: [string, unknown][] = [
+    ["no reply", null],
+    ["no file", { exists: false, text: "" }],
+    ["exists as a string", { exists: "true", text: "{}" }],
+    ["line-number prefixes", { exists: true, text: JSON.stringify(full, null, 2).split("\n").map((line, i) => `${i + 1}\t${line}`).join("\n") }],
+    ["fenced", { exists: true, text: "```json\n" + JSON.stringify(full) + "\n```" }],
+    ["compactions 2", file({ ...full, compactions: 2 })],
+    ["compactions -1", file({ ...full, compactions: -1 })],
+    ['compactions "0"', file({ ...full, compactions: "0" })],
+    ["no window_line", file({ compactions: 0, peak_context_tokens: 1 })],
+    ["text null", { exists: true, text: "null" }],
+    ["text []", { exists: true, text: "[]" }],
+  ];
+  for (const script of workflowScripts()) {
+    const source = `${definitionText(script, "parseContext")}\n${definitionText(script, "gated")}\nreturn (reply) => gated(parseContext(reply))`;
+    // oxlint-disable-next-line typescript/no-implied-eval -- the workflows cannot be imported, so their gate text is run as written
+    const gate = new Function(source)() as (reply: unknown) => boolean;
+    for (const [name, reply] of closing) assert.equal(gate(reply), true, `${name} passed the gate`);
+    assert.equal(gate(file(full)), false, "a context.json read in full with no compaction was gated");
+  }
 });
 
 // c16 and the flows stability predicate both key on flows[].id, so the ids and

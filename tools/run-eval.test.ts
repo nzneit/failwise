@@ -7,10 +7,11 @@
 // by a stub placed first on PATH — no model call is made — and the stub records
 // the argv it was given, its working directory, a listing of the --plugin-dir
 // tree, the CLAUDE_CONFIG_DIR it was given with a listing of that directory, and
-// the two context-window settings it was given, which the assertions below read.
-// The stub answers the harness's /autocompact probe with a window line a case
-// can replace (FMEA_STUB_AUTOCOMPACT, on stderr when FMEA_STUB_AUTOCOMPACT_STREAM
-// is stderr) and records nothing for the probe.
+// the two context-window settings and DISABLE_AUTOUPDATER it was given, which
+// the assertions below read. The stub answers the harness's /autocompact probe
+// with a window line a case can replace (FMEA_STUB_AUTOCOMPACT, on stderr when
+// FMEA_STUB_AUTOCOMPACT_STREAM is stderr) and records nothing for the probe.
+// FMEA_STUB_BAD_LINE=1 puts a line that is not JSON into the run's stream.
 //
 // The fail-closed guard needs two cases of its own. The clean copy the first
 // test inspects is the very condition the guard checks, so a guard edited into a
@@ -106,7 +107,7 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     `pwd > '${cwdFile}'`,
     "printf '%s\\n' \"${CLAUDE_CONFIG_DIR:-}\" > '" + configFile + "'",
     "if [ -n \"${CLAUDE_CONFIG_DIR:-}\" ]; then ls -A \"$CLAUDE_CONFIG_DIR\" > '" + configListFile + "'; fi",
-    "printf '%s\\n' \"CLAUDE_CODE_AUTO_COMPACT_WINDOW=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}\" \"CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-}\" > '" + envFile + "'",
+    "printf '%s\\n' \"CLAUDE_CODE_AUTO_COMPACT_WINDOW=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}\" \"CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-}\" \"DISABLE_AUTOUPDATER=${DISABLE_AUTOUPDATER:-}\" > '" + envFile + "'",
     'plugin=""',
     'prev=""',
     'for a in "$@"; do',
@@ -115,6 +116,7 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     "done",
     `: > '${treeFile}'`,
     `if [ -n "$plugin" ]; then (cd "$plugin" && find .) > '${treeFile}'; fi`,
+    'if [ "${FMEA_STUB_BAD_LINE:-}" = 1 ]; then printf \'%s\\n\' "not json"; fi',
     `printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"stub"}'`,
     "",
   ].join("\n");
@@ -234,7 +236,7 @@ test("a model with no table row runs with neither window setting, whatever the l
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1", CLAUDE_CODE_MAX_CONTEXT_TOKENS: "2" }, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=", "CLAUDE_CODE_MAX_CONTEXT_TOKENS="]);
+    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=", "DISABLE_AUTOUPDATER=1"]);
     assert.equal(readFileSync(join(s.publish, "p1", "high", "run1", "autocompact.txt"), "utf8"), "Auto-compact window for stub: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)\n");
   } finally {
     rmSync(s.dir, { recursive: true, force: true });
@@ -246,7 +248,7 @@ test("deepseek-flash gets the 786.4k window settings and runs only when the prob
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000"]);
+    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000", "DISABLE_AUTOUPDATER=1"]);
   } finally {
     rmSync(s.dir, { recursive: true, force: true });
   }
@@ -272,6 +274,24 @@ test("the probe gate refuses before any model call, printing the reply: no windo
     } finally {
       rmSync(s.dir, { recursive: true, force: true });
     }
+  }
+});
+
+test("a stream line that is not JSON still publishes the run, with no context.json and one coded IO_READ line in context.stderr", { skip: SKIP }, () => {
+  const s = sandbox();
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_BAD_LINE: "1" }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    // eval-invocations.ts refuses the same stream, so invocations.json is missing too.
+    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=missing context=missing$/m);
+    assert.match(r.stderr, /^p1 medium run1: tools\/eval-invocations\.ts exited 3 \(see invocations\.stderr\)$/m);
+    assert.match(r.stderr, /^p1 medium run1: tools\/eval-context\.ts exited 3 \(see context\.stderr\)$/m);
+    const published = join(s.publish, "p1", "medium", "run1");
+    assert.ok(existsSync(join(published, "transcript.json")), "the run was not published");
+    assert.ok(!existsSync(join(published, "context.json")), "context.json was written from a stream holding a line that is not JSON");
+    assert.match(readFileSync(join(published, "context.stderr"), "utf8"), /^error IO_READ: [^\n]*transcript\.jsonl line 1 is not JSON\n$/);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
   }
 });
 

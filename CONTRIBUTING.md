@@ -164,9 +164,32 @@ them with Claude Code's Workflow tool,
 `{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which writes
 `build/evals/results.json` for `eval-report.ts` to read.
 
-Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh,
-empty `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
+Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
+`CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
 `~/.claude` (its CLAUDE.md, memory, skills, settings and login) stays out of the run. A run on the
 default Anthropic table therefore needs `ANTHROPIC_API_KEY` in the environment; a model behind a
 gateway needs `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`. A run still grants Read with no path
 restriction, so run it from a machine and with keys you are content to expose.
+
+`tools/run-eval.sh` sets the context window per model from a table in the script. A model with a
+row gets its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and a model
+with no row gets neither, whatever the launching shell exports. A gateway model the CLI does not
+know needs a row: without one the CLI takes a 200k window for it, its runs compact near 167k
+tokens, and the judging marks them unverified.
+
+Before every run the script asks the CLI for its window with `claude -p "/autocompact"`, in the
+run's working directory and with the run's config directory and window settings. It refuses to
+launch the run when the reply has no auto-compact window line, when that line says the window is
+capped, or, for a model with a row, when the line does not name the row's window.
+
+The script sets `DISABLE_AUTOUPDATER=1` for the probe and the run, because the CLI updated itself
+in the middle of a round on 2026-10-14 and a round must run on one CLI version. Another session on
+the machine can still update the shared install, so each run records its CLI version.
+
+After the run, `tools/eval-context.ts` writes `context.json` into the run's folder: the CLI
+version, the window line, the compactions, the peak context, the isolation facts and the denied
+script calls. Both judging workflows read it before any judge: a run with no `context.json`, or
+with a compaction, is unverified and gets no judge. The context agent runs at the `medium` model
+capability, so `args.models`, when given, must name `medium` in both `tools/workflows/evals.js`
+and `tools/workflows/rejudge.js`. The report's Harness table shows each run's CLI version, and a
+line under the table names the versions when a round ran on more than one.

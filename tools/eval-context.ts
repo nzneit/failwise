@@ -10,8 +10,9 @@
 // creation; a subagent's lines carry its own context and are left out). The init
 // line's isolation facts follow (the CLI version, every plugin with its source,
 // the namespaced and the unnamespaced skills, and whether the auto memory lies
-// under the run's CLAUDE_CONFIG_DIR), with the count of transcript lines naming
-// CLAUDE.md or ~/.claude, a secondary leak check that is reported, never gated.
+// under the run's CLAUDE_CONFIG_DIR, in resolved form or under its real path),
+// with two counts, the transcript lines naming CLAUDE.md and those naming
+// ~/.claude, a secondary leak check that is reported, never gated.
 //
 // From invocations.json (tools/eval-invocations.ts) come the denied calls, split
 // on whether the command holds the word bun, and, for each lint id asked for,
@@ -20,8 +21,10 @@
 // the final document still carries it, shows the end state only. validate.ts
 // prints its lints on exit 2 as well, so a call that errored counts beside one
 // that ran; the 400-character result_head of invocations.json is too short, so
-// the results are read from the transcript. A missing invocations.json or
-// validate.json leaves those counts null rather than 0.
+// the results are read from the transcript. A missing invocations.json leaves
+// each lint's fired count null rather than 0, while the denials read 0 beside
+// invocations "missing", which every reader prints as missing; a missing
+// validate.json leaves each lint's final state null.
 //
 // A line that is not JSON refuses the whole stream, and so do a missing
 // transcript, a missing autocompact.txt and a probe reply with no window line: a
@@ -35,8 +38,8 @@
 // tools/ imports nothing from skills/fmea-software/scripts/ (the skill stays
 // self-contained); the transcript reader is tools/lib/transcript.ts.
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { isEntry } from "./lib/entry.ts";
 import { blocksOf, parseLine, refuse, resultText, type Message } from "./lib/transcript.ts";
 
@@ -140,6 +143,23 @@ function pluginOf(p: unknown): { name: string; source: string } {
   return { name: textOf(fieldOf(p, "name")), source: textOf(fieldOf(p, "source")) };
 }
 
+/** The forms the config dir may take in the memory path: resolved, and its real path when it exists on disk. */
+function configRootsOf(configDir: string): string[] {
+  const roots = [resolve(configDir)];
+  try {
+    roots.push(realpathSync(configDir));
+  } catch {
+    // A config dir that is not on disk has no real path; the resolved form stands alone.
+  }
+  return roots;
+}
+
+/** Whether a path lies under one of the roots, compared in resolved form, so a trailing slash or a // reads the same. */
+function isUnder(path: string, roots: string[]): boolean {
+  const resolved = resolve(path);
+  return roots.some((root) => resolved.startsWith(root.endsWith(sep) ? root : root + sep));
+}
+
 function initOf(m: Message | null, configDir: string): EvalContext["init"] {
   if (m === null) return { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false };
   const skills = Array.isArray(m.skills) ? m.skills.filter((s): s is string => typeof s === "string") : [];
@@ -151,7 +171,7 @@ function initOf(m: Message | null, configDir: string): EvalContext["init"] {
     skills_namespaced: skills.filter((s) => s.includes(":")),
     skills_unnamespaced: skills.filter((s) => !s.includes(":")).sort(),
     memory_auto: memoryAuto,
-    memory_under_config_dir: memoryAuto !== null && memoryAuto.startsWith(`${configDir.replace(/\/+$/, "")}/`),
+    memory_under_config_dir: memoryAuto !== null && isUnder(memoryAuto, configRootsOf(configDir)),
   };
 }
 
