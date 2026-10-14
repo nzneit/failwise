@@ -346,6 +346,12 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (\d+))? \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]), rubric: m[4] === undefined ? undefined : Number(m[4]) }));
   assert.deepEqual(fromWorkflow, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts, rubric: c.rubric })));
+  // rejudge.js carries a third copy, without the rubric field it does not use;
+  // its prompts drive the refusal of a criterion on a prompt it does not apply to.
+  const rejudge = readFileSync(join(import.meta.dirname, "workflows", "rejudge.js"), "utf8");
+  const fromRejudge = [...rejudge.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\]) \}/g)]
+    .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]) }));
+  assert.deepEqual(fromRejudge, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts })));
 });
 
 // c16 and the flows stability predicate both key on flows[].id, so the ids and

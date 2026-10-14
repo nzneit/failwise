@@ -253,7 +253,7 @@ enforces it; a change is real only when both move together.
 | Jaccard floor 0.8 | "Stability between the two runs at the same model capability" — the element id sets and the flow id sets | `JACCARD_MIN` in `tools/eval-stability.ts` |
 | Count fraction 0.2 | "Stability between the two runs at the same model capability" | `COUNT_BOUND_FRACTION` in `tools/eval-stability.ts` (`stability()` computes the bound as `maxRows * COUNT_BOUND_FRACTION`) |
 | Total 80% of maximum | "Pass rule" | `5 * total >= 4 * max` in `summarizeRun` in `tools/eval-report.ts` and in `summarize` in `tools/workflows/evals.js` |
-| A criterion's must flag | "Criteria" | the `must` field in `CRITERIA` in `tools/eval-report.ts` and in `CRITERIA` in `tools/workflows/evals.js` |
+| A criterion's must flag | "Criteria" | the `must` field in `CRITERIA` in `tools/eval-report.ts`, in `CRITERIA` in `tools/workflows/evals.js` and in `CRITERIA` in `tools/workflows/rejudge.js` |
 
 Change this file first, then every code site in its row, then run `node --test "tools/*.test.ts"` — the
 tests that pin the old value (`tools/eval-stability.test.ts` for the floor and the fraction,
