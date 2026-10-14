@@ -34,19 +34,30 @@
 // reported not_applicable and verified, and each prompt-6 pair is judged on the
 // element and count predicates.
 //
+// The context gate (prose design §5.3): before any judge is called, one agent
+// per run fetches the run's context.json, written beside invocations.json by
+// tools/eval-context.ts, and returns its text, which this file reads in code. A
+// run with no context.json, with one whose text is not JSON or lacks an integer
+// compactions or peak_context_tokens or a string window_line, or with
+// compactions above 0 is recorded unverified with no scores and no judge call,
+// the rule 2fea11a set for a run with no report; so is a run whose context agent
+// returned nothing. Each run's entry carries the window line, the compactions and
+// the peak context as `context`, null when context.json was not read.
+//
 // Model capabilities (spec D10, amended 2026-09-10 by the user's ruling, and
 // again 2026-09-12 by the user's ruling at the eval re-run): every agent names
-// a model capability, never a model — judging and the critic at high, the two
-// mechanical stages (running a command, writing a file) at medium — and the
-// model that fills each capability comes from the table below, so the same
-// judging runs on any provider's lineup. results.json carries the effective
-// table as its `models` field, and every run and pair below is keyed on the
-// capability alone.
+// a model capability, never a model — judging and the critic at high, the three
+// mechanical stages (reading a run's context.json, running a command, writing a
+// file) at medium — and the model that fills each capability comes from the
+// table below, so the same judging runs on any provider's lineup. results.json
+// carries the effective table as its `models` field, and every run and pair
+// below is keyed on the capability alone.
 
 export const meta = {
   name: 'fmea-evals',
   description: 'Judge the fmea-software eval runs of a roster, check stability, and list what is missing',
   phases: [
+    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file or with compactions above 0 is unverified before any judge is called' },
     { title: 'Judge', detail: 'one judge per run directory, scoring by evals/rubric.md' },
     { title: 'Stability', detail: 'one agent per (prompt, model capability) running tools/eval-stability.ts' },
     { title: 'Critic', detail: 'one completeness critic over every score and stability result' },
@@ -63,9 +74,11 @@ const DEFAULT_EVALS_DIR = 'build/evals'
 // the eval re-run). args.models replaces the whole table when given — the same
 // rule tools/run-eval.sh applies to FMEA_EVAL_MODELS, so a launch states every
 // capability it means to fill and no default survives unexamined beside an
-// override. A key that is not a model capability, an empty value, or a table
-// that names no model for a capability this run judges at refuses before any
-// agent is called; the refusal is returned, not logged away.
+// override. A key that is not a model capability, an empty value, a table that
+// names no model for a capability this run judges at, or a table that names no
+// model for the medium capability, which the context, stability and persist
+// agents run at whatever capabilities the run judges, refuses before any agent
+// is called; the refusal is returned, not logged away.
 const DEFAULT_MODELS_BY_CAPABILITY = { high: 'opus', medium: 'sonnet', low: 'haiku' }
 
 // The roster (s13, 2026-10-07): args.prompts and args.capabilities choose which
@@ -118,6 +131,7 @@ if (argsModels !== null) {
     for (const capability of MODEL_CAPABILITIES) {
       if (!(capability in argsModels)) problems.push(`the table names no model for the ${capability} model capability this run judges at`)
     }
+    if (!('medium' in argsModels)) problems.push('the table names no model for the medium model capability the context, stability and persist agents run at')
   }
   if (problems.length > 0) {
     const refused = `args.models refuses the run: ${problems.join('; ')}`
@@ -198,6 +212,8 @@ const SCORE_SCHEMA = {
   },
   required: ['scores', 'total', 'max', 'musts_at_2', 'notes'],
 }
+
+const CONTEXT_SCHEMA = { type: 'object', properties: { exists: { type: 'boolean' }, text: { type: 'string' } }, required: ['exists', 'text'] }
 
 const STABILITY_SCHEMA = {
   type: 'object',
@@ -299,6 +315,48 @@ function summarize(prompt, scores) {
   return { total, max, musts_at_2: mustsAt2, must_count: mustCount, pass: mustsAt2 === mustCount && 5 * total >= 4 * max }
 }
 
+// The context gate (prose design §5.3). A workflow script has no filesystem
+// access, so one agent fetches the run's context.json and returns its text
+// verbatim; the reading is here, in code, and the agent decides nothing.
+function contextPrompt(item) {
+  return `Read ${item.dir}/context.json with the Read tool. If the file does not exist, return exists false and text "". Otherwise return exists true and, as text, the file's whole content exactly as read: byte for byte, no reformatting, no summarising, no truncation. Return nothing else and change nothing.`
+}
+
+// null when the context agent returned nothing; present false when the run has
+// no context.json, or, with the problem named, when its text is not JSON or a
+// field the gate reads is missing or of the wrong type; otherwise the three
+// fields the gate reads and results.json carries.
+function parseContext(reply) {
+  if (!reply) return null
+  if (reply.exists !== true) return { present: false }
+  let file
+  try {
+    file = JSON.parse(reply.text)
+  } catch {
+    return { present: false, problem: 'text is not JSON' }
+  }
+  for (const field of ['compactions', 'peak_context_tokens']) {
+    if (!Number.isInteger(file?.[field])) return { present: false, problem: `${field} missing or not an integer` }
+  }
+  if (typeof file.window_line !== 'string') return { present: false, problem: 'window_line missing or not a string' }
+  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line }
+}
+
+// A run is gated, unverified with no judge call, unless its context.json was
+// read and shows no compaction. The predicate is spelled the same in
+// rejudge.js, and the sync test in tools/eval-report.test.ts pins both.
+function gated(ctx) {
+  return !ctx || ctx.present !== true || ctx.compactions !== 0
+}
+
+// Why a gated run is unverified, one sentence per way the gate closes.
+function contextDetail(ctx) {
+  if (!ctx) return 'the context agent returned nothing on three attempts; context.json was not read, so the run is unverified and no judge was called'
+  if (ctx.problem) return `the run's context.json could not be read in code (${ctx.problem}); it is unverified and no judge was called`
+  if (ctx.present !== true) return 'the run has no context.json; it is unverified and no judge was called'
+  return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
+}
+
 function judgePrompt(item) {
   const ids = criteriaFor(item.prompt).map((c) => `${c.id}${c.must ? ' (must)' : ''}`).join(', ')
   const expected = EXPECTED_FILES[item.prompt]
@@ -373,13 +431,27 @@ for (const prompt of PROMPTS) {
 phase('Judge')
 const runs = await pipeline(
   runItems,
-  (_prev, item) => tryAgent(judgePrompt(item), { label: `judge p${item.prompt} ${item.model_capability} run${item.run}`, phase: 'Judge', model: MODELS_BY_CAPABILITY.high, schema: SCORE_SCHEMA }),
-  (judged, item) => {
+  (_prev, item) => tryAgent(contextPrompt(item), { label: `context p${item.prompt} ${item.model_capability} run${item.run}`, phase: 'Context', model: MODELS_BY_CAPABILITY.medium, schema: CONTEXT_SCHEMA }),
+  (reply, item) => {
+    const ctx = parseContext(reply)
+    return gated(ctx)
+      ? { ctx, judged: null }
+      : tryAgent(judgePrompt(item), { label: `judge p${item.prompt} ${item.model_capability} run${item.run}`, phase: 'Judge', model: MODELS_BY_CAPABILITY.high, schema: SCORE_SCHEMA }).then((judged) => ({ ctx, judged }))
+  },
+  ({ ctx, judged }, item) => {
     const key = `p${item.prompt} ${item.model_capability} run${item.run}`
+    const context = ctx && ctx.present ? { window: ctx.window_line, compactions: ctx.compactions, peak_context_tokens: ctx.peak_context_tokens } : null
+    // A gated run was never judged: no scores, unverified, never a 0 (§5.3).
+    if (gated(ctx)) {
+      const detail = contextDetail(ctx)
+      unverified.push({ unit: `context ${key}`, detail })
+      log(`${key}: ${detail}`)
+      return { ...item, context, scores: [], total: 0, max: 2 * criteriaFor(item.prompt).length, musts_at_2: 0, notes: detail, pass: false, unverified: true }
+    }
     if (!judged) {
       unverified.push({ unit: `judge ${key}`, detail: 'the judge agent returned nothing on three attempts; this run is unjudged, not a failed run and not a pass' })
       log(`judge for ${key} returned nothing on three attempts; recorded as unverified`)
-      return { ...item, scores: [], total: 0, max: 2 * criteriaFor(item.prompt).length, musts_at_2: 0, notes: 'judge returned no result on three attempts', pass: false, unverified: true }
+      return { ...item, context, scores: [], total: 0, max: 2 * criteriaFor(item.prompt).length, musts_at_2: 0, notes: 'judge returned no result on three attempts', pass: false, unverified: true }
     }
     const known = new Set(criteriaFor(item.prompt).map((c) => c.id))
     const scores = judged.scores.filter((s) => known.has(s.id))
@@ -397,7 +469,7 @@ const runs = await pipeline(
       const detail = `the judge scored none of the prompt's ${known.size} criteria, as it does when the run left no analysis.json or report.html; its notes: ${judged.notes || '(none)'}; this run is recorded unverified, never scored 0`
       unverified.push({ unit: `judge ${key}`, detail })
       log(`${key}: ${detail}`)
-      return { ...item, scores: [], total: 0, max: 2 * known.size, musts_at_2: 0, notes: judged.notes, pass: false, unverified: true }
+      return { ...item, context, scores: [], total: 0, max: 2 * known.size, musts_at_2: 0, notes: judged.notes, pass: false, unverified: true }
     }
     const s = summarize(item.prompt, scores)
     // A judge that scored fewer of the prompt's criteria than it has did not judge
@@ -417,7 +489,7 @@ const runs = await pipeline(
       const detail = `the judge returned ${judged.scores.length} scores covering ${scored.size} of the prompt's ${known.size} criteria: ${what.join(' and ')}; the rubric was not covered exactly once, so this run is neither a failed run nor a pass`
       unverified.push({ unit: `judge ${key}`, detail })
       log(`${key}: ${detail}; recorded as unverified`)
-      return { ...item, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: false, unverified: true }
+      return { ...item, context, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: false, unverified: true }
     }
     // Every applicable criterion was scored, so the run was judged against the
     // whole rubric even where the judge added its own scores up wrong. This file
@@ -426,7 +498,7 @@ const runs = await pipeline(
     if (s.total !== judged.total || s.musts_at_2 !== judged.musts_at_2) {
       log(`${key}: the judge reported total ${judged.total}, musts ${judged.musts_at_2} against the recomputed total ${s.total}, musts ${s.musts_at_2}; the recomputation stands`)
     }
-    return { ...item, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: s.pass, unverified: false }
+    return { ...item, context, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: s.pass, unverified: false }
   },
 )
 

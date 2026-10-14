@@ -38,12 +38,18 @@
 // is missing) is pushed onto `unverified` and carried in the return value. None
 // of these is ever a score, a pass, or an old score left standing silently: the
 // task that runs this script reports the list, and each entry travels to the
-// round's results note. The caller merges the returned scores into
-// <evalsDir>/results.json mechanically: it replaces this criterion's
-// {id, score, evidence} entry in the scores[] of the run with the same prompt,
-// model capability and run (a returned `notes` goes to the round's results note
-// and the acceptance note, never into scores[]), and appends one entry to the
-// file's rejudged[] — {criterion, date, runs, by: "tools/workflows/rejudge.js",
+// round's results note. Before the judge, the context gate of evals.js (prose
+// design §5.3) runs on each run: one agent fetches its context.json and this
+// file reads it in code. A run whose context agent returned nothing, that has no
+// context.json, whose context.json cannot be read in code, or that compacted
+// (compactions above 0) is pushed onto `unverified` under the unit
+// `context p<prompt> <capability> run<n>`, and no judge is called. The caller
+// merges the returned scores into <evalsDir>/results.json mechanically: it
+// replaces this criterion's {id, score, evidence} entry in the scores[] of the
+// run with the same prompt, model capability and run (a returned `notes` goes to
+// the round's results note and the acceptance note, never into scores[]), and
+// appends one entry to the file's rejudged[] —
+// {criterion, date, runs, by: "tools/workflows/rejudge.js",
 // models, reason, unverified}, with `runs` the count of scores plus unverified
 // entries and `date` stamped by the caller — which tools/eval-report.ts reads to
 // flag every critic entry and judge note that quotes a score the tables no
@@ -51,15 +57,19 @@
 // from the scores. This script writes no file, because the Persist agent of the
 // main judging workflow was caught abridging an evidence string on 2026-09-15.
 //
-// Model capabilities (spec D10): every judge runs at the high capability, filled
-// from the table below, which args.models replaces wholesale exactly as in
-// evals.js and rejudge-c1.js. The table has to name the high capability this run
-// judges at, and every run's model capability has to be one of its keys.
+// Model capabilities (spec D10): every judge runs at the high capability and
+// every context agent at medium, both filled from the table below, which
+// args.models replaces wholesale as in evals.js. The table has to name high (the
+// judge) and medium (the context gate), and every run's model capability has to
+// be one of its keys.
 
 export const meta = {
   name: 'fmea-rejudge',
   description: 'Re-judge one rubric criterion alone on the eval runs the caller names',
-  phases: [{ title: 'Re-judge', detail: 'one judge per run, scoring the one criterion against its section of rubric.md as it now stands' }],
+  phases: [
+    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file or with compactions above 0 is unverified before any judge is called' },
+    { title: 'Re-judge', detail: 'one judge per run, scoring the one criterion against its section of rubric.md as it now stands' },
+  ],
 }
 
 const PROMPTS = [1, 5, 6, 7]
@@ -93,10 +103,10 @@ const argsObject = args && typeof args === 'object' ? args : {}
 // The criterion as given, echoed in a refusal so the caller sees what was refused.
 const GIVEN_CRITERION = typeof argsObject.criterion === 'string' ? argsObject.criterion : null
 
-// The model table, validated exactly as in rejudge-c1.js: a key that is not a
-// model capability, an empty value, or a table that names no model for the high
-// capability refuses before any agent is called, with the default table in the
-// returned `models`.
+// The model table: a key that is not a model capability, an empty value, or a
+// table that names no model for the high capability (the judge) or the medium
+// capability (the context gate) refuses before any agent is called, with the
+// default table in the returned `models`.
 const DEFAULT_MODELS_BY_CAPABILITY = { high: 'opus', medium: 'sonnet', low: 'haiku' }
 const argsModels = argsObject.models !== undefined ? argsObject.models : null
 let MODELS_BY_CAPABILITY = DEFAULT_MODELS_BY_CAPABILITY
@@ -111,6 +121,7 @@ if (argsModels !== null) {
       else if (typeof name !== 'string' || name.trim() === '') problems.push(`the ${capability} model capability names no model (empty value)`)
     }
     if (!('high' in argsModels)) problems.push('the table names no model for the high model capability this run judges at')
+    if (!('medium' in argsModels)) problems.push('the table names no model for the medium model capability the context gate runs at')
   }
   if (problems.length > 0) {
     const refused = `args.models refuses the run: ${problems.join('; ')}`
@@ -295,9 +306,64 @@ function runKey(item) {
   return `p${item.prompt} ${item.model_capability} run${item.run}`
 }
 
-// One judge for one run. Returns {score} or {unverified}; anything the judge
-// returns that is not a score inside the schema becomes an unverified entry.
+// The context gate of evals.js (prose design §5.3): CONTEXT_SCHEMA,
+// contextPrompt, parseContext, gated and contextDetail copied from
+// tools/workflows/evals.js, because workflow scripts cannot import; the sync test
+// in tools/eval-report.test.ts pins the gate predicate in both files. One agent
+// fetches the run's context.json and returns its text verbatim; the reading is
+// here, in code, and the agent decides nothing.
+const CONTEXT_SCHEMA = { type: 'object', properties: { exists: { type: 'boolean' }, text: { type: 'string' } }, required: ['exists', 'text'] }
+
+function contextPrompt(item) {
+  return `Read ${item.dir}/context.json with the Read tool. If the file does not exist, return exists false and text "". Otherwise return exists true and, as text, the file's whole content exactly as read: byte for byte, no reformatting, no summarising, no truncation. Return nothing else and change nothing.`
+}
+
+// null when the context agent returned nothing; present false when the run has
+// no context.json, or, with the problem named, when its text is not JSON or a
+// field the gate reads is missing or of the wrong type; otherwise the three
+// fields the gate reads.
+function parseContext(reply) {
+  if (!reply) return null
+  if (reply.exists !== true) return { present: false }
+  let file
+  try {
+    file = JSON.parse(reply.text)
+  } catch {
+    return { present: false, problem: 'text is not JSON' }
+  }
+  for (const field of ['compactions', 'peak_context_tokens']) {
+    if (!Number.isInteger(file?.[field])) return { present: false, problem: `${field} missing or not an integer` }
+  }
+  if (typeof file.window_line !== 'string') return { present: false, problem: 'window_line missing or not a string' }
+  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line }
+}
+
+// A run is gated, unverified with no judge call, unless its context.json was
+// read and shows no compaction.
+function gated(ctx) {
+  return !ctx || ctx.present !== true || ctx.compactions !== 0
+}
+
+// Why a gated run is unverified, one sentence per way the gate closes.
+function contextDetail(ctx) {
+  if (!ctx) return 'the context agent returned nothing on three attempts; context.json was not read, so the run is unverified and no judge was called'
+  if (ctx.problem) return `the run's context.json could not be read in code (${ctx.problem}); it is unverified and no judge was called`
+  if (ctx.present !== true) return 'the run has no context.json; it is unverified and no judge was called'
+  return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
+}
+
+// One context read and one judge for one run. Returns {score} or {unverified}: a
+// run the context gate closes is an unverified entry with no judge call, and
+// anything the judge returns that is not a score inside the schema becomes one
+// too.
 async function judge(item) {
+  const reply = await tryAgent(contextPrompt(item), { label: `context ${runKey(item)}`, phase: 'Context', model: MODELS_BY_CAPABILITY.medium, schema: CONTEXT_SCHEMA })
+  const ctx = parseContext(reply)
+  if (gated(ctx)) {
+    const detail = contextDetail(ctx)
+    log(`${runKey(item)}: ${detail}`)
+    return { unverified: { unit: `context ${runKey(item)}`, detail } }
+  }
   const unit = `rejudge ${CRITERION.id} ${runKey(item)}`
   const label = `rejudge ${SHORT_ID} ${runKey(item)}`
   const r = await tryAgent(judgePrompt(item), { label, phase: 'Re-judge', model: MODELS_BY_CAPABILITY.high, schema: SCORE_SCHEMA })

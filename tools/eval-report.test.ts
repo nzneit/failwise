@@ -24,6 +24,7 @@ import {
   type SessionCheck,
   type SessionClause,
 } from "./eval-report.ts";
+import type { EvalContext } from "./eval-context.ts";
 
 function allTwo(prompt: number, except: Record<string, number> = {}, rubric = 1): RunScore[] {
   return criteriaFor(prompt, rubric).map((c) => ({ id: c.id, score: except[c.id] ?? 2, evidence: "ok" }));
@@ -307,6 +308,93 @@ test("a stability flows that is not {jaccard, pass} is one coded IO_READ line", 
   assert.match(run.stderr, /^error IO_READ: .*has a stability flows that is not \{jaccard, pass\} at stability\[1\]/);
 });
 
+/** A context.json as tools/eval-context.ts writes it, for an isolated run that never compacted; `overrides` replaces whole fields. */
+function contextFile(overrides: Partial<EvalContext> = {}): EvalContext {
+  return {
+    config_dir: "/tmp/cfg",
+    cli_version: "2.1.296",
+    settings: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432", CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1000000" },
+    window_line: "Auto-compact window for deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)",
+    compactions: 0,
+    peak_context_tokens: 238429,
+    assistant_lines: 115,
+    init: {
+      present: true,
+      plugins: [{ name: "failwise", source: "failwise@inline" }, { name: "cc-plugin-telemetry", source: "cc-plugin-telemetry@builtin" }],
+      skills_namespaced: ["failwise:fmea-software"],
+      skills_unnamespaced: ["deep-research"],
+      memory_auto: "/tmp/cfg/projects/x/memory/",
+      memory_under_config_dir: true,
+    },
+    leak_grep: { "CLAUDE.md": 0, "~/.claude": 0 },
+    invocations: "present",
+    denied: { bun: 0, other: 1 },
+    lints: [
+      { id: "edge-reliability-unstated", fired: 2, final: true },
+      { id: "conversion-substitution-unrecorded", fired: 0, final: false },
+    ],
+    ...overrides,
+  };
+}
+
+test("a run that carries context prints the Harness table with its window, compactions and peak, reads isolation, denials and lint counts from its context.json, and marks the gaps", () => {
+  const r = sampleResults();
+  // Four absolute temp run directories: A holds a full context.json; B one that
+  // compacted twice (the copy below says once), with no init line, no
+  // invocations.json and no validate.json; C none, while its copied context is
+  // non-null; D a full one like A, while its run entry has no context key.
+  const root = mkdtempSync(join(tmpdir(), "eval-report-harness-"));
+  const [A, B, C, D] = ["a", "b", "c", "d"].map((name) => join(root, name));
+  for (const dir of [A, B, C, D]) mkdirSync(dir);
+  writeFileSync(join(A, "context.json"), JSON.stringify(contextFile(), null, 2));
+  writeFileSync(join(B, "context.json"), JSON.stringify(contextFile({
+    compactions: 2,
+    peak_context_tokens: 170039,
+    init: { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false },
+    invocations: "missing",
+    denied: { bun: 0, other: 0 },
+    lints: [{ id: "edge-reliability-unstated", fired: null, final: null }, { id: "conversion-substitution-unrecorded", fired: null, final: null }],
+  }), null, 2));
+  writeFileSync(join(D, "context.json"), JSON.stringify(contextFile(), null, 2));
+  try {
+    r.runs[0] = { ...r.runs[0], dir: A, context: { window: "Auto-compact window for deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", compactions: 0, peak_context_tokens: 238429 } };
+    r.runs[1] = { ...r.runs[1], dir: B, context: { window: "x: 200k tokens", compactions: 1, peak_context_tokens: 170039 } };
+    r.runs[2] = { ...r.runs[2], dir: C, context: { window: "x: 200k tokens", compactions: 0, peak_context_tokens: 1 } };
+    r.runs[3] = { ...r.runs[3], dir: D };
+    const md = renderReport(r);
+    assert.match(md, /^## Harness$/m);
+    assert.match(md, /\| Prompt \| Model capability \| Run \| Window \| Compactions \| Peak context \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|/);
+    assert.match(md, /\| 1 \| high \| 1 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
+    assert.match(md, /\| 1 \| high \| 2 \| 200k tokens \| 1 \| 170,039 \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
+    assert.match(md, /^- p1 high run 2: results\.json context disagrees with context\.json \(compactions: 1 vs 2\)$/m);
+    assert.match(md, /\| 1 \| medium \| 1 \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \|/);
+    assert.match(md, /^- p1 medium run 1: context\.json unreadable at [^/].*$/m);   // a repository-relative path, never /home
+    assert.match(md, /^- p1 medium run 1: results\.json context disagrees with context\.json \(file missing\)$/m);
+    assert.match(md, /\| 1 \| medium \| 2 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
+    assert.ok(!md.includes("p1 medium run 2: results.json context disagrees"), "a run with no context key is never a disagreement");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a results file whose runs carry no context field renders exactly as before, with no Harness section", () => {
+  assert.ok(!renderReport(sampleResults()).includes("## Harness"));
+});
+
+test("a run context that is not {window, compactions, peak_context_tokens} or null is one coded IO_READ line naming the run", () => {
+  const r = JSON.parse(JSON.stringify(sampleResults()));
+  r.runs[0].context = { window: 1 };
+  const out = reportOn(JSON.stringify(r), "eval-report-context-");
+  assert.equal(out.status, 3, out.stderr);
+  assert.equal(out.stderr.trimEnd().split("\n").length, 1, out.stderr);
+  assert.match(out.stderr, /^error IO_READ: .*has a run context that is not \{window, compactions, peak_context_tokens\} at runs\[0\]/);
+  for (const context of [null, { window: "x: 200k tokens", compactions: 0, peak_context_tokens: 1 }]) {
+    r.runs[0].context = context;
+    const accepted = reportOn(JSON.stringify(r), "eval-report-context-");
+    assert.equal(accepted.status, 0, accepted.stderr);
+  }
+});
+
 test("CRITERIA matches the rubric: same ids in the same order, same must flags", () => {
   const rubric = readFileSync(
     join(import.meta.dirname, "..", "skills", "fmea-software", "evals", "rubric.md"),
@@ -362,6 +450,7 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   const fromRejudge = [...rejudge.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\]) \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]) }));
   assert.deepEqual(fromRejudge, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts })));
+  for (const script of [workflow, rejudge]) assert.ok(script.includes("!ctx || ctx.present !== true || ctx.compactions !== 0"), "the context gate predicate");
 });
 
 // c16 and the flows stability predicate both key on flows[].id, so the ids and
