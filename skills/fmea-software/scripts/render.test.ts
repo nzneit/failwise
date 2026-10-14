@@ -183,37 +183,75 @@ test("the report carries every section id, in the order section 9 fixes", () => 
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
 });
 
-test("the Flows section prints one row per flow, High first then by id, with the legend's disclaimer verbatim", () => {
-  const html = renderHtml(golden(), table, template, vocabulary);
-  const section = html.slice(html.indexOf('id="flows"'), html.indexOf('id="chains"'));
-  assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the legend prints DF4's sentence verbatim");
-  const ids = [...section.matchAll(/<code>(flow-[a-z-]+)<\/code>/g)].map((m) => m[1]);
+const flowsSection = (html: string): string => html.slice(html.indexOf('id="flows"'), html.indexOf('id="chains"'));
+
+/** One flow's record of the Flows section, by the flow's id. */
+function flowRecord(html: string, id: string): string {
+  const at = html.indexOf(`<article class="flow" id="flow-${id}">`);
+  assert.notEqual(at, -1, `no record for ${id}`);
+  return html.slice(at, html.indexOf("</article>", at));
+}
+
+const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that rest on it, and the priority that follows, are not final.";
+
+test("the Flows section prints one record per flow, High first then by id, with the key's disclaimer verbatim", () => {
+  const section = flowsSection(renderHtml(golden(), table, template, vocabulary));
+  assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the key prints DF4's sentence verbatim");
+  assert.ok(section.includes("a presentational order that ranks nothing"), "the key states the order");
+  assert.ok(section.includes("a chain that names several reads it over the first, and its row says which"), "the key states the several-flow reading");
+  const ids = [...section.matchAll(/<article class="flow" id="flow-(flow-[a-z-]+)">/g)].map((m) => m[1]);
   assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
-  assert.ok(section.includes("a starting point only; the recorded steps are a prefix") === false, "the golden fixture's flows are not partial");
+  assert.ok(!section.includes("a starting point only; the recorded steps are a prefix"), "the golden fixture's flows are not partial");
 });
 
-test("the Flows section has its empty state, and a partial flow renders its phrase", () => {
+test("a flow record lists the chains that name it, in the index order, each linked with its priority badge", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  assert.ok(flowRecord(html, "flow-checkout").includes('<dt>Chains</dt><dd><span class="chain-list"><a class="chain-ref" href="#row-ch-9"><span class="pri pri-top">H</span><code>ch-9</code></a></span></dd>'), "the chain is linked with its badge");
+  assert.ok(flowRecord(html, "flow-resume").includes('href="#row-ch-5"'), "the flow one chain names lists that chain");
   const doc = minimalDoc();
-  assert.ok(renderHtml(doc, table, template, vocabulary).includes('<p class="empty">No flows recorded.</p>'));
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "Low" }];
+  assert.ok(flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1").includes('<dt>Chains</dt><dd><span class="empty">none</span></dd>'), "a flow no chain names says so");
+});
+
+test("a flow's steps print the function's element and statement in order, and an unresolved step keeps its id", () => {
+  const doc = golden();
+  const flow = (doc.flows ?? []).find((f) => f.id === "flow-checkout");
+  const first = doc.functions.find((f) => f.id === flow?.steps?.[0]);
+  assert.ok(flow !== undefined && first !== undefined, "the golden flow-checkout has a resolvable first step");
+  const record = flowRecord(renderHtml(doc, table, template, vocabulary), "flow-checkout");
+  assert.ok(record.includes(`<dt>Steps</dt><dd><ol class="steps"><li><code>${first.element}</code> ${escapeHtml(first.statement)}</li>`), "the first step names its element and statement");
+  assert.ok(!record.includes(`<code>${first.id}</code>`), "the function id leaves the page");
+  const min = minimalDoc();
+  min.flows = [{ id: "flow-1", name: "One", value_priority: "Low", steps: ["fn-1", "fn-missing"] }];
+  assert.ok(flowRecord(renderHtml(min, table, template, vocabulary), "flow-1").includes("<li><code>svc</code> serve requests</li><li><code>fn-missing</code></li>"), "an unresolved step prints its id alone");
+});
+
+test("the Flows section has its empty state without the key, and a partial flow renders its phrase", () => {
+  const doc = minimalDoc();
+  const empty = flowsSection(renderHtml(doc, table, template, vocabulary));
+  assert.ok(empty.includes('<p class="empty">No flows recorded.</p>'));
+  assert.ok(!empty.includes("How to read this section"), "an empty section prints no key");
   doc.flows = [{ id: "flow-1", name: "One", value_priority: "Low", steps: ["fn-1"], steps_partial: true, users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } }];
   assert.ok(renderHtml(doc, table, template, vocabulary).includes("a starting point only; the recorded steps are a prefix"));
 });
 
-test("a chain-named flow whose population is not re-scored is marked, and the legend says so", () => {
+test("a chain-named flow whose population is not re-scored is marked beside the population, and the key says so", () => {
   const doc = minimalDoc();
   doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } }];
   doc.chains[0].flows = ["flow-1"];
   const html = renderHtml(doc, table, template, vocabulary);
-  assert.ok(html.includes('<span class="mark mark-provisional"'), "the flow row carries the provisional mark");
-  assert.ok(html.includes("whose population has not been re-scored"), "the legend names the provisional note");
+  assert.ok(flowRecord(html, "flow-1").includes(`<dt>Population</dt><dd>all shoppers <span class="mark mark-provisional" title="${FLOW_PROVISIONAL_NOTE}">provisional</span></dd>`), "the mark sits beside the population with the flow's own sentence");
+  assert.ok(flowsSection(html).includes(`<dd>${FLOW_PROVISIONAL_NOTE}</dd>`), "the key explains the mark");
+  doc.chains[0].flows = [];
+  assert.ok(!flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1").includes("mark-provisional"), "a flow no chain names is not marked");
 });
 
-test("the chain annotation names every flow it breaks, marks the one whose band was used, and notes the disjointness assumption", () => {
+test("the chain annotation links every flow it breaks to its record, marks the one whose band was used, and notes the disjointness assumption", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
   const row = rowSection(html, "ch-9");
   assert.ok(row.includes("breaks:"), "the row names the flows");
-  assert.ok(row.includes("<code>flow-checkout</code>"), "the first named flow is printed");
-  assert.ok(row.includes("<code>flow-retry</code>"), "the second named flow is printed");
+  assert.ok(row.includes('<a href="#flow-flow-checkout"><code>flow-checkout</code></a>'), "the first named flow links to its record");
+  assert.ok(row.includes('<a href="#flow-flow-retry"><code>flow-retry</code></a>'), "the second named flow links to its record");
   assert.ok(row.includes("whose band was used"), "the chosen flow is marked");
   assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
 });
@@ -221,7 +259,7 @@ test("the chain annotation names every flow it breaks, marks the one whose band 
 test("a chain naming one flow prints no disjointness note, and a chain naming none prints no annotation", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
   const single = rowSection(html, "ch-5");
-  assert.ok(single.includes("breaks:") && single.includes("<code>flow-resume</code>"), "the single named flow is still annotated");
+  assert.ok(single.includes("breaks:") && single.includes('<a href="#flow-flow-resume"><code>flow-resume</code></a>'), "the single named flow is still annotated");
   assert.ok(!single.includes("treated as disjoint"), "one named flow prints no disjointness note");
   assert.ok(!renderHtml(minimalDoc(), table, template, vocabulary).includes("breaks:"));
 });
@@ -240,11 +278,11 @@ test("the annotation marks the first named flow by position, whichever id it car
   // Both entries name a flow, so a renderer that marked every named flow would print two mark-chosen
   // spans; exactly one proves the annotation reads position, not the presence of a name.
   const leading = rowFor(["flow-a", "flow-b"]);
-  assert.equal(leading.match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0], '<code>flow-a</code> <span class="mark mark-chosen">', "the first entry is marked when it leads");
+  assert.equal(leading.match(/<code>flow-[ab]<\/code><\/a> <span class="mark mark-chosen">/)?.[0], '<code>flow-a</code></a> <span class="mark mark-chosen">', "the first entry is marked when it leads");
   assert.equal(occurrences(leading, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when it leads, never every named flow");
   assert.ok(leading.indexOf("breaks:") < leading.indexOf('<p class="finding'), "the annotation reads before the row's findings");
   const later = rowFor(["flow-b", "flow-a"]);
-  assert.equal(later.match(/<code>flow-[ab]<\/code> <span class="mark mark-chosen">/)?.[0], '<code>flow-b</code> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
+  assert.equal(later.match(/<code>flow-[ab]<\/code><\/a> <span class="mark mark-chosen">/)?.[0], '<code>flow-b</code></a> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
   assert.equal(occurrences(later, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when the later entry is the other flow, never every named flow");
 });
 
@@ -259,7 +297,7 @@ for (const reading of DF3_READINGS) {
   test(`the DF3 reading ${reading.name} prints the chosen first flow at band ${reading.band}`, () => {
     const row = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
     assert.ok(row.includes("breaks:"), "the row names the flows it breaks");
-    assert.ok(row.includes(`<code>${named[0]}</code> <span class="mark mark-chosen">`), "the first named flow is the one marked chosen");
+    assert.ok(row.includes(`<code>${named[0]}</code></a> <span class="mark mark-chosen">`), "the first named flow is the one marked chosen");
     if (named.length > 1) assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
   });
 }
@@ -525,7 +563,7 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   const labels = [...html.matchAll(FRAME)].map((match) => match[1]);
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
-    "By top-level element", "Dependencies", "Flows", "Index of failure chains",
+    "By top-level element", "Dependencies", "Index of failure chains",
     ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);
@@ -562,7 +600,9 @@ test("the template lets a frame scroll sideways, keeps a framed table's shape, a
 });
 
 test("the key lists the loaded table's vocabulary and all five marks; a document with no chains has no key and no index", () => {
-  const key = between(renderHtml(golden(), table, template, vocabulary), '<div class="key">', "</div>");
+  // The chains key is the one after the Flows section's.
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const key = between(html.slice(html.indexOf('id="chains"')), '<div class="key">', "</div>");
   const entries = [
     '<h3 class="key-title">How to read this table</h3><dl>',
     `<dt><b>S</b>, <b>O</b>, <b>D</b></dt><dd>${escapeHtml(SOD_TEXT)}</dd>`,
@@ -792,7 +832,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
     "body { padding:0; font-size:11px; }",
     ".back { display:none; }",
     "h2, h3, article.row > header { break-after: avoid; }",
-    "article.row, tr, .attn-item, .tile-group, .key, .el { break-inside: avoid; }",
+    "article.row, tr, .attn-item, .tile-group, .key, .el, .flow { break-inside: avoid; }",
     "thead { display: table-header-group; }",
     "a { color:inherit; text-decoration:none; }",
     ".frame { overflow-x:visible; }",
@@ -802,7 +842,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
   assert.ok(!print.includes(".group"), "no group rule in the print block");
 });
 
-test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the structure's name column", () => {
+test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the name columns of the structure and the flows", () => {
   const start = template.indexOf("@media (max-width: 767px) {");
   assert.notEqual(start, -1);
   const end = template.indexOf("\n}\n", start);
@@ -812,9 +852,10 @@ test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frame
   // anywhere in a cell lets the table squeeze its columns until words split.
   assert.ok(inside.includes("main { overflow-wrap:anywhere; }"));
   assert.ok(inside.includes(".frame { overflow-wrap:normal; }"));
-  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 2);
+  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 3);
   assert.ok(outside.includes("table.index code { overflow-wrap:anywhere; }"));
   assert.ok(outside.includes(".el-who { min-width:0; overflow-wrap:anywhere; }"));
+  assert.ok(outside.includes(".flow-who { min-width:0; overflow-wrap:anywhere; }"));
 });
 
 test("the template styles the stale notice and shrinks the post-action badge in a row header", () => {

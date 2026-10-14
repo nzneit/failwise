@@ -49,7 +49,7 @@ move them.
 | DF1 | Additive | Flows add no rating scale and move no band cut, and they drive no rating except Severity's — and only through its blast-radius denominator (DF3). Occurrence and Detection are not otherwise touched (the scales-version bump re-opens them for re-read, DF6), and priority follows S as it always does. Strength stays edge-stored and informational (M8 of the multi-codebase design is unchanged), and flows are not a strength input (§1). |
 | DF2 | Partial by design | A flow always carries `id`, `name` and `value_priority`; its `steps` are best-effort and optional (a linear sequence — branching and fan-out structure is §9's deferral) — and a `steps_partial` flag records that the recorded steps are a prefix, so the flow continues past what is written (the async/broker case, where the team may know "A publishes, B consumes" but not the end-to-end path or every downstream consumer). The flag records **documentation extent only; it never means the flow survives a failure** (the collision with graceful-degradation vocabulary is why it is not named "continues"), and it is **not a defeater of the checks**: it silences the mismatch warning only where a prefix is actually recorded, and a chain-named flow with empty `steps` draws `chain-flow-no-steps` whatever the flag says (§4.4). |
 | DF3 | Severity denominator | Severity's blast radius is read over the affected population of the flows a chain names. For that row the flow referent **replaces** the function's users as the population the structural test is read over — the test restated in flow terms, not the function's test unioned with a flow-scoped label: majority is the mode hitting every request of the flow's referent population while it is active, subset is its hitting only those meeting a further condition (or a share stated in an incident record raising the class), internal-only is the flow having no external user. It **never lowers the band**: the radius class is `max(flow class, function class)` — the **floor**, whose second term is *the class this same chain reads with no flow named* (the structural test over the function's requests and users, never a reading of `for_whom` prose) — so a flow whose referent is wider than the function's users can raise S and a flow narrower than them can never deflate it. A flow whose partial prefix does not include the chain's function reads the **subset** class (asserting only what is documented), and that reading **takes precedence over the flow's own class**, so a partial internal-only flow whose recorded prefix excludes the function still reads subset; where a partial prefix and a stated share both apply, the share raises from that subset reading; the floor applies after. A share stated in an incident record raises the class it is measured against — the named flow's, where the flow is the referent — and never lowers it; the floor applies after the raise. The chain carries **one** end effect (the existing rule), so every named flow is read under that same effect and "class" here always means the **radius** class: no per-flow effect classes exist. Where a chain names several flows, the band is read over the single named flow that yields the **highest radius class** — the **worst-single-flow** reading, not a worst-credible one: the named populations are treated as **disjoint**, their union is deliberately **not computed** (the deficit, and its common-cause companion, are declared in §4.2 and §10), and the rationale names **every** named flow, the one that set the band, and the scale that flow carries against the system's population as the inputs name it (or the recorded open assumption that the inputs give no total). A chain that names no flow reads over the function's users exactly as today. A flow a chain names **must** carry `users` and a non-catalog `sources[]` entry (rules `flow-users-required`, `flow-sources-required`), so the denominator is neither silent nor unreviewed: `users.review` carries the same status vocabulary as a rating's, the warning `flow-users-provisional` fires while it is provisional, and the referent population is a required, structured field whose value is a label. This is a **global redefinition** of the blast-radius population — the definition sentence, every anchor row that names a radius class or reads "the function's users", and the reviewer row that restates the top-of-scale anchor (`catastrophic-severity-anchor`), not a footnote — and §6 lists those rows. The band is still chosen by the author against the existing anchors; the flow supplies the population, never a computed rating. Because this changes how the Severity anchor is read, it bumps the scales version (DF6). |
-| DF4 | Value priority, not criticality | The tier is the three-level ordinal High/Medium/Low, named `value_priority` — DF4's sentence, carried verbatim in three places: **a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target**. The canon's `criticality` is a term of art with a technical meaning (a severity-derived category or number: MIL-STD-1629A Task 102/103, ECSS, IEC Annex B); this field derives nothing, ranks nothing by recoverability or time, and drives nothing, so it is not named with the canon's word, and the qualifier is not left to a description alone: the sentence stands in the schema description of `flows[].value_priority`, in the `methodology.md` row, and in the report legend, and the legend's copy is asserted by test (§5.3, §8.2), so a later edit cannot drop it silently. The field is used for sort/filter only; the ordinal ruling (median/mode/max licensed, arithmetic not) is the addendum's, `[paraphrased:C192]` Sullivan & Artino, `[paraphrased:C193]` Briand, Morasca & Basili, `[paraphrased:C194]` Stevens. The tier vocabulary is paraphrased from Azure WAF RE:02 (record C201, now admitted `confirmed`, §7), with the three-level shape corroborated by C196/C198 **once they clear the vote protocol**. The three criteria are stated in `design-inputs.md` as **falsifiable one-line tests** (not impact-kind descriptions, which do not discriminate), so two raters converge. |
+| DF4 | Value priority, not criticality | The tier is the three-level ordinal High/Medium/Low, named `value_priority` — DF4's sentence, carried verbatim in three places: **a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target**. The canon's `criticality` is a term of art with a technical meaning (a severity-derived category or number: MIL-STD-1629A Task 102/103, ECSS, IEC Annex B); this field derives nothing, ranks nothing by recoverability or time, and drives nothing, so it is not named with the canon's word, and the qualifier is not left to a description alone: the sentence stands in the schema description of `flows[].value_priority`, in the `methodology.md` row, and in the report's Flows key, and the key's copy is asserted by test (§5.3, §8.2), so a later edit cannot drop it silently. The field is used for sort/filter only; the ordinal ruling (median/mode/max licensed, arithmetic not) is the addendum's, `[paraphrased:C192]` Sullivan & Artino, `[paraphrased:C193]` Briand, Morasca & Basili, `[paraphrased:C194]` Stevens. The tier vocabulary is paraphrased from Azure WAF RE:02 (record C201, now admitted `confirmed`, §7), with the three-level shape corroborated by C196/C198 **once they clear the vote protocol**. The three criteria are stated in `design-inputs.md` as **falsifiable one-line tests** (not impact-kind descriptions, which do not discriminate), so two raters converge. |
 | DF5 | Shape | Approach 1 of the brainstorm: a flat `flows[]` array with an optional chain→flows reference, seven invariants, four machine lints and three reviewer rules — the traceability warnings, moved from later work now that the authored link needs a falsifier. Typed steps and typed fan-out/broker nodes remain later work (§9). |
 | DF6 | Scales version | DF3 is a change to how an anchor reads, so the scales version bumps (`scales version: 1` → `2`); a version gap marks every rated row `scales-version` and re-reads all three factors on the next update, by the existing rule. This is the rule working as written, not a side effect to route around. Because it re-opens O and D as well as S, the acceptance note carries a one-paragraph **board note** recording that **only the blast-radius denominator definition moved** — no rating is changed by this design, the mandated re-read may move S, and O and D are re-opened for re-read, not for a change of factor. |
 
@@ -244,7 +244,7 @@ the description of the field it governs, the `flows[].id` description cites `flo
 cites `flow-step-resolves`, `chains[].flows` cites both `chain-flow-resolves` and `chain-flows-unique`, the
 `flows[].users` description cites `flow-users-required` and states that `review` gates the denominator, and the
 `flows[].sources` description cites `flow-sources-required`. The `flows[].value_priority` description carries DF4's
-disclaimer as one verbatim sentence (the same sentence the report legend prints and the `methodology.md` row
+disclaimer as one verbatim sentence (the same sentence the report's Flows key prints and the `methodology.md` row
 records). The stale-reason vocabulary is
 labelled **"stale reason set v2"** in `quality-and-lint.md` and `SKILL.md`, so a sign-off document quoting the enum
 reads the fifth reason as a documented revision.
@@ -256,19 +256,30 @@ Adds the seven invariants (§4.3) to `INVARIANT_RULES`, and reports the four mac
 
 ### 5.3 `render.ts` and `report-model.ts`
 
-- A **Flows section**: one row per flow — name, `value_priority`, users (`population`, plus `share` and
-  `selecting_condition` if present), sources as recorded, steps as the ordered function names, and a
-  `steps_partial` marker when set. It gets a TOC (`CONTENTS`) entry, a one-line legend, an explicit empty-state
-  ("No flows recorded."), and a fixed row order (High first, then id), which is **presentational only**: the order ranks nothing, sets no
-  reliability ranking, and is the tier's only use (DF4). The legend prints
-  DF4's disclaimer sentence verbatim, so the exclusions it names — not a rating, not a criticality
-  analysis, not a safety or hazard analysis, not a reliability target — are visible where the tier is read; a chain-named flow
-  whose `users.review` is absent or `provisional` is marked in the row and named in the legend's provisional note,
-  so the reader can see which rows' Severity — and whose priority — rests on an unconfirmed population. Every rendered string is
-  escaped; `name` and `users.population` are free text. A partial flow renders an explicit phrase ("a starting
-  point only; the recorded steps are a prefix") rather than empty cells that read as broken — the phrase does not
-  hardcode "broker", so it reads on any partial flow. The section is placed after the element/dependencies block.
-- A **chain annotation**: each chain that names flows lists them ("breaks: checkout"), marks the flow whose band
+- A **Flows section**: one record per flow — the tier badge, the name and the id on the left; on the right,
+  labelled lines for the users (`population`, plus `selecting_condition` and `share` if present), the sources as
+  recorded, the **chains** that name the flow (in the index order, each linked to its row with its priority badge;
+  "none" when no chain does), and the steps as an ordered list, each step the function's element id and statement
+  (a step that resolves to no function prints its id alone), with the `steps_partial` phrase when set. Each record
+  carries the anchor `flow-<id>`, which the chain annotation links to. It gets a TOC (`CONTENTS`) entry, a key in
+  the chains section's "How to read" form, an explicit empty-state ("No flows recorded.", with no key), and a fixed
+  record order (High first, then id), which is **presentational only**: the order ranks nothing, sets no
+  reliability ranking, and is the tier's only use (DF4). The key's first entry prints DF4's disclaimer sentence
+  verbatim, so the exclusions it names — not a rating, not a criticality analysis, not a safety or hazard analysis,
+  not a reliability target — are visible where the tier is read, then the order sentence; its Chains entry states
+  that a chain naming one flow reads its Severity over that flow's population and a chain naming several reads it
+  over the first, its row saying which; a chain-named flow whose `users.review` is absent or `provisional` is
+  marked `provisional` beside its population, the flow's own sentence as the mark's title and as the key's third
+  entry, so the reader can see which rows' Severity — and whose priority — rests on an unconfirmed population.
+  Every rendered string is escaped; `name` and `users.population` are free text. A partial flow renders an
+  explicit phrase ("a starting point only; the recorded steps are a prefix") rather than an empty list that reads
+  as broken — the phrase does not hardcode "broker", so it reads on any partial flow. The section is placed after
+  the element/dependencies block. *(Amended 2026-10-13. The section was first built as a five-column table — flow,
+  priority, population, sources, steps as function ids — with a caption and a one-line legend. Its function ids
+  resolved to nothing else on the page, it never said which chains rest on a flow, and its provisional mark reused
+  the chain mark's rating sentence; the records replace it with the same content and the same DF4 and provisional
+  guarantees. The mockup and the record are in the research repository, `docs/specs/2026-10-13-flows-section-design.md`.)*
+- A **chain annotation**: each chain that names flows lists them ("breaks: checkout"), each linked to its record, marks the flow whose band
   was used, and notes the disjointness assumption where more than one flow is named. The existing
   element/dependency/chain tables and the "By top-level element" summary are untouched. The model changes live in
   `report-model.ts` (`ReportModel`), not `render.ts` alone.
@@ -443,7 +454,7 @@ kinds in the skill's own words, never Azure's. That is also why the field is not
   `properties.flows` (the `$id` pin does not, since it stays v3), so the derivation fixture must instantiate the
   new optional flow fields (`sources`, `users` with `review`) or the "every constrained schema node is reached"
   assertion fails; the same file asserts the `value_priority` description **contains DF4's disclaimer sentence**,
-  and `render.test.ts` asserts the legend prints it verbatim, so the qualifier is pinned in both places.
+  and `render.test.ts` asserts the Flows key prints it verbatim, so the qualifier is pinned in both places.
 - `update-check.ts` — flow diff: a chain-named flow's `users` change (each of `population`, `share`,
   `selecting_condition`) → `flow-changed`; a chain's `flows[]` set change → `flow-changed`;
   `name`/`value_priority`/`steps`/`steps_partial`/`sources`/`users.review` change → no stale; flow add/remove → no
@@ -456,10 +467,12 @@ kinds in the skill's own words, never Azure's. That is also why the field is not
   function, read at subset before the floor); the **share-raise** case (a share stated in an incident record raising
   the flow's class before the floor); and the **single-client** case (a flow whose population is one named client,
   read at majority). Each fixture states the band it must produce.
-- `render.ts` / `report-model.ts` — Flows section, TOC entry, legend (asserting DF4's sentence verbatim, including
+- `render.ts` / `report-model.ts` — Flows section, TOC entry, key (asserting DF4's sentence verbatim, including
   "not a rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a reliability
-  target"), empty-state, partial-flow phrase,
-  provisional-denominator marker, chain annotation naming the chosen flow, `steps_partial` marker.
+  target", and the several-flow reading), empty-state without the key, partial-flow phrase,
+  provisional-denominator marker beside the population with the flow's own sentence, the chains a record lists in
+  the index order with their badges, the steps as element and statement with an unresolved step kept as its id,
+  chain annotation naming and linking the chosen flow, `steps_partial` marker.
 - `eval-stability` — the `flows` predicate, its tri-state (`pass`/`fail`/`unverified`) and the `verified` flag.
 - Pins that move: `invariants.test.ts`'s `INVARIANT_RULES` list and `INVARIANT_RULES.length` (32→39); `lib/lints.ts`
   `MACHINE_RULES` and `quality-and-lint.md`'s "fifteen machine lints" (→ nineteen) with its order test; and the
@@ -529,7 +542,7 @@ SRE Book adaptation); a second rating scale for flow priority.
    flow — and a chain-named flow that lost its last non-catalog source — by refusing the draft, flags
    `flow-changed` on a chain-named flow's `users` change and on a chain's `flows[]` change and nothing on the other
    field changes, and does not refuse a draft whose reason is at or above the reach it computes.
-4. The render adds a Flows section (with TOC entry, legend printing the disclaimer verbatim and stating "not a
+4. The render adds a Flows section (with TOC entry, key printing the disclaimer verbatim and stating "not a
    rating", "not a criticality analysis", "not a safety or hazard analysis" and "not a reliability target", the
    row order marked presentational, empty-state, provisional-denominator
    marker) and chain annotations naming the chosen flow and noting the disjointness assumption; the checkout
