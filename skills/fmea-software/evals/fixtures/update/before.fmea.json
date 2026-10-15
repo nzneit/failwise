@@ -24,6 +24,11 @@
         "text": "The control inventory in the stored analysis is the one confirmed at the last review.",
         "owner": "A. Reviewer",
         "status": "closed"
+      },
+      {
+        "text": "The inputs give pricing's availability as 99.9% monthly but do not state its scaling limit, so the edge to pricing carries no limits value; the platform team is to supply it.",
+        "owner": "user",
+        "status": "open"
       }
     ],
     "reviews": [
@@ -612,7 +617,7 @@
         "message": "flow flow-resume is named by chain ch-2 and its population is not yet re-scored by a named person"
       }
     ],
-    "validated_at": "2026-10-13T08:01:07.876Z",
+    "validated_at": "2026-10-15T02:56:31.881Z",
     "validator_version": "0.7.0"
   }
 }

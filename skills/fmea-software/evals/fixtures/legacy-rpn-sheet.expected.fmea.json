@@ -28,6 +28,11 @@
         "text": "The sheet neither classifies the payment gateway dependency nor names its consumer; the conversion's declared default is an edge from checkout-api, the first in-scope item in sheet order, to payment-gateway at strength strong, because the sheet's own Effect column says a failed authorization leaves the cart unconfirmed, and both the consumer and the strength need the sheet author's confirmation.",
         "owner": "user",
         "status": "open"
+      },
+      {
+        "text": "The sheet does not state payment-gateway's availability SLA or its scaling limit, so its edge carries neither; both need the sheet author's confirmation.",
+        "owner": "user",
+        "status": "open"
       }
     ],
     "reviews": [],

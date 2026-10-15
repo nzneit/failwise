@@ -1,4 +1,4 @@
-import type { Cause, Chain, CitedOccurrence, Codebase, Element, FmeaDocument, Flow, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
+import type { Cause, Chain, CitedOccurrence, Codebase, DependencyEdge, Element, FmeaDocument, Flow, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
 import { ptr } from "./pointer.ts";
 import type { PriorityTable } from "./table.ts";
 import { checkTableProperties } from "./table.ts";
@@ -205,6 +205,54 @@ function rationaleUnnamedLint(at: ChainFlows): Lint[] {
   if (at.named.some((name) => tokens.has(name.flow.id))) return [];
   return [lint("chain-flow-rationale-unnamed", "warning", ptr("chains", at.chainIndex, "ratings", "S"),
     `chain ${at.chain.id} names flow ${at.named[0].flow.id} and its Severity rationale names no flow id`)];
+}
+
+// The c1 lint's run-placeholder pattern and the words that name an edge's sla or limits, each a
+// whole word, case-insensitive.
+const PLACEHOLDER = /\b(?:not stated|none stated|not given|not provided|not documented|not recorded|not published|unknown|n\/a|tbd)\b/i;
+const FIELD_WORD = /\b(?:limits?|ceiling|scaling|rate|sla|availability|latency)\b/i;
+const EDGE_FIELDS = ["sla", "limits"] as const;
+
+// A field is unstated when it is absent, empty, a text that names the inputs, or a run placeholder;
+// a stated absence in the inputs' own words, such as `no published request ceiling`, is stated.
+function unstatedField(value: string | undefined): boolean {
+  if (value === undefined) return true;
+  const text = value.trim();
+  return text === "" || /in the inputs/i.test(text) || PLACEHOLDER.test(text);
+}
+
+// `token` in `text` as a whole token, case-insensitive: not after a word character, a dot or a
+// hyphen, and not before a word character, a hyphen or a dot that a word character follows. The
+// lookahead accepts a full stop that ends a sentence and rejects a dot that continues a dotted id,
+// so `for pricing.` names pricing and `pricing.cache` does not.
+function wholeToken(text: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w.-])${escaped}(?![\\w-]|\\.\\w)`, "i").test(text);
+}
+
+function namesProvider(text: string, element: { id: string; name?: string }): boolean {
+  return [element.id, element.name].some((token) => token !== undefined && token !== "" && wholeToken(text, token));
+}
+
+function namesField(text: string): boolean {
+  return FIELD_WORD.test(text);
+}
+
+// Per edge, not per field: one open assumption owned by user that names the provider and any field
+// word silences every unstated field of the provider's edge.
+function silenced(doc: FmeaDocument, element: { id: string; name?: string }): boolean {
+  return doc.meta.assumptions.some((a) => a.status === "open" && a.owner === "user" && namesProvider(a.text, element) && namesField(a.text));
+}
+
+// One finding per unstated field of edge `index`, `sla` before `limits`, at the edge.
+function edgeReliabilityLints(doc: FmeaDocument, index: number, edge: DependencyEdge): Lint[] {
+  const unstated = EDGE_FIELDS.filter((field) => unstatedField(edge[field]));
+  if (unstated.length === 0) return [];
+  const provider = doc.elements.find((e) => e.id === edge.to) ?? { id: edge.to };
+  if (silenced(doc, provider)) return [];
+  return unstated.map((field) => lint("edge-reliability-unstated", "warning", ptr("dependencies", index),
+    `edge ${edge.from} -> ${edge.to}: ${field} is missing or a placeholder, and no open assumption owned by user names ${edge.to} and ${field}. ` +
+    `Leave ${field} out and record that assumption; copy the inputs' words instead only where they say there is none or none is published.`));
 }
 
 function flowUsersLint(flow: Flow, index: number, chain: Chain): Lint[] {
@@ -462,6 +510,14 @@ export const MACHINE_RULES: MachineRule[] = [
         const chain = namer.get(index);
         return chain === undefined ? [] : flowUsersLint(flow, index, chain);
       });
+    },
+  },
+  {
+    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1.
+    id: "edge-reliability-unstated",
+    severity: "warning",
+    check(doc) {
+      return doc.dependencies.flatMap((edge, i) => edgeReliabilityLints(doc, i, edge));
     },
   },
 ];

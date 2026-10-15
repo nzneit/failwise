@@ -6,7 +6,7 @@ import { CASCADING_ROWS, MACHINE_RULES, formatLintLine, runLints, tablePropertyL
 import { loadTable } from "./lib/table.ts";
 import { validateDocument } from "./lib/validation.ts";
 import { SKILL_ROOT, bandTable, citeO, edge, graphDoc, loadFixture, minimalDoc, rating, readingDoc } from "./test-helpers.ts";
-import type { Chain, Codebase, Control, FmeaDocument, Lint, Source, TrackerLink } from "./lib/types.ts";
+import type { Assumption, AssumptionStatus, Chain, Codebase, Control, FmeaDocument, Lint, Source, TrackerLink } from "./lib/types.ts";
 
 const REFERENCE = readFileSync(join(SKILL_ROOT, "references", "quality-and-lint.md"), "utf8");
 
@@ -54,6 +54,7 @@ test("MACHINE_RULES lists every rule with its severity, in order", () => {
     ["chain-flow-no-steps", "warning"],
     ["chain-flow-rationale-unnamed", "warning"],
     ["flow-users-provisional", "warning"],
+    ["edge-reliability-unstated", "warning"],
   ]);
 });
 
@@ -691,4 +692,114 @@ test("chain-flow-shared-provider is the reviewer rule for a chain naming two flo
   assert.ok(row, "quality-and-lint.md documents chain-flow-shared-provider");
   assert.ok(row!.includes("| reviewer |"), "chain-flow-shared-provider is documented as a reviewer rule");
   assert.deepEqual(runLints(doc).map((l) => l.rule), []);
+});
+
+// ---- The c1 lint on an edge whose sla or limits the inputs do not state. The assumption texts are
+// the 0.7.0 round's prompt-1 documents verbatim, the order store's words are the golden's inputs'.
+
+const UNSTATED = "edge-reliability-unstated";
+const PRICING = { id: "pricing", name: "Pricing service", boundary: "owned_outside" as const };
+const SLA = "99.9% monthly availability";
+function pricingDoc(extra: { sla?: string; limits?: string }, assumptions: Assumption[]): FmeaDocument {
+  const doc = graphDoc({ elements: ["checkout", PRICING], edges: [edge("checkout", "pricing", "weak", extra)] });
+  doc.meta.assumptions = assumptions;
+  return doc;
+}
+const open = (text: string, owner = "user", status: AssumptionStatus = "open"): Assumption => ({ text, owner, status });
+const FIRES = "edge checkout -> pricing: limits is missing or a placeholder, and no open assumption owned by user names pricing and limits. Leave limits out and record that assumption; copy the inputs' words instead only where they say there is none or none is published.";
+const FIRES_ONCE: Lint[] = [{ rule: UNSTATED, severity: "warning", pointer: "/dependencies/0", message: FIRES }];
+const GOLDEN_PRICING = "The pricing service's request ceiling is not documented in the supplied inputs; the Occurrence rating for pricing-related rows rests on exposure reasoning rather than on a stated limit.";
+
+test("edge-reliability-unstated fires on p1/high/run1's shape: no limits and assumptions that name pricing without a field", () => {
+  const doc = pricingDoc({ sla: SLA }, [
+    open("pricing's repository is not named in the inputs, so pricing carries no codebase entry and is analysed from its published contract alone."),
+    open("The pricing service returns a quote valid for the shopper's session, but no maximum age for a quote held in the cart is stated in the inputs; chk-03 treats the held price as unbounded in age and reads the occurrence gate accordingly. Where the platform team states a maximum age, chk-03's O is to be re-scored."),
+  ]);
+  assert.deepEqual(fired(doc, UNSTATED), [{ rule: UNSTATED, severity: "warning", pointer: "/dependencies/0", message: FIRES }]);
+});
+
+test("edge-reliability-unstated fires on p1/high/run2's shape: a placeholder naming the inputs is unstated", () => {
+  const doc = pricingDoc({ sla: SLA, limits: "no rate limit published in the inputs" }, [
+    open("pricing's repository is not named in the inputs; pricing stays in the analysis as an element owned outside the run and no repository source is recorded for it."),
+  ]);
+  assert.deepEqual(fired(doc, UNSTATED), FIRES_ONCE);
+});
+
+test("edge-reliability-unstated fires on p1/medium/run1's shape", () => {
+  const doc = pricingDoc({ sla: SLA }, [
+    open("pricing's repository is not named in the inputs. The run therefore covers acme/checkout and acme/session-auth only, and pricing is analysed as an element owned outside the boundary (owned_outside) with no codebase recorded for it."),
+  ]);
+  assert.deepEqual(fired(doc, UNSTATED), FIRES_ONCE);
+});
+
+test("edge-reliability-unstated is silent on p1/medium/run2's shape: a placeholder beside an assumption naming the provider and its limits", () => {
+  const doc = pricingDoc({ sla: SLA, limits: "not stated in the inputs" }, [
+    open("The pricing service's 99.9% monthly availability is stated but its scaling limits are not, so no chain rates a capacity mode on pricing and no chain gives it a limits value on its edge."),
+  ]);
+  assert.deepEqual(fired(doc, UNSTATED), []);
+});
+
+test("edge-reliability-unstated is silent on the inputs' stated absence, the order store's words", () => {
+  assert.deepEqual(fired(pricingDoc({ sla: "99.99% monthly", limits: "no published request ceiling" }, []), UNSTATED), []);
+});
+
+test("edge-reliability-unstated is silent on the golden's assumption, which names the provider and a ceiling", () => {
+  assert.deepEqual(fired(pricingDoc({ sla: "99.9% monthly" }, [open(GOLDEN_PRICING)]), UNSTATED), []);
+});
+
+test("edge-reliability-unstated: an assumption that is closed, or owned by someone else, does not silence", () => {
+  const closed = fired(pricingDoc({ sla: "99.9% monthly" }, [open(GOLDEN_PRICING, "user", "closed")]), UNSTATED);
+  assert.deepEqual(closed, FIRES_ONCE);
+  const reviewers = fired(pricingDoc({ sla: "99.9% monthly" }, [open(GOLDEN_PRICING, "A. Reviewer")]), UNSTATED);
+  assert.deepEqual(reviewers, FIRES_ONCE);
+});
+
+test("edge-reliability-unstated: both fields unstated give two findings, sla first, on the same pointer", () => {
+  const lints = fired(pricingDoc({ limits: "TBD" }, []), UNSTATED);
+  assert.equal(lints.length, 2);
+  assert.deepEqual(lints.map((l) => [l.rule, l.severity, l.pointer]), [[UNSTATED, "warning", "/dependencies/0"], [UNSTATED, "warning", "/dependencies/0"]]);
+  assert.ok(lints[0].message.startsWith("edge checkout -> pricing: sla is missing or a placeholder"), lints[0].message);
+  assert.ok(lints[1].message.startsWith("edge checkout -> pricing: limits is missing or a placeholder"), lints[1].message);
+});
+
+test("edge-reliability-unstated: the run-placeholder pattern matches whole words, case-insensitively, and an empty string", () => {
+  for (const v of ["Unknown", "n/a", "tbd", "None stated", "not documented", ""]) {
+    assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: v }, []), UNSTATED), FIRES_ONCE, v);
+  }
+  for (const v of ["50 rps per merchant", "99.9% monthly"]) {
+    assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: v }, []), UNSTATED), [], v);
+  }
+});
+
+test("edge-reliability-unstated: the provider is matched as a whole token by id or name, so pricing does not stand in for checkout.pricing-cache, and one assumption silences every field of its edge", () => {
+  const cacheDoc = (assumptions: Assumption[]): FmeaDocument => {
+    const doc = graphDoc({
+      elements: ["checkout", PRICING, { id: "checkout.pricing-cache", name: "Pricing cache" }],
+      edges: [edge("checkout", "pricing", "weak", { sla: SLA }), edge("checkout", "checkout.pricing-cache", "weak")],
+    });
+    doc.meta.assumptions = assumptions;
+    return doc;
+  };
+  const pricing = open("pricing's scaling limits are not stated in the inputs.");
+  const cache = open("checkout.pricing-cache's sla is not stated in the inputs.");
+  const onPricing = fired(cacheDoc([pricing]), UNSTATED);
+  assert.deepEqual(onPricing.map((l) => l.pointer), ["/dependencies/1", "/dependencies/1"]);
+  assert.deepEqual(fired(cacheDoc([cache]), UNSTATED), FIRES_ONCE);
+  assert.deepEqual(fired(cacheDoc([pricing, cache]), UNSTATED), []);
+});
+
+test("edge-reliability-unstated: the provider id at the end of a sentence still counts, and a dot that continues a dotted id does not", () => {
+  assert.deepEqual(fired(pricingDoc({ sla: SLA }, [open("No scaling limit is stated for pricing.")]), UNSTATED), []);
+  assert.deepEqual(fired(pricingDoc({ sla: SLA }, [open("No scaling limit is stated for the Pricing service.")]), UNSTATED), []);
+  assert.deepEqual(fired(pricingDoc({ sla: SLA }, [open("No scaling limit is stated for pricing.cache.")]), UNSTATED), FIRES_ONCE);
+});
+
+test("edge-reliability-unstated: a field word matches as a whole word, so a substring does not silence", () => {
+  assert.deepEqual(fired(pricingDoc({ sla: SLA }, [open("pricing's configuration is to be separately reviewed")]), UNSTATED), FIRES_ONCE);
+  assert.deepEqual(fired(pricingDoc({ sla: SLA }, [open("pricing's rate limit is not stated")]), UNSTATED), []);
+});
+
+test("edge-reliability-unstated: minimalDoc and readingDoc stay silent", () => {
+  assert.deepEqual(fired(minimalDoc(), UNSTATED), []);
+  assert.deepEqual(runLints(readingDoc()), []);
 });

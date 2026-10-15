@@ -23,9 +23,9 @@ test("quality-and-lint.md lists the validator ids as schema, format-legacy and I
   assert.deepEqual(idsOf("The validator ids a row may name are exactly"), ["schema", "format-legacy", ...INVARIANT_RULES]);
 });
 
-test("quality-and-lint.md names nineteen machine lints: MACHINE_RULES in order, then priority-table-property", () => {
-  const ids = idsOf("The machine lints the scripts implement are nineteen:");
-  assert.equal(ids.length, 19);
+test("quality-and-lint.md names twenty machine lints: MACHINE_RULES in order, then priority-table-property", () => {
+  const ids = idsOf("The machine lints the scripts implement are twenty:");
+  assert.equal(ids.length, 20);
   assert.deepEqual(ids, [...MACHINE_RULES.map((r) => r.id), "priority-table-property"]);
 });
 

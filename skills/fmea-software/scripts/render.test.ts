@@ -1257,7 +1257,7 @@ test("the Dependencies table lists every edge in order, an absent SLA or limits 
   assert.ok(structure.includes(`<table aria-labelledby="dependencies-caption">${DEPENDENCIES_HEAD}<tbody>` +
     "<tr><td><code>checkout</code></td><td><code>checkout.payment-gateway</code></td><td>strong</td><td>99.95% monthly</td><td>50 rps per merchant</td></tr>" +
     "<tr><td><code>checkout</code></td><td><code>pricing</code></td><td>weak</td><td>99.9% monthly</td><td></td></tr>" +
-    "<tr><td><code>checkout</code></td><td><code>checkout.order-store</code></td><td>strong</td><td>99.99% monthly</td><td></td></tr></tbody></table>"));
+    "<tr><td><code>checkout</code></td><td><code>checkout.order-store</code></td><td>strong</td><td>99.99% monthly</td><td>no published request ceiling</td></tr></tbody></table>"));
   const doc = minimalDoc();
   doc.dependencies = [{ from: "gh<o>st", to: "svc", strength: "weak" }];
   const escaped = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");

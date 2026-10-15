@@ -5,7 +5,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { staleComputed, validateDocument } from "./lib/validation.ts";
 import { checkInvariants } from "./lib/invariants.ts";
-import { runLints } from "./lib/lints.ts";
+import { MACHINE_RULES, runLints } from "./lib/lints.ts";
 import { loadTable } from "./lib/table.ts";
 import { DF3_READINGS, bandTable, minimalDoc, minimalDocOn, rating, readingDoc, writeTable } from "./test-helpers.ts";
 import { isRfc3339DateTime } from "./lib/dates.ts";
@@ -54,7 +54,7 @@ test("the checkout fixture holds two codebases, three edges from checkout, and c
   assert.deepEqual(doc.dependencies, [
     { from: "checkout", to: "checkout.payment-gateway", strength: "strong", sla: "99.95% monthly", limits: "50 rps per merchant" },
     { from: "checkout", to: "pricing", strength: "weak", sla: "99.9% monthly" },
-    { from: "checkout", to: "checkout.order-store", strength: "strong", sla: "99.99% monthly" },
+    { from: "checkout", to: "checkout.order-store", strength: "strong", sla: "99.99% monthly", limits: "no published request ceiling" },
   ]);
   const [ch1, ch9] = [doc.chains[0], doc.chains[8]];
   assert.deepEqual([doc.chains.length, ch9.id, ch9.function, ch9.trigger], [9, "ch-9", "fn-checkout-order", undefined]);
@@ -78,6 +78,15 @@ test("all four analysis fixtures carry a top-level dependencies array between fu
     assert.equal(keys.indexOf("dependencies"), keys.indexOf("functions") + 1, name);
     assert.equal(keys.indexOf("chains"), keys.indexOf("dependencies") + 1, name);
     assert.deepEqual((doc.elements as Record<string, unknown>[]).filter((e) => "dependency" in e).map((e) => e.id), [], name);
+  }
+});
+
+// The two rules run directly, so the schema short-circuit of validateDocument cannot hide a fixture.
+test("no shipped analysis fixture carries edge-reliability-unstated or conversion-substitution-unrecorded", () => {
+  const PROSE_RULES = ["edge-reliability-unstated", "conversion-substitution-unrecorded"];
+  assert.ok(MACHINE_RULES.some((r) => r.id === PROSE_RULES[0]), "the c1 rule is registered");
+  for (const name of ANALYSIS_FIXTURES) {
+    assert.deepEqual(runLints(loadFixture<FmeaDocument>(name), MACHINE_RULES.filter((r) => PROSE_RULES.includes(r.id))), [], name);
   }
 });
 

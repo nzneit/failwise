@@ -53,7 +53,7 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D10 | STE is applied as structure plus five vocabulary substitutions in skill-authored sentences. The rest of the STE dictionary is not applied, because it collides with domain terms (§7.5). | §7 |
 | D11 | The context-window gate moves from the gitignored round scripts into the tracked harness, each run records its window and compactions, and a run that compacted is unverified. | §5.3 |
 | D12 | Stage 1 changes nothing in the prose beyond what §6 names, so its round measures placement, wording and the checks alone. | §6 |
-| D13 | The two shipped fixtures the c1 lint would fire on are amended to agree with their inputs, rather than the lint narrowed. Confirmed by the user on 2026-10-14, before plan A. | §6.4 |
+| D13 | The two shipped fixtures the c1 lint would fire on are amended to agree with their inputs, rather than the lint narrowed. Confirmed by the user on 2026-10-14, before plan A. (amended 2026-10-14 at plan B2: four fixtures, two of them with regenerated computed blocks) | §6.4 |
 | D14 | `evals/rubric.md` is outside the prose checker, because it carries no provenance tags and changes by dated ruling. Confirmed by the user on 2026-10-14, before plan A. | §7.6 |
 | D15 | The stricter c5 reading the acceptance note left unruled is not applied; the 2026-10-13 lenient reading stands and every note names the open reading. Confirmed at the stage-0 gate (§11.4, decision 6); the attribution hole the strict reading would close is on the acceptance agenda. | §8.5, §11.4 |
 
@@ -280,7 +280,10 @@ p1/medium/run1, the three c1 failures; silent on p1/medium/run2, whose assumptio
 limits. A predicate that required the assumption to name only the provider reached none of the three, because
 every run carried an unrelated assumption about pricing's repository.
 
-Two shipped fixtures fire today and are amended to agree with their inputs (D13): the golden
+Two shipped fixtures fire today and are amended to agree with their inputs (D13): (amended 2026-10-14 at plan B2:
+the predicate applied to every shipped document reaches four, `update/stale-rows.fmea.json` and
+`legacy-rpn-sheet.expected.fmea.json` as well, and all four are amended; `update/before-v2-branches.fmea.json` is
+refused by the legacy gate before any lint runs) the golden
 `evals/fixtures/checkout-service.fmea.json` gains `limits: "no published request ceiling"` on the
 `checkout -> checkout.order-store` edge, the inputs' words at `checkout-inputs.md:42`; and the prompt-7 stored
 document `evals/fixtures/update/before.fmea.json` gains an open `user` assumption on pricing's scaling limit,
@@ -467,7 +470,7 @@ runs on Fable throughout.
 - The two lints in `scripts/lints.test.ts`: the five history entries of §6.4 as the c11 fire and no-fire set; for c1, the three 0.7.0 edge-and-assumption shapes that fire, the p1/medium/run2 shape that is silent, the order-store stated absence that is silent, and the provider-only assumption that must not silence; the `MACHINE_RULES` order test at `:37` updated; the output in `scripts/validate.test.ts`.
 - The render line in `scripts/render.test.ts`: printed when `n > 0`, absent when `n = 0`, exact text; the two existing empty-stdout assertions are on refused renders and stand.
 - The schema sentences of §6.2 in `scripts/schema.test.ts`.
-- The two amended fixtures: `checkout-service.fmea.json` and `update/before.fmea.json` re-validated with `--write`; a test asserts no shipped fixture carries either new warning; `scripts/render.test.ts`, `tools/skill-commands.test.ts` and `tools/check-browser.ts` all read the golden and are run after the change.
+- The two amended fixtures (amended 2026-10-14 at plan B2: four fixtures, two of them with regenerated computed blocks): `checkout-service.fmea.json` and `update/before.fmea.json` re-validated with `--write`; a test asserts no shipped fixture carries either new warning; `scripts/render.test.ts`, `tools/skill-commands.test.ts` and `tools/check-browser.ts` all read the golden and are run after the change.
 - `tools/eval-context.ts`: a fixture transcript with and without a `compact_boundary` line, the peak computation with and without subagent lines, the lint fired-and-final counts from a fixture `invocations.json`, a missing transcript fails closed; the unverified rule in `tools/eval-report.test.ts`; the probe gate, the per-model table and the empty config directory in `tools/run-eval.test.ts`, which already stubs `claude` on PATH.
 - The `not_applicable` flag in `tools/eval-stability.test.ts`, `tools/eval-report.test.ts` and the `CRITERIA` sync test.
 - `tools/check-prose.ts`: the three counts on a fixture, the row rule for tables, the exempt regions, the per-heading output, the ratchet, every fail-closed case, the baseline-not-above-measured test.
@@ -537,7 +540,7 @@ three rounds (D4).
 ## 12. Acceptance criteria
 
 1. Stage 0's harness changes are merged on the branch with tests, the dated preflight of §5.1 is recorded, and the baseline round meets §8.2.
-2. Stage 1's changes are exactly those of §6, every new sentence and bullet tagged, the two lints and the render line tested against the documents §6.4 names, the two fixtures amended per D13 or the lint narrowed per the user's ruling, and the round meets §8.3, or the user has ruled on its failure.
+2. Stage 1's changes are exactly those of §6, every new sentence and bullet tagged, the two lints and the render line tested against the documents §6.4 names, the two fixtures amended per D13 (amended 2026-10-14 at plan B2: four fixtures, two of them with regenerated computed blocks) or the lint narrowed per the user's ruling, and the round meets §8.3, or the user has ruled on its failure.
 3. Stage 2's rewrite touches only §7.1 and §7.2, keeps every frozen literal of §4.3 and every stage-1 placement, lowers the baseline per §8.4, and the round meets §8.4, or the user has ruled on its failure.
 4. `docs/style.md` exists and `CONTRIBUTING.md` points to it; `tools/check-prose.ts` runs under `tools/check.ts` and fails closed.
 5. `SKILL.md` and every changed reference file passed the private distill Recheck, with the verdict in the commit body, and the audit passed from the private checkout before the user pushes.

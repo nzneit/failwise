@@ -18,6 +18,11 @@
         "text": "The control inventory in the stored analysis is the one confirmed at the last review.",
         "owner": "A. Reviewer",
         "status": "closed"
+      },
+      {
+        "text": "The inputs give pricing's availability as 99.9% monthly but do not state its scaling limit, so the edge to pricing carries no limits value; the platform team is to supply it.",
+        "owner": "user",
+        "status": "open"
       }
     ],
     "reviews": [
