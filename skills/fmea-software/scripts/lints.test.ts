@@ -894,9 +894,19 @@ test("conversion-substitution-unrecorded: the number word, or every default row 
     assert.deepEqual(fired(convertedDoc(["ch-1", "ch-2"], [change]), UNRECORDED), [], change);
   }
   assert.deepEqual(fired(convertedDoc(["ch-2"], ["rationale defaulted on the Payment Gateway row"]), UNRECORDED), []);
+  assert.deepEqual(fired(convertedDoc(["ch-2"], ["Justification -> ratings.S.rationale one-to-one"]), UNRECORDED), unrecorded(1), "a hyphen beside the word is not the count");
   for (const change of ["rationale defaulted on the Payment Gateway row", "rationale defaulted on ch-1", "rationale substituted. 2 rows took the default", "rationale substituted; 2 rows took the default", "rationale defaulted on 3 rows"]) {
     assert.deepEqual(fired(convertedDoc(["ch-1", "ch-2"], [change]), UNRECORDED), unrecorded(2), change);
   }
+});
+
+// Five spaces in a row: an unguarded whole-token match of a three-space name needs a space on each side.
+test("conversion-substitution-unrecorded: one row named by id and one by element name record it, and a name of spaces names no row", () => {
+  assert.deepEqual(fired(convertedDoc(["ch-1", "ch-2"], ["rationale defaulted on ch-1 and the Payment Gateway row"]), UNRECORDED), []);
+  assert.deepEqual(fired(convertedDoc(["ch-1", "ch-2"], ["rationale defaulted on ch-1 and ch-9"]), UNRECORDED), unrecorded(2));
+  const blank = convertedDoc(["ch-2"], [`rationale substituted on the${" ".repeat(5)}row`]);
+  blank.elements[1].name = "   ";
+  assert.deepEqual(fired(blank, UNRECORDED), unrecorded(1));
 });
 
 test("conversion-substitution-unrecorded: the inputs/ prefix on the default still counts, and a rationale that is not the default never does", () => {

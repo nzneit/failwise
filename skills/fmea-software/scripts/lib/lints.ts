@@ -224,14 +224,16 @@ function unstatedField(value: string | undefined): boolean {
 // `token` in `text` as a whole token, case-insensitive: not after a word character, a dot or a
 // hyphen, and not before a word character, a hyphen or a dot that a word character follows. The
 // lookahead accepts a full stop that ends a sentence and rejects a dot that continues a dotted id,
-// so `for pricing.` names pricing and `pricing.cache` does not.
+// so `for pricing.` names pricing and `pricing.cache` does not. A token that is empty after trimming
+// never matches, so a name of spaces silences neither lint.
 function wholeToken(text: string, token: string): boolean {
+  if (token.trim() === "") return false;
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?<![\\w.-])${escaped}(?![\\w-]|\\.\\w)`, "i").test(text);
 }
 
 function namesProvider(text: string, element: { id: string; name?: string }): boolean {
-  return [element.id, element.name].some((token) => token !== undefined && token !== "" && wholeToken(text, token));
+  return [element.id, element.name].some((token) => token !== undefined && wholeToken(text, token));
 }
 
 function namesField(text: string): boolean {
@@ -280,11 +282,13 @@ function historyClauses(doc: FmeaDocument): string[] {
 
 // A clause records the substitution when it names rationale together with r as a standalone
 // integer, adjacent to no letter, digit, `-` or `_`, so neither a date nor `ch-1` counts; with r's
-// number word; or with every default row's id or element name, each a whole token.
+// number word under the same neighbour rule; or with every default row's id or element name, each
+// a whole token.
 function recordsSubstitution(clause: string, r: number, rows: DefaultRow[]): boolean {
   if (!/rationale/i.test(clause)) return false;
   if (new RegExp(`(?<![\\w-])${r}(?![\\w-])`).test(clause)) return true;
-  if (r <= 10 && new RegExp(`\\b${NUMBER_WORDS[r - 1]}\\b`, "i").test(clause)) return true;
+  // The integer's neighbour rule, so `one-to-one` is not the count one, as `row-1` is not 1.
+  if (r <= 10 && new RegExp(`(?<![\\w-])${NUMBER_WORDS[r - 1]}(?![\\w-])`, "i").test(clause)) return true;
   return rows.every((row) => wholeToken(clause, row.id) || (row.name !== undefined && wholeToken(clause, row.name)));
 }
 
