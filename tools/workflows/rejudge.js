@@ -71,7 +71,7 @@ export const meta = {
   name: 'fmea-rejudge',
   description: 'Re-judge one rubric criterion alone on the eval runs the caller names',
   phases: [
-    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file or with compactions above 0 is unverified before any judge is called' },
+    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file, with compactions above 0, with no top-level assistant line, or with an assistant line without usage figures is unverified before any judge is called' },
     { title: 'Re-judge', detail: 'one judge per run, scoring the one criterion against its section of rubric.md as it now stands' },
   ],
 }

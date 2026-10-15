@@ -65,7 +65,7 @@ export const meta = {
   name: 'fmea-evals',
   description: 'Judge the fmea-software eval runs of a roster, check stability, and list what is missing',
   phases: [
-    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file or with compactions above 0 is unverified before any judge is called' },
+    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file, with compactions above 0, with no top-level assistant line, or with an assistant line without usage figures is unverified before any judge is called' },
     { title: 'Judge', detail: 'one judge per run directory, scoring by evals/rubric.md' },
     { title: 'Stability', detail: 'one agent per (prompt, model capability) running tools/eval-stability.ts' },
     { title: 'Critic', detail: 'one completeness critic over every score and stability result' },
