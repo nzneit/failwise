@@ -44,7 +44,7 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D1 | Route: rule placement, scope wording and three machine checks, then the readability pass. The user chose this over prose-only on 2026-10-14. | §6, §7 |
 | D2 | Branch `prose` stacked on `flow-model`, in its own worktree; it rebases when `flow-model` merges. | header |
 | D3 | Three eval rounds, one per stage, on DeepSeek Flash at both capabilities, 16 runs each, prompt 5 included. | §8 |
-| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. (amended 2026-10-15: and the c1 reading on a control's evidence, which adds no criterion, §11.5 ruling 2) | §5.2, §4, §11.4, §11.5 |
+| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. (amended 2026-10-15: and the c1 reading on a control's evidence, which adds no criterion, §11.5 ruling 2) (amended 2026-10-15 at the second stage-1 gate: and the c1 reading on an action's dates and a control's origin, the c6 reading on a count by priority, and the c11 reading on two more declared defaults with its clause extended to a ground rule and the final message, none adding a criterion, §11.6) | §5.2, §4, §11.4, §11.5, §11.6 |
 | D5 | The descriptive sections of the references and all frozen text (§4.3) are out of stage 2; the prose checker's ratchet holds them from getting worse. | §7.3 |
 | D6 | The two new lints are warnings, not blockers, so a valid document still renders, the quality score is untouched and the c1 reading of rubric 4 is unchanged. | §6.4 |
 | D7 | The prose checker is a ratchet against a baseline file, not a set of hard caps, and fails closed. | §7.6 |
@@ -260,7 +260,8 @@ The stage-1 round therefore attributes any change in scores to §6.1, §6.2 and 
 (amended 2026-10-15 at the second stage-1 gate, §11.6 rulings 1 and 2: the sentences and list items on an
 action's dates and on a control's status and evidence that plan B's epilogue adds to the seed section of
 `SKILL.md`, `### Seed from postmortems`, join the stage-1 text, so the round-1c reading attributes a change on
-prompt 5 to them together with §6.1, §6.2 and §6.4; every other sentence of the seed section stays outside.)
+prompt 5 to them together with §6.1, §6.2 and §6.4; every other sentence of the seed section, §6.1's pointer to
+step 7's list apart, stays outside.)
 
 ### 6.4 The machine checks
 
@@ -418,10 +419,10 @@ not close. A cut-off run's cell is re-run once, and a second cut counts as a fai
 stage-1 gate, §11.5 ruling 1: p5/high/run2 of the stage-1 round ended mid-word at `*(the sh` with stop reason
 `end_turn` and no error, and no usage figure could show it, every stream line of the round reporting 0 output
 tokens.)
-From 2026-10-15 `context.json` also records `message_counts`, the pairs of a number and a priority value that the
-final message states, each compared with the document's count of rows at that value before and after action; the
-note's Harness table prints the result as a Counts column, and a wrong count is reported and makes no run
-unverified (§11.6 ruling 4). From round 1c of plan B's epilogue, ruled 2026-10-15, the cells run under the
+From round 1c of plan B's epilogue, ruled 2026-10-15, `context.json` also records `message_counts`, the pairs of
+a number and a priority value that the final message states, each compared with the document's count of rows at
+that value before and after action; the note's Harness table prints the result as a Counts column, and a wrong
+count is reported and makes no run unverified (§11.6 ruling 4). From the same round the cells run under the
 parallel launcher `tools/run-round.ts`, which drops every inherited environment variable whose name starts with
 `CLAUDE` from its children and from its smoke call and records the dropped names in `round.json` as
 `env_stripped`; the note's Round method line says so, and the sequential rounds of record, prose-0, prose-1 and
@@ -593,19 +594,22 @@ Plan B's epilogue, the section headed "Epilogue after the second stage-1 gate (2
 and runs round 1c, the stage-1 round of record that part C compares against. Each ruling's rubric text is a dated
 reading in rubric 4 that adds no criterion, so the rubric stays 4 (D4).
 
-1. Action dates are c1 inputs. The schema requires `target_date` on every action and `completed_date` on a Completed one, and the postmortems give an action item's owner and status only, so a date filled with no declaration is band 1 of c1 as written, and p5/high/run2's 1 stands. The seed section of `SKILL.md` gains the declared-default rule: the run's own date for both fields, counted in `meta.history`, with the real dates asked for as an open assumption owned by `user`. §6.3's scope widens to that text (§6.3, amended; rubric c1's dated paragraph; the seed section at E3 of plan B's epilogue).
+1. Action dates are c1 inputs. The schema requires `target_date` on every action and its description asks for `completed_date` on a Completed one, and the postmortems give an action item's id, text, owner and status and no date, so a date filled with no declaration is band 1 of c1 as written, and p5/high/run2's 1 stands. The seed section of `SKILL.md` gains the declared-default rule: the run's own date for both fields, counted in `meta.history`, with the real dates asked for as an open assumption owned by `user`. §6.3's scope widens to that text (§6.3, amended; rubric c1's dated paragraph; the seed section at E3 of plan B's epilogue).
 2. An incident whose action item created a control is the control's origin, not its evidence, as the seeded-chain sentence of `scales-software.md` already says. A completed action item's control is `existing` where the inputs list it so and `planned` otherwise, and its `evidence.kind` is `none` unless the inputs give a test or an incident in which it acted. Both (5, medium) runs are re-judged on c1 alone, and p1/high/run1's 2 stands, its fallback control having acted in INC-2026-0502. The seed section carries the rule (rubric c1's dated paragraph; `SKILL.md`'s seed section at E3).
 3. The ratings' `evidence_kind` `estimate` and the elements' `kind` and `boundary` typed by the converter are named in the Convert list, each with its count, and the list's last item becomes generic: no declared default is recorded by a column-mapping line, an open assumption, a ground rule or the final message. `conversion-substitution-unrecorded` widens to both defaults, and rubric c11's clause on a substitution recorded only in `meta.assumptions[]` extends to a ground rule and the final message. p6/medium/run2's 1 stands (rubric c11; `SKILL.md`'s Convert list at E3; §6.4 at E4).
 4. c6 stands as written: a count of rows by priority is not a priority value under band 2's third clause, and p1/medium/run1 is re-judged on c6 alone. The harness compares the counts by priority that the final message states with the document's, and the note reports the result, which makes no run unverified (rubric c6's dated paragraph; §8.1, amended; `tools/eval-context.ts` and `tools/eval-report.ts` at E5).
 
-Carried with the rulings: from round 1c the launcher strips every inherited `CLAUDE*` variable from its children
-and its smoke call and records the names in `round.json`, the sequential rounds having inherited them (§8.1,
-amended); the baseline re-run on CLI 2.1.300 that the result gate named is deferred, stage 2 comparing against
-round 1c, which runs on the same CLI; `tools/run-eval.sh` removes its scratch directories on SIGTERM, SIGINT and
-SIGHUP as it does on EXIT; the R4 and R5 review minors are fixed in the epilogue; round 1b's note is regenerated
-after the re-judges and committed again; and the §6.3 split sentence (§11.5 ruling 7), `SKILL.md`'s singular
-"that substitution" (§11.5 ruling 4) and the stability predicate, which fails on both prompt-5 pairs under the
-0.2 bound without being a gate, stay with part C.
+Carried with the rulings: from round 1c the launcher strips every inherited `CLAUDE*` variable from its
+children and its smoke call and records the names in `round.json`, the sequential rounds having inherited them
+(§8.1, amended); the baseline re-run on CLI 2.1.300 that the result gate named is deferred, stage 2 comparing
+against round 1c, which runs on the same CLI; `tools/run-eval.sh` removes its scratch directories on SIGTERM,
+SIGINT and SIGHUP as it does on EXIT; the R4 and R5 review minors are fixed in the epilogue; the epilogue
+moves two rulings of §11.5, ruling 10's launcher being used from round 1c rather than from stage 2 and ruling
+8's pre-branch fixes being made in the epilogue's task E6 rather than in plan C, and D9 and §11.5 rulings 8
+and 10 are left as the record of the earlier ruling; round 1b's note is regenerated after the re-judges and
+committed again; and the §6.3 split sentence (§11.5 ruling 7), `SKILL.md`'s singular "that substitution"
+(§11.5 ruling 4) and the stability predicate, which fails on both prompt-5 pairs under the 0.2 bound without
+being a gate, stay with part C.
 
 Round 1c follows the epilogue's revision, with the result gate run once; its note is committed as the round of
 record after the user reads it.
