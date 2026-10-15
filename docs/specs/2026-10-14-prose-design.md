@@ -44,7 +44,7 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D1 | Route: rule placement, scope wording and three machine checks, then the readability pass. The user chose this over prose-only on 2026-10-14. | §6, §7 |
 | D2 | Branch `prose` stacked on `flow-model`, in its own worktree; it rebases when `flow-model` merges. | header |
 | D3 | Three eval rounds, one per stage, on DeepSeek Flash at both capabilities, 16 runs each, prompt 5 included. | §8 |
-| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. | §5.2, §4, §11.4 |
+| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. (amended 2026-10-15 at the stage-1 gate: and the stage-1 gate's dated reading of c1 on a control's evidence, which adds no criterion, §11.5 ruling 2) | §5.2, §4, §11.4 |
 | D5 | The descriptive sections of the references and all frozen text (§4.3) are out of stage 2; the prose checker's ratchet holds them from getting worse. | §7.3 |
 | D6 | The two new lints are warnings, not blockers, so a valid document still renders, the quality score is untouched and the c1 reading of rubric 4 is unchanged. | §6.4 |
 | D7 | The prose checker is a ratchet against a baseline file, not a set of hard caps, and fails closed. | §7.6 |
@@ -406,7 +406,15 @@ planted gap with prompt 1; its last result predates the flows table of 23eb1c4. 
 calls of any reason from `invocations.json`, and the new lints' fired and final counts.
 
 A run is verified when it was scored (it left `analysis.json` and `report.html`) and its `context.json` records
-zero compactions. A pair passes a criterion when both of its runs are verified and each scores 2 on it in
+zero compactions. From 2026-10-15 a run is also unverified when its final message is cut off, as `context.json`'s
+`final_message.complete` records it (`complete` not true, or the field absent): the message in `transcript.json`'s
+`result`, trailing whitespace trimmed, is complete when it is non-empty, ends with one of `.`, `!`, `?`, `:`, `|`,
+`)`, `]`, `"`, `'`, `` ` `` or `*`, or with a line that is a closing code fence, and opens no code fence it does
+not close. A cut-off run's cell is re-run once, and a second cut counts as a failure. (Added 2026-10-15 by the
+user's ruling at the stage-1 gate, §11.5 ruling 1: p5/high/run2 of the stage-1 round ended mid-word at `*(the sh`
+with stop reason `end_turn` and no error, and no usage figure could show it, every stream line of the round
+reporting 0 output tokens.)
+A pair passes a criterion when both of its runs are verified and each scores 2 on it in
 `results.json` `runs[].scores[]`. An unverified run makes every criterion of its pair unverified, and a stage does
 not pass until that cell is re-run. The rubric's own pair rule, both runs passing their musts and the 80% total
 and stability passing, as `pairOutcome` in `tools/eval-report.ts` computes it, is reported in every note but is
@@ -423,7 +431,7 @@ any other reason are reported. Recorded, not graded.
 ### 8.3 Stage 1 passes when
 
 - Every pair that c1, c5 or c11 applies to passes that criterion by the definition of §8.1: c1 on all four prompts, c5 on prompts 1, 5 and 7, c11 on prompt 6.
-- No pair that passed a criterion at baseline, by the same definition, fails it after.
+- No pair that passed a criterion at baseline, by the same definition, fails it after. (Read over every criterion; from 2026-10-15 a regression on a criterion outside c1, c5 and c11 counts only when the result gate names a mechanism for it in the shipped text or the checks, and is otherwise logged in the note as variance. Added 2026-10-15 by the user's ruling at the stage-1 gate, §11.5 ruling 3: the stage-1 round's c3 drops on (5, high), (5, medium) and (6, medium) were restatement calls the baseline judges did not make on comparable rows, with no mechanism in the stage-1 diff.)
 - The note's per-run table shows, from `context.json`, whether each new warning fired during the run and whether the final document still carries it.
 - On a failure: the failing transcripts go through the analyst-and-skeptic read of the brief's premise phase, the change is revised once, the round runs once more. A second failure goes to the user.
 
@@ -536,6 +544,29 @@ three rounds (D4).
 9. What the rounds count as: the prose baseline and the stage comparisons only, not v1 evidence for criterion 2 of the base design's §15, since both capabilities ran `deepseek-flash`. At plan B's start `tools/eval-report.ts` prints, under the note's header, the run model per capability, the judging tiers and the Fable count.
 10. Sheet parsing on prompt 6: no script now. §11.3 logs p6/medium/run2's misread Justification cell, and the sheet parser is revisited at acceptance, on three rounds of c11 scores.
 11. Go: stage 1 (plan B) starts as planned, with every B1 wording item, c5's included. The acceptance note of stage 1 records that c5's failure did not reproduce at baseline (0 of 4 prompt-7 runs under the lenient reading), so its stage-1 result shows non-regression only; it also records that c1's premise held on 6 of the 8 planted-gap runs, not on (1, high), and c11's mechanism on 2 of 4 under decision 2.
+
+### 11.5 Rulings at the stage-1 gate (2026-10-15)
+
+The stage-1 round, prose-1, was judged under rubric 4 and fails §8.3's first clause on five pairs: c1 on (5, high)
+and (7, medium), c5 on (5, high), and c11 on (6, high) and (6, medium). Its critic raised the contested readings,
+the Fable result gate ruled escalate, and the user ruled on each item on 2026-10-15. The rulings follow, each with
+where it lands. Round 1b is the second round of §8.3's failure path, `build/evals/prose-1b/`. Ruling 2 is a dated
+reading in rubric 4 that adds no criterion, so the rubric stays 4 (D4).
+
+1. p5/high/run2's cut-off final message: the run is unverified, not a failure, since a cut-off final message is a harness event. A cut-off cell is re-run once and a second cut counts as a failure; this lands in §8.1, amended, in the `final_message.complete` check of `tools/eval-context.ts` and in the judging gate of both workflow files. No prose-1 cell is re-run, since round 1b re-measures every cell.
+2. c1 and control evidence: band 1 covers control evidence a run invents, written as a dated paragraph in rubric 4's c1. p7/medium/run2 keeps its 1, with no re-judge, and the (7, medium) regression stands as run variance, the stage-1 diff touching nothing about control evidence.
+3. §8.3's second clause reads over every criterion: a regression on a criterion outside c1, c5 and c11 counts only when the result gate names a mechanism in the shipped text or the checks, and is otherwise logged in the note as variance (§8.3, amended). The c3 drops of prose-1 on (5, high), (5, medium) and (6, medium) are logged as variance.
+4. The prompt-6 defaults: the Convert list of `SKILL.md` names `controls[].status`, `controls[].evidence.kind`, `effects.local` and `effects.next_level` among the substituted fields, each with its count, and `conversion-substitution-unrecorded` widens to those four defaults (§6.4, amended at plan B's round-1b revision). c11's broad reading, decision 2 of §11.4, is kept. The singular "that substitution is counted" in `SKILL.md`'s control sentence is a plan C wording item, being outside the stage-1 text.
+5. `edge-reliability-unstated`'s placeholder pattern gains `none recorded` and `none published`, and its inputs test matches `in the design inputs` and `in the supplied inputs` as well as `in the inputs` (§6.4, amended). The copied-words case, prose-0's p1/medium/run1 giving pricing the order store's `no published request ceiling`, stays with the judge, since no text test tells it from a stated absence.
+6. The harness holds a run unverified when its final message is cut off, through ruling 1's check, which is committed before round 1b.
+7. The `design-inputs-declared` reviewer row and `edge-reliability-unstated` both cover a missing SLA or limit. The overlap stays through round 1b, and plan C adds the sentence that splits them, with a dated note in §6.3.
+8. The pre-branch findings of B6's distill Recheck are fixed on this branch in plan C, in one commit named as pre-branch: the C201 tier bullets of `design-inputs.md:37-39` take `[skill-authored]`, the register carrying no tier description; the §5.5 cross-reference §11.3 logs at `SKILL.md:98` (line 129 at 4e7860c) points at the shipped design; `quality-and-lint.md:39`'s C063 clause states what the code does (a sheet column converts unmapped); the `value_priority`, decomposition and WS8 sentences take their tags; and the control-kind sentence at `design-inputs.md:64` is reworded. §11.3's entry for the §5.5 reference is then fixed here rather than only logged.
+9. Of B6's review minors, the `for_whom` wording, which names a function field as element-level, and the c5 sentence that re-marks ratings a named person re-scored this run fold into the round-1b revision of the gated text. The B6 commit body is left as it is.
+10. The parallel launcher for sixteen-run rounds is built while round 1b runs and is used from stage 2; round 1b keeps the sequential method of record.
+11. Under §7's sentence caps a code span counts as one token, and plan C's counter implements it. By that count `SKILL.md`'s c11 sentence is 21 tokens against the cap of 25.
+
+Round 1b, §8.3's "the round runs once more", follows the revision, with the result gate run once more; the stage-1
+note of prose-1 is committed as the record of the first round.
 
 ## 12. Acceptance criteria
 
