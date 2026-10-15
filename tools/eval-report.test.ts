@@ -387,8 +387,67 @@ test("a run that carries context prints the Harness table with its window, compa
   }
 });
 
-test("a results file whose runs carry no context field renders exactly as before, with no Harness section", () => {
-  assert.ok(!renderReport(sampleResults()).includes("## Harness"));
+test("a results file whose runs carry no context field renders exactly as before, with no Harness section, and the run model unknown when no run directory holds a models.json", () => {
+  const { r, root } = inRunDirs([null, null, null, null]);
+  try {
+    const md = renderReport(r);
+    assert.ok(!md.includes("## Harness"));
+    assert.match(md, /^Run model: unknown \(no models\.json readable\)\. Judging tiers \(results\.json models\): high=opus, medium=sonnet\. Fable agents: 0\.$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A models.json as tools/run-eval.sh writes it. */
+function modelsFile(high: string, medium: string): string {
+  return `{\n  "basis": "FMEA_EVAL_MODELS",\n  "models": { "high": "${high}", "medium": "${medium}", "low": "" },\n  "effort": "high"\n}\n`;
+}
+
+/** sampleResults with each run in its own temp directory, holding the given models.json text or none for null; the caller removes root. */
+function inRunDirs(files: (string | null)[]): { r: EvalResults; root: string } {
+  const r = sampleResults();
+  const root = mkdtempSync(join(tmpdir(), "eval-report-models-"));
+  r.runs = r.runs.map((run, i) => {
+    const dir = join(root, `run${i}`);
+    mkdirSync(dir);
+    const text = files[i];
+    if (typeof text === "string") writeFileSync(join(dir, "models.json"), text);
+    return { ...run, dir };
+  });
+  return { r, root };
+}
+
+test("the paragraph under the header names each capability's run model from the runs' models.json with the basis and the effort, then the judging tiers from results.json and no Fable agent", () => {
+  const { r, root } = inRunDirs(Array<string>(4).fill(modelsFile("deepseek-flash", "deepseek-flash")));
+  try {
+    assert.match(renderReport(r), /the stability check passes\.\n\nRun model: high=deepseek-flash, medium=deepseek-flash, basis=FMEA_EVAL_MODELS, effort=high\. Judging tiers \(results\.json models\): high=opus, medium=sonnet\. Fable agents: 0\.\n\n/);
+    r.models = { high: "opus" };
+    assert.match(renderReport(r), /^Run model: [^\n]*\. Judging tiers \(results\.json models\): high=opus, medium=—\. Fable agents: 0\.$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("runs that disagree on a capability's model print each model with its runs, and a run reads only its own capability's model", () => {
+  // p1 high run 2 ran on opus; the medium runs' files name opus for high too,
+  // which says nothing about the high runs.
+  const { r, root } = inRunDirs([modelsFile("deepseek-flash", "deepseek-flash"), modelsFile("opus", "deepseek-flash"), modelsFile("opus", "deepseek-flash"), modelsFile("opus", "deepseek-flash")]);
+  try {
+    assert.match(renderReport(r), /^Run model: high differs across runs \(deepseek-flash on p1 high run 1; opus on p1 high run 2\), medium=deepseek-flash, basis=FMEA_EVAL_MODELS, effort=high\. /m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable models.json reads as a dash for its run, and with none readable the run model is unknown", () => {
+  const { r, root } = inRunDirs([modelsFile("deepseek-flash", "deepseek-flash"), "not json", modelsFile("deepseek-flash", "deepseek-flash"), '{"models": "deepseek-flash"}']);
+  try {
+    assert.match(renderReport(r), /^Run model: high differs across runs \(deepseek-flash on p1 high run 1; — on p1 high run 2\), medium differs across runs \(deepseek-flash on p1 medium run 1; — on p1 medium run 2\), basis=FMEA_EVAL_MODELS, effort=high\. /m);
+    for (const run of r.runs) writeFileSync(join(run.dir, "models.json"), "not json");
+    assert.match(renderReport(r), /^Run model: unknown \(no models\.json readable\)\. Judging tiers \(results\.json models\): high=opus, medium=sonnet\. Fable agents: 0\.$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("a run context that is not {window, compactions, peak_context_tokens} or null is one coded IO_READ line naming the run", () => {
@@ -1497,11 +1556,17 @@ test("prompts not re-run print one bullet each, with the reason", () => {
     "## Prompts not re-run\n\nPrompts this round did not run, each with the reason. No result of an earlier round stands in for them; the acceptance note rules on each one.\n\n- Prompt 5: it adds no criterion of this round\n\n## Completeness critic"));
 });
 
-test("a results file without session_checks or not_rerun renders exactly as before", () => {
-  const plain = renderReport(sampleResults());
-  assert.doesNotMatch(plain, /## Session checks|## Prompts not re-run/);
-  assert.equal(renderReport({ ...withSessionChecks(), session_checks: undefined, not_rerun: undefined }), plain);
-  assert.doesNotMatch(renderReport(staleShapedResults()), /## Session checks|## Prompts not re-run/);
+test("a results file without session_checks or not_rerun renders exactly as before, with the run model unknown when no run directory holds a models.json", () => {
+  const { r, root } = inRunDirs([null, null, null, null]);
+  try {
+    const plain = renderReport(r);
+    assert.doesNotMatch(plain, /## Session checks|## Prompts not re-run/);
+    assert.match(plain, /^Run model: unknown \(no models\.json readable\)\. /m);
+    assert.equal(renderReport({ ...withSessionChecks(), runs: r.runs, session_checks: undefined, not_rerun: undefined }), plain);
+    assert.doesNotMatch(renderReport(staleShapedResults()), /## Session checks|## Prompts not re-run/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("an empty session_checks prints None. and a pipe in a clause is escaped", () => {
