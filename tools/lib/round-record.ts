@@ -5,13 +5,15 @@
 // script has no round.json, and the report then prints no such line.
 
 import { readFileSync } from "node:fs";
+import { isObject } from "./is-object.ts";
 
 /**
  * One cell of a round: `p<prompt>:<capability>:<run>`, when its runner started
  * and ended, the runner's exit status (null when it ended on a signal or never
- * started) and its summary line (null when it printed none).
+ * started) and its summary line (null when it printed none). `error` is present
+ * only when the launcher itself could not run the cell, and says why.
  */
-export interface RoundCell { cell: string; started: string; ended: string; exit: number | null; summary: string | null }
+export interface RoundCell { cell: string; started: string; ended: string; exit: number | null; summary: string | null; error?: string }
 
 /** round.json: the method, the cells run at once, the canary cell or null, the round's times, the CLI version and each cell. */
 export interface RoundRecord {
@@ -43,10 +45,6 @@ export function readRoundRecord(path: string): RoundRead {
   }
 }
 
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
 /** A string Date.parse reads as a time. */
 function isTime(v: unknown): v is string {
   return typeof v === "string" && !Number.isNaN(Date.parse(v));
@@ -58,7 +56,7 @@ function isNullable(v: unknown, type: "number" | "string"): boolean {
 
 function isRoundCell(v: unknown): v is RoundCell {
   return isObject(v) && typeof v.cell === "string" && isTime(v.started) && isTime(v.ended) &&
-    isNullable(v.exit, "number") && isNullable(v.summary, "string");
+    isNullable(v.exit, "number") && isNullable(v.summary, "string") && (v.error === undefined || typeof v.error === "string");
 }
 
 function isRoundRecord(v: unknown): v is RoundRecord {
@@ -77,8 +75,11 @@ export function elapsedText(ms: number): string {
   return hours > 0 ? `${hours}h ${two(minutes)}m ${seconds}s` : `${minutes}m ${seconds}s`;
 }
 
-/** A cell id `p1:high:1` in the report's words, `p1 high run1`; any other text as it is. */
-function cellWords(id: string): string {
+/**
+ * A cell id `p1:high:1` in the words the summary lines and the report use,
+ * `p1 high run1`; any other text as it is.
+ */
+export function cellWords(id: string): string {
   const m = /^p(\d+):(\w+):(\d+)$/.exec(id);
   return m === null ? id : `p${m[1]} ${m[2]} run${m[3]}`;
 }

@@ -26,6 +26,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { isEntry } from "./lib/entry.ts";
+import { isObject } from "./lib/is-object.ts";
 import { readRoundRecord, roundMethodLine } from "./lib/round-record.ts";
 import type { EvalContext } from "./eval-context.ts";
 import type { FlowComparison } from "./eval-stability.ts";
@@ -1425,10 +1426,6 @@ function fail(code: "USAGE" | "IO_READ", message: string): void {
 }
 
 const NOT_A_RESULTS_FILE = "is not a {models, runs, stability, critic} results file";
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 
 /** What shapeProblem proves of a results file before its parts are read. */
 type ResultsShape = {

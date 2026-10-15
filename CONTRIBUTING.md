@@ -153,6 +153,7 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
 
 ```
 tools/run-eval.sh <1|5|6|7> <high|medium> <run-n>      # one unattended eval run into build/evals/
+node tools/run-round.ts <stage>                        # a prose round's sixteen runs, in parallel, into build/evals/prose-<stage>/
 node tools/eval-report.ts                              # build/evals/results.json → docs/specs/2026-09-07-eval-results.md
 ```
 
@@ -166,13 +167,16 @@ results object and writes no file. Write it to `build/evals/results.json` for `e
 read, as `JSON.stringify(result, null, 2)` of the `result` key of the Workflow task's output.
 
 From the prose stage-2 round on, `node tools/run-round.ts <stage>` (or `bun tools/run-round.ts
-<stage>`) runs the sixteen runs of a round on DeepSeek Flash into `build/evals/prose-<stage>/`,
-reading the gateway key from the login keyring and smoke-testing the gateway first. It runs the
-first cell alone as a canary, then the other fifteen at most `--parallel <n>` at once (4 by
-default, more than 8 only with `--force-parallel`), each logging to `logs/` in that folder. It
-prints the summary lines in roster order, writes `round.json`, from which `eval-report.ts` prints
-a `Round method` line under the Harness table, and names the `--cells` command for any cell that
-needs a re-run.
+<stage>`) runs the sixteen runs of a round on DeepSeek Flash into `build/evals/prose-<stage>/`, or
+into the folder `--publish-root <dir>` names. It reads the gateway key from the login keyring, the
+entry of service `goose` whose secret is JSON with the field `DEEPSEEK_API_KEY`, and smoke-tests the
+gateway first. It runs the first cell alone as a canary, then the other fifteen at most
+`--parallel <n>` at once (4 by default, more than 8 only with `--force-parallel`). Each cell's
+output is appended to its log in `logs/` in that folder, so a re-run keeps the earlier attempt's
+log. The launcher prints the summary lines in roster order, writes `round.json`, and names the
+`--cells` command, with `--no-canary`, for any cell that needs a re-run. `eval-report.ts` prints a
+`Round method` line under the Harness table from the `round.json` beside the `--results` file
+only, so generate the round's note with `--results build/evals/prose-<stage>/results.json`.
 
 Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
 `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's

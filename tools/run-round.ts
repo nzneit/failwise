@@ -34,10 +34,12 @@
 //    first-refusal guard kept. --no-canary skips it, for a re-run of named cells.
 // 3. The fan-out: the other cells, at most --parallel at once (4 by default;
 //    above 8 only with --force-parallel, since each session takes a core and 1
-//    to 2 GB). Each child's stdout and stderr go to
-//    <root>/logs/p<p>-<cap>-run<n>.log. A child gets the environment of step 1,
-//    the repository root as its working folder, no stdin and a process group of
-//    its own, so the controlling terminal's signals reach the launcher alone.
+//    to 2 GB). Each child's stdout and stderr are appended to
+//    <root>/logs/p<p>-<cap>-run<n>.log after a dated separator line, so a
+//    re-run keeps the earlier attempt's log (ruling 1 counts a second cut-off
+//    as a failure). A child gets the environment of step 1, the repository root
+//    as its working folder, no stdin and a process group of its own, so the
+//    controlling terminal's signals reach the launcher alone.
 // 4. The output: the summary lines in roster order once all are in, then a
 //    `round finished` line with the elapsed time, the concurrency and the
 //    canary, then the run folders. Exit 0 when every line shows every artefact
@@ -47,22 +49,27 @@
 //    tools/eval-report.ts reads for its Harness section. A --cells launch into a
 //    round that has one replaces those cells' entries and keeps the round's own
 //    fields.
-// 6. Signals: on SIGINT or SIGTERM every running child's process group gets
-//    SIGTERM, and after 30 seconds SIGKILL; the launcher writes round.json and
-//    exits 130. The finished cells' folders stay in place.
+// 6. Signals: on SIGINT, SIGTERM or SIGHUP, from the smoke call on, every
+//    process group the launch started gets SIGTERM. The launcher then waits
+//    until every group is gone, the claude sessions under a runner included,
+//    for up to 30 seconds, and sends SIGKILL to the groups that remain; only
+//    then does it write round.json and exit 130. The finished cells' folders
+//    stay in place, and the smoke call's config folder is removed.
 //
 // The publish root is build/evals/prose-<stage>/ unless --publish-root names
-// another folder. FMEA_RUN_EVAL names another one-cell runner and
-// FMEA_SECRET_TOOL another keyring command, so tools/run-round.test.ts can run
-// the launcher on stubs and never read the real keyring.
+// another folder. FMEA_RUN_EVAL names another one-cell runner, FMEA_SECRET_TOOL
+// another keyring command and FMEA_ROUND_GRACE_MS another grace period in
+// milliseconds, so tools/run-round.test.ts can run the launcher on stubs and
+// never read the real keyring.
 
-import { spawn, spawnSync, type ChildProcess, type SpawnSyncReturns } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
 import { accessSync, appendFileSync, closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { isEntry } from "./lib/entry.ts";
-import { elapsedText, readRoundRecord, type RoundCell, type RoundRecord } from "./lib/round-record.ts";
+import { compareVersions, parseVersion } from "./lib/host.ts";
+import { cellWords, elapsedText, readRoundRecord, type RoundCell, type RoundRecord } from "./lib/round-record.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const MODEL = "deepseek-flash";
@@ -71,6 +78,8 @@ const DEFAULT_PARALLEL = 4;
 const MAX_PARALLEL = 8;
 const GRACE_MS = 30_000;
 const SMOKE_TIMEOUT_MS = 300_000;
+const POLL_MS = 100;
+const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 const USAGE = "usage: node tools/run-round.ts <stage> [--parallel <n>] [--force-parallel] [--cells p<prompt>:<capability>:<run>,...] [--no-canary] [--publish-root <dir>]";
 const VALUE_FLAGS = ["--parallel", "--cells", "--publish-root"];
 const SWITCHES = ["--force-parallel", "--no-canary"];
@@ -92,7 +101,7 @@ function cellId(c: Cell): string {
 }
 
 function summaryPrefix(c: Cell): string {
-  return `p${c.prompt} ${c.capability} run${c.run}: `;
+  return `${cellWords(cellId(c))}: `;
 }
 
 function runDir(root: string, c: Cell): string {
@@ -103,9 +112,18 @@ function say(line: string): void {
   process.stdout.write(`${line}\n`);
 }
 
-function refuse(line: string): null {
+/** Prints a refusal on stderr and returns the exit status 1. */
+function refuse(line: string): 1 {
   process.stderr.write(`${line}\n`);
-  return null;
+  return 1;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function pause(ms: number): Promise<void> {
+  return new Promise((done) => setTimeout(done, ms));
 }
 
 /** What the command line asks for. */
@@ -190,7 +208,7 @@ function roundFile(opts: Options): string {
 /** Why the launch cannot go ahead before the keyring is read, or null: a run folder already holding a transcript, or a --cells launch into an unreadable round.json. */
 function guardProblem(opts: Options): string | null {
   const taken = opts.cells.map((c) => runDir(opts.publishRoot, c)).find((d) => existsSync(join(d, "transcript.json")));
-  if (taken !== undefined) return `error: ${taken} already holds a transcript; delete the folder to re-run the cell`;
+  if (taken !== undefined) return `error: ${taken} already holds a transcript; move the folder aside to re-run the cell`;
   if (opts.cellsGiven && readRoundRecord(roundFile(opts)) === "unreadable") {
     return `error: ${roundFile(opts)} is not a round record; move it aside before re-running cells into this round`;
   }
@@ -242,13 +260,14 @@ function newestNvmBin(nvmDir: string): string | null {
   } catch {
     return null;
   }
-  const parts = (name: string): number[] => name.slice(1).split(".").map(Number);
-  const byVersion = (a: string, b: string): number => {
-    const [x, y] = [parts(a), parts(b)];
-    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
-  };
-  const newest = names.filter((n) => /^v\d+\.\d+\.\d+$/.test(n) && existsSync(join(versions, n, "bin"))).sort(byVersion).pop();
-  return newest === undefined ? null : join(versions, newest, "bin");
+  const newest = names
+    .flatMap((name) => {
+      const version = parseVersion(name);
+      return version !== null && name.startsWith("v") && existsSync(join(versions, name, "bin")) ? [{ name, version }] : [];
+    })
+    .sort((a, b) => compareVersions(a.version, b.version))
+    .pop();
+  return newest === undefined ? null : join(versions, newest.name, "bin");
 }
 
 /** The first executable file of that name on PATH, or null. */
@@ -288,36 +307,140 @@ function roundEnv(key: string, publishRoot: string): Record<string, string> {
 }
 
 /**
- * One cheap call through the gateway under a fresh config folder, removed on
- * both paths: true when it exits 0 and answers ok, otherwise false after
- * printing the reply's last lines redacted and the refusal.
+ * The launch's watch over its children and the signals: every process group it
+ * started and has not yet seen gone (each child leads its own), how many cells
+ * are running, and, once a signal came, how many were running then and the
+ * promise that settles when every group is gone or SIGKILL went to the rest.
  */
-function smokeTest(claude: string, env: Record<string, string>, key: string): boolean {
+interface Watch {
+  stopping: boolean;
+  groups: Set<number>;
+  cells: number;
+  stoppedCells: number;
+  drained: Promise<void>;
+  graceMs: number;
+}
+
+/** Sends a signal to a process group, 0 to ask whether it has a member left; false when it has none. */
+function signalGroup(group: number, signal: NodeJS.Signals | 0): boolean {
+  try {
+    process.kill(-group, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Sends a signal to every group of the set, forgets the groups that are gone (a Set may lose its current entry while iterated), and returns how many remain. */
+function signalGroups(groups: Set<number>, signal: NodeJS.Signals | 0): number {
+  for (const group of groups) if (!signalGroup(group, signal)) groups.delete(group);
+  return groups.size;
+}
+
+/** SIGTERM to every group, then a wait until each is gone or the grace period ends, then SIGKILL to the groups that remain. */
+async function drain(watch: Watch): Promise<void> {
+  const deadline = Date.now() + watch.graceMs;
+  signalGroups(watch.groups, "SIGTERM");
+  while (signalGroups(watch.groups, 0) > 0 && Date.now() < deadline) await pause(POLL_MS);
+  signalGroups(watch.groups, "SIGKILL");
+}
+
+/** The grace period: FMEA_ROUND_GRACE_MS when it is a whole number of milliseconds, otherwise 30 seconds. */
+function graceMs(): number {
+  const text = process.env.FMEA_ROUND_GRACE_MS;
+  return text !== undefined && /^\d+$/.test(text) ? Number(text) : GRACE_MS;
+}
+
+/** Installs the handlers of step 6 and returns the watch they act on. */
+function watchSignals(): Watch {
+  const watch: Watch = { stopping: false, groups: new Set(), cells: 0, stoppedCells: 0, drained: Promise.resolve(), graceMs: graceMs() };
+  for (const signal of SIGNALS) {
+    process.on(signal, () => {
+      if (watch.stopping) return;
+      watch.stopping = true;
+      watch.stoppedCells = watch.cells;
+      watch.drained = drain(watch);
+    });
+  }
+  return watch;
+}
+
+/** How a child ended: its exit status, or null with the signal that ended it or the error that kept it from running. */
+interface Ended { code: number | null; signal: NodeJS.Signals | null; error: string | null }
+
+/**
+ * Starts a command as the leader of a process group of its own, which the
+ * watch records, and resolves when it has ended; the group is forgotten then
+ * unless a member outlives the leader. `started` sees the child first.
+ */
+function spawnInGroup(watch: Watch, command: string, args: string[], options: { env: Record<string, string>; stdio: StdioOptions; cwd?: string }, started?: (child: ChildProcess) => void): Promise<Ended> {
+  return new Promise((done) => {
+    let settled = false;
+    let group: number | undefined;
+    const finish = (ended: Ended): void => {
+      if (settled) return;
+      settled = true;
+      if (group !== undefined && !signalGroup(group, 0)) watch.groups.delete(group);
+      done(ended);
+    };
+    try {
+      const child = spawn(command, args, { ...options, detached: true });
+      group = child.pid;
+      if (group !== undefined) watch.groups.add(group);
+      started?.(child);
+      child.once("error", (err) => finish({ code: null, signal: null, error: err.message }));
+      child.once("close", (code, signal) => finish({ code, signal, error: null }));
+    } catch (err) {
+      finish({ code: null, signal: null, error: errorText(err) });
+    }
+  });
+}
+
+/** The smoke call's end and its stdout and stderr; SIGKILL to its group when it outlasts the timeout. */
+async function smokeCall(watch: Watch, claude: string, env: Record<string, string>): Promise<{ ended: Ended; stdout: string; stderr: string }> {
+  let stdout = "";
+  let stderr = "";
+  let timer: NodeJS.Timeout | undefined;
+  const ended = await spawnInGroup(watch, claude, ["-p", "Reply with the single word ok.", "--model", MODEL, "--max-turns", "1", "--no-session-persistence"], { env, stdio: ["ignore", "pipe", "pipe"] }, (child) => {
+    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+    const group = child.pid;
+    if (group !== undefined) timer = setTimeout(() => signalGroup(group, "SIGKILL"), SMOKE_TIMEOUT_MS);
+  });
+  clearTimeout(timer);
+  return { ended, stdout, stderr };
+}
+
+/**
+ * One cheap call through the gateway under a fresh config folder, removed on
+ * every path, a signal's included: 0 when it exits 0 and answers ok; 130 after
+ * a signal; otherwise 1 after printing the reply's last lines redacted and the
+ * refusal.
+ */
+async function smokeTest(watch: Watch, claude: string, env: Record<string, string>, key: string): Promise<number> {
   say("smoke testing the gateway...");
   const config = mkdtempSync(join(tmpdir(), "fmea-smoke-config-"));
-  let r: SpawnSyncReturns<string>;
+  let smoke: Awaited<ReturnType<typeof smokeCall>>;
   try {
-    r = spawnSync(claude, ["-p", "Reply with the single word ok.", "--model", MODEL, "--max-turns", "1", "--no-session-persistence"], {
-      env: { ...env, CLAUDE_CONFIG_DIR: config }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: SMOKE_TIMEOUT_MS,
-    });
+    smoke = await smokeCall(watch, claude, { ...env, CLAUDE_CONFIG_DIR: config });
   } finally {
     rmSync(config, { recursive: true, force: true });
   }
-  if (r.status === 0 && isOkReply(r.stdout ?? "")) {
+  if (watch.stopping) return 130;
+  if (smoke.ended.code === 0 && isOkReply(smoke.stdout)) {
     say("gateway answered");
-    return true;
+    return 0;
   }
-  const reply = `${r.stdout ?? ""}${r.stderr ?? ""}`.trimEnd().split("\n").slice(-5).join("\n");
-  refuse(`smoke reply (exit ${r.status ?? r.signal ?? "none"}, redacted): ${redact(reply, key)}`);
-  refuse("refusing: the gateway did not answer with 'ok'; fix the key or the endpoint before running the round");
-  return false;
+  const reply = `${smoke.stdout}${smoke.stderr}${smoke.ended.error ?? ""}`.trimEnd().split("\n").slice(-5).join("\n");
+  refuse(`smoke reply (exit ${smoke.ended.code ?? smoke.ended.signal ?? "none"}, redacted): ${redact(reply, key)}`);
+  return refuse("refusing: the gateway did not answer with 'ok'; fix the key or the endpoint before running the round");
 }
 
-/** What the preflight hands the round: the children's environment, the key for redaction and the CLI version. */
-interface Preflight { env: Record<string, string>; key: string; cliVersion: string }
+/** What the preflight hands the round: the children's environment, the key for redaction, the CLI version and the watch. */
+interface Preflight { env: Record<string, string>; key: string; cliVersion: string; watch: Watch }
 
-/** Step 1, or null after printing the refusal. */
-function preflight(opts: Options): Preflight | null {
+/** Step 1, or the exit status after printing why the launch stops. */
+async function preflight(opts: Options): Promise<Preflight | number> {
   const key = readKey(process.env);
   if (key === "") return refuse("NO KEY: refusing");
   const env = roundEnv(key, opts.publishRoot);
@@ -329,21 +452,17 @@ function preflight(opts: Options): Preflight | null {
   say(`claude=${claude}`);
   const version = redact(firstLine(claude, ["--version"], env), key);
   say(`claude_version=${version}`);
-  if (!smokeTest(claude, env, key)) return null;
-  return { env, key, cliVersion: version.split(" ")[0] };
+  const watch = watchSignals();
+  const smoke = await smokeTest(watch, claude, env, key);
+  if (smoke === 130) {
+    await watch.drained;
+    say("round interrupted during the smoke call; no cell was started");
+  }
+  return smoke === 0 ? { env, key, cliVersion: version.split(" ")[0], watch } : smoke;
 }
 
-/** The state the cells share: where they log, what they run with, which children are running, and whether a signal stopped the round. */
-interface Round {
-  opts: Options;
-  pre: Preflight;
-  runner: string;
-  logs: string;
-  running: Set<ChildProcess>;
-  stopping: boolean;
-  /** How many cells were running when the signal came. */
-  stopped: number;
-}
+/** The state the cells share: what they run with, where they log, and the watch. */
+interface Round { opts: Options; pre: Preflight; runner: string; logs: string; watch: Watch }
 
 /** A finished cell: the cell, its record and its log. */
 interface CellRun { cell: Cell; record: RoundCell; log: string }
@@ -352,54 +471,56 @@ function clock(): string {
   return new Date().toTimeString().slice(0, 8);
 }
 
-/** Starts the runner for one cell, its stdout and stderr in its log, and resolves with its exit status, or null when it ended on a signal or did not start. */
-function startRunner(round: Round, cell: Cell, log: string): Promise<number | null> {
-  return new Promise((done) => {
-    const fd = openSync(log, "w");
-    let settled = false;
-    const finish = (code: number | null, child?: ChildProcess): void => {
-      if (settled) return;
-      settled = true;
-      if (child !== undefined) round.running.delete(child);
-      done(code);
-    };
-    try {
-      const child = spawn(round.runner, [String(cell.prompt), cell.capability, String(cell.run)], { cwd: ROOT, env: round.pre.env, stdio: ["ignore", fd, fd], detached: true });
-      round.running.add(child);
-      child.once("error", (err) => {
-        appendFileSync(log, `run-round: ${round.runner} did not run: ${err.message}\n`);
-        finish(null, child);
-      });
-      child.once("close", (code) => finish(code, child));
-    } catch (err) {
-      appendFileSync(log, `run-round: ${round.runner} did not start: ${String(err)}\n`);
-      finish(null);
-    } finally {
-      closeSync(fd);
-    }
-  });
+/** Starts the runner for one cell, its stdout and stderr appended to its log, and resolves when it has ended. */
+function startRunner(round: Round, cell: Cell, log: string): Promise<Ended> {
+  const fd = openSync(log, "a");
+  try {
+    return spawnInGroup(round.watch, round.runner, [String(cell.prompt), cell.capability, String(cell.run)], { cwd: ROOT, env: round.pre.env, stdio: ["ignore", fd, fd] });
+  } finally {
+    closeSync(fd);
+  }
 }
 
-/** The last summary line the cell's runner wrote to its log, redacted, or null. */
-function summaryOf(log: string, cell: Cell, key: string): string | null {
+/** One attempt at a cell after its separator line: how the runner ended, or why the launcher could not run it. */
+async function attempt(round: Round, cell: Cell, log: string, separator: string): Promise<Ended> {
+  try {
+    appendFileSync(log, `${separator}\n`);
+    round.watch.cells++;
+    try {
+      return await startRunner(round, cell, log);
+    } finally {
+      round.watch.cells--;
+    }
+  } catch (err) {
+    return { code: null, signal: null, error: errorText(err) };
+  }
+}
+
+/** The last summary line the cell's runner wrote to its log after this attempt's separator, redacted, or null. */
+function summaryOf(log: string, cell: Cell, separator: string, key: string): string | null {
   let text = "";
   try {
     text = readFileSync(log, "utf8");
   } catch {
     return null;
   }
-  const line = text.split("\n").filter((l) => l.startsWith(`${summaryPrefix(cell)}model=`)).pop();
+  const at = text.lastIndexOf(`${separator}\n`);
+  if (at === -1) return null;
+  const line = text.slice(at).split("\n").filter((l) => l.startsWith(`${summaryPrefix(cell)}model=`)).pop();
   return line === undefined ? null : redact(line, key);
 }
 
+/** Runs one cell to its end and returns its record; an error of the launcher's own is recorded in the cell's entry, never thrown. */
 async function runCell(round: Round, cell: Cell): Promise<CellRun> {
   const log = join(round.logs, `p${cell.prompt}-${cell.capability}-run${cell.run}.log`);
   const started = new Date().toISOString();
+  const separator = `--- run-round ${started}: ${cellId(cell)} ---`;
   say(`[${clock()}] started ${cellId(cell)}`);
-  const exit = await startRunner(round, cell, log);
-  const ended = new Date().toISOString();
-  say(`[${clock()}] ended ${cellId(cell)} (exit ${exit ?? "none"})`);
-  return { cell, log, record: { cell: cellId(cell), started, ended, exit, summary: summaryOf(log, cell, round.pre.key) } };
+  const ended = await attempt(round, cell, log, separator);
+  say(`[${clock()}] ended ${cellId(cell)} (exit ${ended.code ?? ended.signal ?? "none"})`);
+  const record: RoundCell = { cell: cellId(cell), started, ended: new Date().toISOString(), exit: ended.code, summary: summaryOf(log, cell, separator, round.pre.key) };
+  if (ended.error !== null) record.error = redact(ended.error, round.pre.key);
+  return { cell, log, record };
 }
 
 /** What keeps a cell from being clean; `stops` marks what stops the round when the canary has it: a refusal or an artefact missing. */
@@ -436,26 +557,6 @@ async function pool<T, R>(items: T[], limit: number, work: (item: T) => Promise<
   return results.filter((r): r is R => r !== undefined);
 }
 
-/** A signal to a child's process group, which holds the runner and the claude sessions under it. */
-function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid === undefined) return;
-  try {
-    process.kill(-child.pid, signal);
-  } catch {
-    // the group has already gone
-  }
-}
-
-function onSignal(round: Round): void {
-  if (round.stopping) return;
-  round.stopping = true;
-  round.stopped = round.running.size;
-  for (const child of round.running) signalGroup(child, "SIGTERM");
-  setTimeout(() => {
-    for (const child of round.running) signalGroup(child, "SIGKILL");
-  }, GRACE_MS).unref();
-}
-
 /** round.json: this launch's record, or, for a --cells launch into a round that has one, that record with these cells' entries replaced. */
 function writeRecord(round: Round, started: Date, ended: Date, runs: CellRun[]): void {
   const { opts } = round;
@@ -478,7 +579,8 @@ function mergedCells(prior: RoundCell[], fresh: RoundCell[]): RoundCell[] {
 }
 
 function summaryText(r: CellRun): string {
-  return r.record.summary ?? `${summaryPrefix(r.cell)}no summary line (exit ${r.record.exit ?? "none"}); log ${r.log}`;
+  const why = r.record.error === undefined ? `exit ${r.record.exit ?? "none"}` : `launcher error: ${r.record.error}`;
+  return r.record.summary ?? `${summaryPrefix(r.cell)}no summary line (${why}); log ${r.log}`;
 }
 
 /** Every folder under the publish root that holds a transcript, sorted, as the sequential script lists them. */
@@ -504,7 +606,7 @@ function report(round: Round, elapsed: number, runs: CellRun[]): number {
   say("");
   say(`cells to re-run: ${failing.map((f) => `${cellId(f.r.cell)} (${problemText(f.problems)})`).join(", ")}`);
   const published = failing.map((f) => runDir(opts.publishRoot, f.r.cell)).filter((d) => existsSync(d));
-  if (published.length > 0) say(`delete each published one first: ${published.join(" ")}`);
+  if (published.length > 0) say(`move each published folder aside first, keeping it for the record: ${published.join(" ")}`);
   const root = opts.publishRootGiven === null ? "" : ` --publish-root ${opts.publishRootGiven}`;
   say(`re-run them with: node tools/run-round.ts ${opts.stage} --no-canary --cells ${failing.map((f) => cellId(f.r.cell)).join(",")}${root}`);
   return 1;
@@ -513,23 +615,28 @@ function report(round: Round, elapsed: number, runs: CellRun[]): number {
 /** The canary alone: null when the round goes on, otherwise the exit status after saying why it stopped. */
 function canaryVerdict(round: Round, canary: CellRun): number | null {
   const problems = problemsOf(canary.record);
-  if (round.stopping || !problems.some((p) => p.stops)) return null;
+  if (round.watch.stopping || !problems.some((p) => p.stops)) return null;
   say(summaryText(canary));
   say("");
   say(`round stopped: the canary ${cellId(canary.cell)} ended with ${problemText(problems)}; no other cell was started; log ${canary.log}`);
   const dir = runDir(round.opts.publishRoot, canary.cell);
-  if (existsSync(dir)) say(`delete ${dir} before launching the round again`);
+  if (existsSync(dir)) say(`move ${dir} aside before launching the round again`);
   return 1;
+}
+
+/** After a signal: once every group is gone or killed, the record and the line; exit 130. */
+async function interrupted(round: Round, started: Date, runs: CellRun[]): Promise<number> {
+  await round.watch.drained;
+  writeRecord(round, started, new Date(), runs);
+  const n = round.watch.stoppedCells;
+  say(`round interrupted: ${n} running ${n === 1 ? "cell was" : "cells were"} sent SIGTERM; the finished cells' folders are in place under ${round.opts.publishRoot}`);
+  return 130;
 }
 
 /** Steps 2 to 6. */
 async function runRound(opts: Options, pre: Preflight): Promise<number> {
-  const round: Round = {
-    opts, pre, runner: process.env.FMEA_RUN_EVAL ?? join(ROOT, "tools", "run-eval.sh"),
-    logs: join(opts.publishRoot, "logs"), running: new Set(), stopping: false, stopped: 0,
-  };
+  const round: Round = { opts, pre, runner: process.env.FMEA_RUN_EVAL ?? join(ROOT, "tools", "run-eval.sh"), logs: join(opts.publishRoot, "logs"), watch: pre.watch };
   mkdirSync(round.logs, { recursive: true });
-  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => onSignal(round));
   const started = new Date();
   const runs: CellRun[] = [];
   let rest = opts.cells;
@@ -543,25 +650,19 @@ async function runRound(opts: Options, pre: Preflight): Promise<number> {
       return stop;
     }
   }
-  runs.push(...await pool(rest, opts.parallel, (cell) => runCell(round, cell), () => round.stopping));
+  runs.push(...await pool(rest, opts.parallel, (cell) => runCell(round, cell), () => round.watch.stopping));
+  if (round.watch.stopping) return interrupted(round, started, runs);
   const ended = new Date();
   writeRecord(round, started, ended, runs);
-  if (round.stopping) {
-    say(`round interrupted: ${round.stopped} running cells were sent SIGTERM; the finished cells' folders are in place under ${opts.publishRoot}`);
-    return 130;
-  }
   return report(round, ended.getTime() - started.getTime(), runs);
 }
 
 async function main(argv: string[]): Promise<number> {
   const opts = parseArgs(argv);
   const problem = typeof opts === "string" ? opts : guardProblem(opts);
-  if (problem !== null || typeof opts === "string") {
-    refuse(problem ?? USAGE);
-    return 1;
-  }
-  const pre = preflight(opts);
-  return pre === null ? 1 : runRound(opts, pre);
+  if (problem !== null || typeof opts === "string") return refuse(problem ?? USAGE);
+  const pre = await preflight(opts);
+  return typeof pre === "number" ? pre : runRound(opts, pre);
 }
 
 if (isEntry(import.meta)) process.exit(await main(process.argv.slice(2)));

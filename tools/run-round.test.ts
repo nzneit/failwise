@@ -15,25 +15,30 @@
 //   cells end in another order than they start. FMEA_STUB_HANG makes every
 //   cell but the canary wait on a thirty-second `sleep` it starts in the
 //   background, whose pid it records, so a case can tell whether the stub's
-//   whole process group was stopped or the stub alone;
+//   whole process group was stopped or the stub alone. FMEA_STUB_STUBBORN does
+//   the same with a `sleep` that ignores SIGTERM while the stub itself dies on
+//   it, as tools/run-eval.sh dies while its claude session runs on;
 // - the keyring, through FMEA_SECRET_TOOL: it prints a `secret = ` line holding
 //   FMEA_STUB_SECRET and records that it was called. A `secret-tool` that fails
 //   loudly is also first on PATH, so a launcher that ignored the variable would
 //   fail rather than read the real keyring;
 // - `claude`, first on PATH: it answers --version, and answers the smoke test
 //   with FMEA_STUB_SMOKE and FMEA_STUB_SMOKE_EXIT, recording the
-//   CLAUDE_CONFIG_DIR it was given;
+//   CLAUDE_CONFIG_DIR it was given; FMEA_STUB_SMOKE_HANG makes the smoke call
+//   wait on a thirty-second `sleep` whose pid it records;
 // - nvm, through NVM_DIR: an empty folder unless a case plants node versions.
 //
-// PATH is the stubs, the Node running this file, /usr/bin and /bin, so the real
-// `claude` in ~/.local/bin is never on it. Every launch passes --publish-root
+// PATH is the stubs, the Node running this file, /usr/bin and /bin, the stub
+// `claude` first, so the real `claude` is never reached; the case that takes
+// the stub away puts links to node and bash alone on PATH. FMEA_ROUND_GRACE_MS
+// shortens the launcher's grace period where a case waits it out. Every launch passes --publish-root
 // into a temporary folder and the stage 9z, so nothing is written under
 // build/evals.
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isOkReply, redact } from "./run-round.ts";
@@ -56,6 +61,7 @@ printf '%s\\n' "ANTHROPIC_BASE_URL=\${ANTHROPIC_BASE_URL:-}" "FMEA_EVAL_MODELS=\
   > "$FMEA_STUB_DIR/env-$cell.txt"
 echo "stub stderr for $cell" >&2
 if [ -n "\${FMEA_STUB_HANG:-}" ] && [ "$cell" != "p1:high:1" ]; then sleep 30 & echo "$!" > "$FMEA_STUB_DIR/sleep-$cell.txt"; wait "$!"; fi
+if [ -n "\${FMEA_STUB_STUBBORN:-}" ] && [ "$cell" != "p1:high:1" ]; then ( trap '' TERM; exec sleep 30 ) & echo "$!" > "$FMEA_STUB_DIR/stubborn-$cell.txt"; wait "$!"; fi
 case "$3" in 1) sleep "\${FMEA_STUB_SLOW:-0.6}" ;; *) sleep "\${FMEA_STUB_FAST:-0.2}" ;; esac
 if has "\${FMEA_STUB_FAIL:-}"; then
   echo "end $cell $(date +%s%N) $$" >> "$FMEA_STUB_DIR/events.txt"
@@ -83,6 +89,7 @@ const CLAUDE_STUB = `#!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then echo "9.9.9 (Claude Code)"; exit 0; fi
 printf '%s\\n' "\${CLAUDE_CONFIG_DIR:-}" >> "$FMEA_STUB_DIR/smoke-config.txt"
 printf '%s\\n' "$*" >> "$FMEA_STUB_DIR/claude-calls.txt"
+if [ -n "\${FMEA_STUB_SMOKE_HANG:-}" ]; then sleep 30 & echo "$!" > "$FMEA_STUB_DIR/smoke-sleep.txt"; wait "$!"; fi
 printf '%s\\n' "\${FMEA_STUB_SMOKE-ok}"
 exit "\${FMEA_STUB_SMOKE_EXIT:-0}"
 `;
@@ -166,7 +173,7 @@ function printedCells(stdout: string): string[] {
 
 interface RoundFile {
   method: string; concurrency: number; canary: string | null; started: string; ended: string; cli_version: string;
-  cells: { cell: string; started: string; ended: string; exit: number | null; summary: string | null }[];
+  cells: { cell: string; started: string; ended: string; exit: number | null; summary: string | null; error?: string }[];
 }
 
 function readRound(s: Sandbox): RoundFile {
@@ -189,6 +196,30 @@ async function gone(pid: number): Promise<boolean> {
     if (Date.now() > deadline) return false;
     await new Promise((done) => setTimeout(done, 50));
   }
+}
+
+/** Whether the check holds within twenty seconds, polled every fifty milliseconds. */
+async function until(check: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (!check() && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50));
+  return check();
+}
+
+/** The pids the stubs wrote to files named <prefix><cell>.txt, by cell; a file not yet written is left out. */
+function recordedPids(s: Sandbox, prefix: string): Map<string, number> {
+  return new Map(readdirSync(s.dir).filter((n) => n.startsWith(prefix) && n.endsWith(".txt")).flatMap((n) => {
+    const pid = Number(readFileSync(join(s.dir, n), "utf8"));
+    return pid > 0 ? [[n.slice(prefix.length, -".txt".length), pid] as [string, number]] : [];
+  }));
+}
+
+/** The launcher started without waiting: the child, its exit status when it closes, and its stdout so far. */
+function launchAsync(s: Sandbox, args: string[]): { kill: (signal: NodeJS.Signals) => void; closed: Promise<number | null>; stdout: () => string } {
+  const child = spawn(process.execPath, [LAUNCHER, "9z", "--publish-root", s.root, ...args], { cwd: ROOT, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+  const closed = new Promise<number | null>((done) => child.on("close", (code) => done(code)));
+  return { kill: (signal) => child.kill(signal), closed, stdout: () => stdout };
 }
 
 const sandboxes: Sandbox[] = [];
@@ -306,7 +337,7 @@ test("a cell that refuses, leaves an artefact missing, fails validation or is cu
   assert.ok(r.stdout.includes(`\np5 high run2: no summary line (exit 1); log ${join(s.root, "logs", "p5-high-run2.log")}\n`), r.stdout);
   assert.match(r.stdout, /^round finished: \d+m \d\ds, concurrency 4, canary p1:high:1; runs under /m);
   assert.match(r.stdout, /^cells to re-run: p5:high:2 \(exit 1, no summary line\), p6:high:2 \(validate_exit=2\), p6:medium:1 \(analysis=missing\), p7:high:1 \(final=cut\)$/m);
-  assert.ok(r.stdout.includes(`\ndelete each published one first: ${["p6/high/run2", "p6/medium/run1", "p7/high/run1"].map((d) => join(s.root, d)).join(" ")}\n`), r.stdout);
+  assert.ok(r.stdout.includes(`\nmove each published folder aside first, keeping it for the record: ${["p6/high/run2", "p6/medium/run1", "p7/high/run1"].map((d) => join(s.root, d)).join(" ")}\n`), r.stdout);
   assert.ok(r.stdout.includes(`\nre-run them with: node tools/run-round.ts 9z --no-canary --cells p5:high:2,p6:high:2,p6:medium:1,p7:high:1 --publish-root ${s.root}\n`), r.stdout);
   const failed = readRound(s).cells.find((c) => c.cell === "p5:high:2");
   assert.ok(failed !== undefined && failed.exit === 1 && failed.summary === null, JSON.stringify(failed));
@@ -389,7 +420,7 @@ test("a cell whose run folder already holds a transcript is refused before the k
   writeFileSync(join(s.root, "p6", "high", "run1", "transcript.json"), "{}\n");
   const r = launch(s, []);
   assert.equal(r.status, 1, r.stderr);
-  assert.ok(r.stderr.includes(`error: ${join(s.root, "p6", "high", "run1")} already holds a transcript; delete the folder to re-run the cell\n`), r.stderr);
+  assert.ok(r.stderr.includes(`error: ${join(s.root, "p6", "high", "run1")} already holds a transcript; move the folder aside to re-run the cell\n`), r.stderr);
   assert.ok(!existsSync(join(s.dir, "keyring-calls.txt")));
   assert.deepEqual(events(s), []);
 });
@@ -435,10 +466,14 @@ test("a smoke reply that is not ok, or a failed smoke call, refuses the round wi
 });
 
 test("node or claude missing from PATH is refused before the runner is reached", { skip: SKIP }, () => {
+  // PATH holds links to this Node and to bash (for the keyring stub's #!/usr/bin/env bash) and nothing
+  // else, so no claude of the machine's, under nvm or in /usr/bin, can be found in place of the stub.
   const s = tracked();
   const bare = mkdtempSync(join(s.dir, "bare-"));
   writeExecutable(join(bare, "secret-tool"), REAL_KEYRING_GUARD);
-  const r = launch({ ...s, env: { ...s.env, PATH: `${bare}:${dirname(process.execPath)}:/usr/bin:/bin` } }, []);
+  symlinkSync(process.execPath, join(bare, "node"));
+  symlinkSync(spawnSync("bash", ["-c", "command -v bash"], { encoding: "utf8" }).stdout.trim(), join(bare, "bash"));
+  const r = launch({ ...s, env: { ...s.env, PATH: bare } }, []);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /^refusing: claude is not on PATH$/m);
   assert.deepEqual(events(s), []);
@@ -487,35 +522,96 @@ test("a re-run of named cells into a round that has a round.json replaces those 
   assert.ok(!startsOf(s).includes("p5:high:1"));
 });
 
-test("SIGINT stops the round: every running cell gets SIGTERM, the launcher exits 130, and the finished cells' folders stay", { skip: SKIP }, async () => {
-  const s = tracked({ FMEA_STUB_HANG: "1", FMEA_STUB_SLOW: "0.05" });
-  const child = spawn(process.execPath, [LAUNCHER, "9z", "--publish-root", s.root, "--parallel", "3"], { cwd: ROOT, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = "";
-  child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-  const closed = new Promise<number | null>((done) => child.on("close", (code) => done(code)));
-  // The three fan-out stubs are waiting on their sleeps once each has written the sleep's pid.
-  const sleepers = (): Map<string, number> => new Map(readdirSync(s.dir).filter((n) => /^sleep-.*\.txt$/.test(n)).flatMap((n) => {
-    const pid = Number(readFileSync(join(s.dir, n), "utf8"));
-    return pid > 0 ? [[n.slice("sleep-".length, -".txt".length), pid] as [string, number]] : [];
-  }));
-  const deadline = Date.now() + 20_000;
-  while (sleepers().size < 3 && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50));
-  assert.equal(sleepers().size, 3, "the fan-out never had three cells waiting");
-  child.kill("SIGINT");
-  const began = Date.now();
-  assert.equal(await closed, 130);
-  assert.ok(Date.now() - began < 10_000, "the launcher waited for the hanging cells instead of terminating them");
-  assert.equal(startsOf(s).length, 4, "a cell started after the signal");
-  const hung = events(s).filter((e) => e.kind === "start" && e.cell !== "p1:high:1");
-  for (const e of hung) {
-    assert.ok(await gone(e.pid), `${e.cell}'s stub ${e.pid} is still alive`);
-    const sleeper = sleepers().get(e.cell);
-    assert.ok(sleeper !== undefined && await gone(sleeper), `${e.cell}'s sleep ${sleeper} is still alive: the stub's process group was not signalled`);
+test("SIGINT or SIGHUP stops the round: every running cell gets SIGTERM, the launcher exits 130, and the finished cells' folders stay", { skip: SKIP }, async () => {
+  for (const signal of ["SIGINT", "SIGHUP"] as const) {
+    const s = tracked({ FMEA_STUB_HANG: "1", FMEA_STUB_SLOW: "0.05" });
+    const round = launchAsync(s, ["--parallel", "3"]);
+    // The three fan-out stubs are waiting on their sleeps once each has written the sleep's pid.
+    assert.ok(await until(() => recordedPids(s, "sleep-").size === 3), "the fan-out never had three cells waiting");
+    round.kill(signal);
+    const began = Date.now();
+    assert.equal(await round.closed, 130, signal);
+    assert.ok(Date.now() - began < 10_000, "the launcher waited for the hanging cells instead of terminating them");
+    assert.equal(startsOf(s).length, 4, "a cell started after the signal");
+    const hung = events(s).filter((e) => e.kind === "start" && e.cell !== "p1:high:1");
+    for (const e of hung) {
+      assert.ok(await gone(e.pid), `${e.cell}'s stub ${e.pid} is still alive`);
+      const sleeper = recordedPids(s, "sleep-").get(e.cell);
+      assert.ok(sleeper !== undefined && await gone(sleeper), `${e.cell}'s sleep ${sleeper} is still alive: the stub's process group was not signalled`);
+    }
+    assert.ok(existsSync(join(s.root, "p1", "high", "run1", "transcript.json")), "the canary's folder was removed");
+    assert.match(round.stdout(), /^round interrupted: 3 running cells were sent SIGTERM; the finished cells' folders are in place under /m);
+    const stopped = new Set(hung.map((e) => e.cell));
+    assert.deepEqual(readRound(s).cells.map((c) => [c.cell, c.exit]), [["p1:high:1", 0], ...ROSTER.filter((c) => stopped.has(c)).map((c) => [c, null])]);
   }
-  assert.ok(existsSync(join(s.root, "p1", "high", "run1", "transcript.json")), "the canary's folder was removed");
-  assert.match(stdout, /^round interrupted: 3 running cells were sent SIGTERM; the finished cells' folders are in place under /m);
-  const stopped = new Set(hung.map((e) => e.cell));
-  assert.deepEqual(readRound(s).cells.map((c) => [c.cell, c.exit]), [["p1:high:1", 0], ...ROSTER.filter((c) => stopped.has(c)).map((c) => [c, null])]);
+});
+
+test("on a signal the launcher waits for every member of each cell's process group, sends SIGKILL to those that outlast the grace period, and only then writes round.json and exits 130", { skip: SKIP }, async () => {
+  // Each fan-out runner dies on SIGTERM at once while a member of its group ignores it, as run-eval.sh dies
+  // while the claude session under it runs on.
+  const s = tracked({ FMEA_STUB_STUBBORN: "1", FMEA_STUB_SLOW: "0.05", FMEA_ROUND_GRACE_MS: "1500" });
+  const round = launchAsync(s, ["--parallel", "3"]);
+  assert.ok(await until(() => recordedPids(s, "stubborn-").size === 3), "the fan-out never had three cells waiting");
+  round.kill("SIGINT");
+  const began = Date.now();
+  assert.equal(await round.closed, 130);
+  const waited = Date.now() - began;
+  assert.ok(waited >= 1400, `the launcher exited ${waited} ms after the signal, before the grace period ended`);
+  assert.ok(waited < 10_000, `the launcher took ${waited} ms`);
+  for (const [cell, pid] of recordedPids(s, "stubborn-")) {
+    assert.ok(await gone(pid), `${cell}'s member that ignores SIGTERM, ${pid}, is still alive: no SIGKILL reached it`);
+  }
+  for (const e of events(s).filter((x) => x.kind === "start")) assert.ok(await gone(e.pid), `${e.cell}'s runner is still alive`);
+  assert.ok(statSync(join(s.root, "round.json")).mtimeMs >= began + 1400, "round.json was written before the groups were gone");
+  assert.deepEqual(readRound(s).cells.map((c) => c.exit), [0, null, null, null]);
+  assert.match(round.stdout(), /^round interrupted: 3 running cells were sent SIGTERM; /m);
+});
+
+test("a signal during the smoke call stops it, removes its config folder and exits 130 with no cell started", { skip: SKIP }, async () => {
+  const s = tracked({ FMEA_STUB_SMOKE_HANG: "1" });
+  const round = launchAsync(s, []);
+  assert.ok(await until(() => recordedPids(s, "smoke-sleep").size === 1), "the smoke call never started");
+  round.kill("SIGTERM");
+  assert.equal(await round.closed, 130);
+  const config = readFileSync(join(s.dir, "smoke-config.txt"), "utf8").trim();
+  assert.ok(config.startsWith(s.tmp + "/") && !existsSync(config), `the smoke config folder ${config} survived`);
+  const sleeper = recordedPids(s, "smoke-sleep").get("");
+  assert.ok(sleeper !== undefined && await gone(sleeper), "the smoke call's process group was not signalled");
+  assert.match(round.stdout(), /^round interrupted during the smoke call; no cell was started$/m);
+  assert.deepEqual(events(s), []);
+  assert.ok(!existsSync(join(s.root, "round.json")));
+});
+
+test("a re-run appends to the cell's log after a dated separator line, keeps the earlier attempt, and reads the summary line of its own attempt only", { skip: SKIP }, () => {
+  const s = tracked({ FMEA_STUB_SLOW: "0.05" });
+  const first = launch(s, ["--no-canary", "--cells", "p5:high:1"]);
+  assert.equal(first.status, 0, first.stderr);
+  renameSync(join(s.root, "p5", "high", "run1"), join(s.root, "p5", "high", "run1.first"));
+  const second = launch({ ...s, env: { ...s.env, FMEA_STUB_FAIL: "p5:high:1" } }, ["--no-canary", "--cells", "p5:high:1"]);
+  assert.equal(second.status, 1, second.stderr);
+  assert.ok(second.stdout.includes(`\np5 high run1: no summary line (exit 1); log ${join(s.root, "logs", "p5-high-run1.log")}\n`), second.stdout);
+  const log = readFileSync(join(s.root, "logs", "p5-high-run1.log"), "utf8");
+  const separators = [...log.matchAll(/^--- run-round (\S+): p5:high:1 ---$/gm)];
+  assert.equal(separators.length, 2, log);
+  assert.ok(separators.every((m) => !Number.isNaN(Date.parse(m[1]))), "a separator line carries no date");
+  const firstAttempt = log.slice(0, separators[1].index);
+  assert.match(firstAttempt, /^p5 high run1: model=deepseek-flash /m);
+  assert.match(log.slice(separators[1].index), /^error: stub refusal for p5:high:1$/m);
+  assert.deepEqual(readRound(s).cells.map((c) => [c.cell, c.exit, c.summary]), [["p5:high:1", 1, null]]);
+});
+
+test("a cell the launcher cannot run is recorded with exit null and the error, and the round runs to the end", { skip: SKIP }, () => {
+  const s = tracked({ FMEA_STUB_SLOW: "0.05", FMEA_STUB_FAST: "0.05" });
+  // A folder where the cell's log should be: the launcher cannot open the log.
+  mkdirSync(join(s.root, "logs", "p5-high-run2.log"), { recursive: true });
+  const r = launch(s, ["--no-canary", "--cells", "p5:high:1,p5:high:2,p6:high:1", "--parallel", "2"]);
+  assert.equal(r.status, 1, r.stderr);
+  assert.deepEqual(new Set(startsOf(s)), new Set(["p5:high:1", "p6:high:1"]));
+  assert.match(r.stdout, /^p5 high run2: no summary line \(launcher error: EISDIR[^)]*\); log /m);
+  assert.match(r.stdout, /^round finished: /m);
+  assert.match(r.stdout, /^cells to re-run: p5:high:2 \(no exit status, no summary line\)$/m);
+  const cell = readRound(s).cells.find((c) => c.cell === "p5:high:2");
+  assert.ok(cell !== undefined && cell.exit === null && cell.summary === null && /EISDIR/.test(cell.error ?? ""), JSON.stringify(cell));
 });
 
 test("redact replaces the key and its last four characters and collapses whitespace; the smoke check takes ok alone", () => {
