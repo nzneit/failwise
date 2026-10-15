@@ -837,12 +837,15 @@ test("edge-reliability-unstated fires on prose-0's p5/high/run2: none published 
   assert.deepEqual(fired(doc, UNSTATED), FIRES_ONCE);
 });
 
-// The prose-0 judge scored c1 0 here, its pricing assumption being about the repository; the per-edge rule
-// reads `availability` in it as a field word, so the edge stays silenced. Ruling 5 keeps that rule.
-test("edge-reliability-unstated reads prose-0's p1/medium/run2 none recorded, and its pricing assumption, which holds the word availability, silences the edge: a known gap", () => {
+// The prose-0 judge scored c1 0 here, neither pricing assumption asking for the limit; the per-edge
+// rule reads `availability` in the repository one as a field word, so the edge stays silenced. The
+// c-03 one holds no field word and silences nothing. Ruling 5 keeps the per-edge rule.
+test("edge-reliability-unstated reads prose-0's p1/medium/run2 none recorded, and of its two pricing assumptions the repository one, which holds the word availability, silences the edge: a known gap", () => {
   const repository = open("The pricing service's repository is not named in the inputs, so pricing carries no codebase entry and no repository source reference; its functions and modes are read from the published contract and the recorded availability commitment alone.");
+  const coupled = open("Chain c-03 names flow-checkout and flow-retry, whose steps share the pricing and payment-gateway provider functions; the two flows are coupled through those providers and the row is rated on the flows as named.");
   assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: "none recorded" }, []), UNSTATED), FIRES_ONCE);
-  assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: "none recorded" }, [repository]), UNSTATED), []);
+  assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: "none recorded" }, [coupled]), UNSTATED), FIRES_ONCE);
+  assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: "none recorded" }, [repository, coupled]), UNSTATED), []);
 });
 
 test("edge-reliability-unstated is silent on prose-0's p5/medium/run1, whose limits is a fallback sentence neither pattern reads: a known gap", () => {
@@ -1111,4 +1114,55 @@ test("conversion-substitution-unrecorded: a full stop or a semicolon ends a clau
     assert.deepEqual(unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause])), FOUR_DEFAULTS, clause);
   }
   assert.deepEqual(fired(convertedDoc(["ch-2"], ["1 row carries the default chains[].ratings.S.rationale"]), UNRECORDED), []);
+});
+
+// ---- Fix round 1 of the round-1b revision: a `;` or a `.` inside a quoted span does not end a
+// clause. The history entries are the prose-0 round's prompt-6 documents verbatim, each of whose
+// effect clause quotes a default text that holds a `;` or an ellipsis before its count.
+
+// build/evals/prose-0/p6/medium/run1/analysis.json, meta.history[0].change.
+const PROSE0_MEDIUM_RUN1 = [
+  "Converted from legacy-rpn-sheet.csv (Prepared by J. Legacy, dated 2025-11-30). Column mapping: Item -> elements[].name; Function -> functions[].statement; Failure Mode -> chains[].failure_mode; Effect -> chains[].effects.end; Cause -> chains[].causes[].text; Current Controls -> chains[].controls[].description, with the leading Prevention:/Detection: token read as the control's kind; S, O and D -> chains[].ratings, copied as authored and never re-rated; RPN -> not copied, priority.rpn is written by priority.ts as the product of the three retained ratings; Recommended Action -> chains[].actions[].description; Owner -> chains[].actions[].owner, the action owner and never an element owner; Status -> chains[].actions[].status; Justification -> chains[].ratings.*.rationale. Declared substitutions, with row counts: effects.local and effects.next_level take the defaults 'converted from legacy-rpn-sheet.csv; no local effect recorded' and 'converted from legacy-rpn-sheet.csv; no next-level effect recorded' on 4 rows each, because the sheet carries a single Effect column and it is mapped to end; ratings.*.evidence_kind is estimate on 12 rows and controls[].evidence.kind is none on 4 rows, because the sheet has no evidence-kind column; ratings.*.review is authored, by 'J. Legacy' with date 2025-11-30, on 12 rows, the sheet's stated author and date; actions[].target_date is the conversion date 2026-10-14 on 4 rows, because the sheet records no target date; boundary is in_scope and security_relevant is false on all 4 elements; every element is typed by the converter from the item text (Checkout API an interface, Payment Gateway a service, Order Store a datastore, Pricing Service a service); elements[].description is left empty, functions[].conditions is empty, and functions[].for_whom carries 'not recorded in the source sheet' on the rows whose sheet text names no consumer. dependencies[] is written empty: the sheet records no strength, SLA or limit for any item, so no item is an inside dependency and no item is outside the boundary. Empty-trigger note: the sheet records no trigger for any row, so trigger is omitted on all 4 chains. The failure-mode catalog was pruned to nothing: a conversion reuses only the rows the sheet contains, so every chains[].catalog_refs is empty and no catalog row prompted an element. The conversion adds no cause link, even where a Cause cell might restate another row's Failure Mode, and no codebase; both are later work for the person through an ordinary update. meta.scales.priority_table is recorded by the first priority.ts --write.",
+];
+
+// build/evals/prose-0/p6/medium/run2/analysis.json, meta.history[0].change and meta.history[1].change.
+const PROSE0_MEDIUM_RUN2 = [
+  "Converted from the legacy RPN sheet legacy-rpn-sheet.csv (prepared by J. Legacy, dated 2025-11-30). Column mapping: Item -> elements[].id, elements[].name and elements[].description; Function -> functions[].statement; Failure Mode -> chains[].failure_mode; Effect -> chains[].effects.end; Cause -> chains[].causes[].text; Current Controls -> chains[].controls[], the leading 'Detection:' or 'Prevention:' prefix setting controls[].kind and the remaining text controls[].description; S, O and D -> chains[].ratings.S/.O/.D with review.status 'authored', by 'J. Legacy', date 2025-11-30; RPN -> not copied, recomputed as S x O x D into priority.rpn by priority.ts; Recommended Action -> chains[].actions[].description; Owner -> chains[].actions[].owner, the action owner and never an element owner; Status -> chains[].actions[].status; Justification -> ratings[].rationale. Declared substitutions and defaults, with the row count they apply to: elements[].kind and elements[].boundary typed by the converter from the item text (4 rows); elements[].security_relevant false (4 rows); functions[].for_whom read from the row's function and effect text, functions[].conditions empty (4 rows); chains[].effects.local and chains[].effects.next_level filled with the declared default 'converted from legacy-rpn-sheet.csv; no local effect recorded' and '... no next-level effect recorded' (4 rows); ratings[].evidence_kind 'estimate' (4 rows); ratings[].rationale defaulted to 'converted from legacy-rpn-sheet.csv; no rationale recorded' where the Justification cell is empty (2 rows); controls[].status 'existing' (4 rows); controls[].evidence.kind 'none' (4 rows); chains[].actions[].target_date defaulted to the conversion date 2026-10-14 (4 rows); chains[].trigger left empty (4 rows). No catalog row was applied and catalog_refs[] is empty on every chain. All four items were typed in_scope, so no item needs an inbound edge and the sheet carries no strength, SLA or limits column, so dependencies[] is empty. meta.scales.version is 2, the 'scales version: N' line of scales-software.md at conversion time.",
+  "Conversion notes: no trigger is recorded on any row, because the sheet carries no trigger column. The sheet states an RPN of 200 on the row 'Order Store'; its S, O and D values give 210, so the stated value is recorded in that chain's history[] and the computed product is used for priority. The conversion adds no dependency edge, no flow, no catalog reference, no chain link and no codebase, the sheet supplying none of them; adding any of these is later work for a named person through an ordinary update.",
+];
+
+test("conversion-substitution-unrecorded is silent on prose-0's p6/medium/run1 effects, whose clause quotes two default texts holding a `;` before its count; its rationale and status stay uncounted", () => {
+  assert.deepEqual(fired(defaultedDoc(PROSE0_MEDIUM_RUN1), UNRECORDED), unrecordedDefaults([1, "row", "rationale"], [4, "control", "status"]));
+});
+
+// Its run put the default rationale on two rows, Payment Gateway's and Pricing Service's.
+test("conversion-substitution-unrecorded is silent on prose-0's p6/medium/run2, whose effect clause quotes a default text holding a `;` and an ellipsis before its count", () => {
+  const doc = defaultedDoc(PROSE0_MEDIUM_RUN2);
+  doc.chains[3].ratings.S.rationale = DEFAULT_RATIONALE;
+  assert.deepEqual(fired(doc, UNRECORDED), []);
+});
+
+test("conversion-substitution-unrecorded: a `;` or a `.` inside a quoted span does not end a clause, in straight or curly single or double quotes, and an unmatched opening quote runs to the end", () => {
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause]));
+  const recorded = FOUR_DEFAULTS.filter((f) => f !== "status");
+  for (const clause of [
+    "status set to 'existing; the sheet records none' on 4 controls",
+    "status set to \"existing; the sheet records none\" on 4 controls",
+    "status set to ‘existing; the sheet records none’ on 4 controls",
+    "status set to “existing; the sheet records none” on 4 controls",
+    "status set to 'existing.' on 4 controls",
+    "status set to '... existing' on 4 controls",
+    "status set to 'existing; on 4 controls",
+  ]) {
+    assert.deepEqual(unrecordedWith(clause), recorded, clause);
+  }
+  assert.deepEqual(unrecordedWith("status set to 'existing'; 4 controls in all"), FOUR_DEFAULTS, "a `;` after the closing quote still ends the clause");
+});
+
+// An apostrophe has a word character on one side: it neither opens a span nor, inside one, closes it.
+test("conversion-substitution-unrecorded: an apostrophe is not a quote, so it neither opens nor closes a quoted span", () => {
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause]));
+  assert.deepEqual(unrecordedWith("status taken from the sheet's controls; 4 controls in all"), FOUR_DEFAULTS);
+  assert.deepEqual(unrecordedWith("status taken from the rows' controls; 4 controls in all"), FOUR_DEFAULTS);
+  assert.deepEqual(unrecordedWith("status set to 'the sheet's default; existing' on 4 controls"), FOUR_DEFAULTS.filter((f) => f !== "status"));
 });

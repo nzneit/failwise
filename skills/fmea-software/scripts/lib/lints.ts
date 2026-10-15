@@ -325,11 +325,25 @@ function readsConversionDefaults(doc: FmeaDocument): boolean {
   return doc.chains.length >= 2 && doc.meta.history.some((entry) => CONVERSION.test(entry.change));
 }
 
-// Every clause of every meta.history entry: the change text split on `;` and on a full stop, a dot
-// that no word character follows, so a dotted name such as `controls[].evidence.kind` stays in one
-// clause, as wholeToken reads a dot that continues an id. Before the stage-1 gate every dot split.
+// A quoted span of a change text: from an opening quote to its closing one, matched left to right
+// without nesting, or to the end of the text when it has none. The pairs are straight double quotes,
+// “…”, straight single quotes and ‘…’. A single quote, straight or curly, opens a span only where
+// no word character precedes it and closes one only where no word character follows it, so the
+// apostrophe of `sheet's` or `rows'` neither opens nor closes a span.
+const QUOTED_SPAN = /"[^"]*(?:"|$)|“[^”]*(?:”|$)|(?<!\w)'(?:[^']|'(?=\w))*(?:'(?!\w)|$)|(?<!\w)‘(?:[^’]|’(?=\w))*(?:’(?!\w)|$)/g;
+
+// The change text with every `;` and `.` inside a quoted span blanked to a space, its length kept, so
+// a quoted default text such as `'converted from x.csv; no local effect recorded'` ends no clause.
+function blankQuotedStops(change: string): string {
+  return change.replace(QUOTED_SPAN, (span) => span.replace(/[.;]/g, " "));
+}
+
+// Every clause of every meta.history entry: the change text, its quoted stops blanked, split on `;`
+// and on a full stop, a dot that no word character follows, so a dotted name such as
+// `controls[].evidence.kind` stays in one clause, as wholeToken reads a dot that continues an id.
+// Before the stage-1 gate every dot split.
 function historyClauses(doc: FmeaDocument): string[] {
-  return doc.meta.history.flatMap((entry) => entry.change.split(/;|\.(?!\w)/));
+  return doc.meta.history.flatMap((entry) => blankQuotedStops(entry.change).split(/;|\.(?!\w)/));
 }
 
 // A clause records a default when it names the field together with the count as a standalone
@@ -345,7 +359,7 @@ function recordsSubstitution(clause: string, names: RegExp, { count, rows }: Sub
 }
 
 // The finding's message, `unit` being row or control; the rationale's reads as it shipped.
-function substitutionMessage(count: number, unit: string, field: string): string {
+function substitutionMessage(count: number, unit: DefaultField["unit"], field: string): string {
   return `${count} ${unit}(s) carry the default ${field}, and no meta.history clause names ${field} with that count or with those rows' chain ids or element names. ` +
     "Keep the default, and add that clause to meta.history, not to an assumption or a row's history.";
 }
@@ -620,7 +634,7 @@ export const MACHINE_RULES: MachineRule[] = [
     },
   },
   {
-    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1, and since the stage-1 gate the baseline's `none recorded`, `none published` and design-inputs placeholders as well (spec §11.5, ruling 5).
+    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1, and since the stage-1 gate the baseline's `none recorded`, `none published` and design- and supplied-inputs placeholders as well (spec §11.5, ruling 5).
     id: "edge-reliability-unstated",
     severity: "warning",
     check(doc) {
