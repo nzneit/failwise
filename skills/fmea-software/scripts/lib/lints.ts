@@ -261,15 +261,18 @@ function edgeReliabilityLints(doc: FmeaDocument, index: number, edge: Dependency
 
 // The c11 lint's default rationale, a conversion's declared stand-in for an empty Justification
 // cell; the change text that marks a document as a conversion; and the number word of each count
-// from one to ten.
+// from one to twelve. The words ran to ten until the second stage-1 gate, whose ruling 3 (spec
+// §11.6) counts the ratings' evidence kind by rating as well, twelve on the legacy sheet's four rows.
 const DEFAULT_RATIONALE = /^converted from .+; no rationale recorded$/;
 const CONVERSION = /converted from|column mapping|conversion/i;
-const NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
 interface DefaultRow { id: string; name: string | undefined }
 
-// A default a document carries: how many rows or controls carry it, and the chains they sit on.
-interface Substitution { count: number; rows: DefaultRow[] }
+// A default a document carries: how many rows, controls or elements carry it, and the chains they
+// sit on, or the elements themselves. `ratingCount`, on the ratings' evidence kind alone, is the
+// number of ratings that carry it, a second count that records it as `count` does.
+interface Substitution { count: number; rows: DefaultRow[]; ratingCount?: number }
 
 // Each chain `keep` accepts, with the name of the element its function belongs to, since a chain
 // has no name of its own; undefined when either does not resolve.
@@ -296,30 +299,66 @@ function controlDefault(doc: FmeaDocument, carries: (control: Control) => boolea
   return { count: controls.length, rows: chainRows(doc, (chain) => chain.controls.length > 0) };
 }
 
+// A default every chain carries, counted by row.
+function everyChain(doc: FmeaDocument): Substitution {
+  return { count: doc.chains.length, rows: chainRows(doc, () => true) };
+}
+
 // An effect default, counted by row: every chain carries the same text at `level`, an empty and an
 // absent text counted as the same.
 function effectDefault(doc: FmeaDocument, level: "local" | "next_level"): Substitution | undefined {
   if (new Set(doc.chains.map((chain) => chain.effects[level] ?? "")).size !== 1) return undefined;
-  return { count: doc.chains.length, rows: chainRows(doc, () => true) };
+  return everyChain(doc);
+}
+
+// The ratings' default evidence kind, counted by row and by rating: every S, O and D rating of every
+// chain is an estimate.
+function ratingEvidenceDefault(doc: FmeaDocument): Substitution | undefined {
+  if (!doc.chains.every((chain) => FACTORS.every((f) => chain.ratings[f].evidence_kind === "estimate"))) return undefined;
+  return { ...everyChain(doc), ratingCount: doc.chains.length * FACTORS.length };
+}
+
+// The elements' typing, counted by element: the converter types every element, so the default holds
+// whenever there is one; its rows are the elements, each by its id and its name.
+function typingDefault(doc: FmeaDocument): Substitution | undefined {
+  if (doc.elements.length === 0) return undefined;
+  return { count: doc.elements.length, rows: doc.elements.map((element) => ({ id: element.id, name: element.name })) };
 }
 
 // The defaults the lint reads, in the order of its findings: the rationale in every document, the
-// other four only in a conversion of two chains or more. `names` is a clause that names the field,
-// case-insensitive: `rationale` anywhere; `status` as a whole word; `evidence.kind`, `evidence kind`
-// or `evidence_kind`; `local` as a whole word, which `effects.local` and `local effect` hold, or
-// `effects` together with `local`; `next_level`, `next level` or `next-level`, which
-// `effects.next_level` holds.
-interface DefaultField { field: string; unit: "row" | "control"; names: RegExp; conversionOnly: boolean; find: (doc: FmeaDocument) => Substitution | undefined }
+// other six only in a conversion of two chains or more. `names` is a clause that names the field,
+// case-insensitive: `rationale` anywhere; `status` as a whole word; `evidence.kind` or
+// `evidence kind`, and since the second stage-1 gate no longer `evidence_kind`, the ratings' field;
+// `local` as a whole word, which `effects.local` and `local effect` hold, or `effects` together
+// with `local`; `next_level`, `next level` or `next-level`, which `effects.next_level` holds;
+// `evidence_kind`, or `estimate` as a whole word; and `type`, `typed`, `types`, `typing`,
+// `boundary` or `role` as a whole word, or `elements[].kind` as a whole token, where `kind` alone,
+// as in `evidence.kind`, names nothing. `alsoRecordedBy`, on the typing alone, is a clause that
+// records the default whatever its count: one that maps a sheet column to `elements[].kind` or
+// `elements[].boundary`.
+interface DefaultField {
+  field: string;
+  unit: "row" | "control" | "element";
+  names: RegExp;
+  conversionOnly: boolean;
+  find: (doc: FmeaDocument) => Substitution | undefined;
+  alsoRecordedBy?: RegExp;
+}
 const DEFAULT_FIELDS: DefaultField[] = [
   { field: "rationale", unit: "row", names: /rationale/i, conversionOnly: false, find: rationaleDefault },
   { field: "status", unit: "control", names: /\bstatus\b/i, conversionOnly: true, find: (doc) => controlDefault(doc, (c) => c.status === "existing") },
-  { field: "evidence.kind", unit: "control", names: /evidence[._ ]kind/i, conversionOnly: true, find: (doc) => controlDefault(doc, (c) => c.evidence.kind === "none") },
+  { field: "evidence.kind", unit: "control", names: /evidence[. ]kind/i, conversionOnly: true, find: (doc) => controlDefault(doc, (c) => c.evidence.kind === "none") },
   { field: "effects.local", unit: "row", names: /\blocal\b|effects.*local|local.*effects/is, conversionOnly: true, find: (doc) => effectDefault(doc, "local") },
   { field: "effects.next_level", unit: "row", names: /next[_ -]level/i, conversionOnly: true, find: (doc) => effectDefault(doc, "next_level") },
+  { field: "evidence_kind", unit: "row", names: /evidence_kind|\bestimate\b/i, conversionOnly: true, find: ratingEvidenceDefault },
+  {
+    field: "typing", unit: "element", names: /\btyp(e|ed|es|ing)\b|\bboundary\b|\brole\b|(?<![\w.-])elements\[\]\.kind(?![\w-]|\.\w)/i,
+    conversionOnly: true, find: typingDefault, alsoRecordedBy: /elements\[\]\.(kind|boundary)/,
+  },
 ];
 
 // A document is a conversion when a meta.history change says it was converted, names a column
-// mapping or a conversion; the lint reads the four other defaults of a conversion of two chains or
+// mapping or a conversion; the lint reads the six other defaults of a conversion of two chains or
 // more, the rationale of any document.
 function readsConversionDefaults(doc: FmeaDocument): boolean {
   return doc.chains.length >= 2 && doc.meta.history.some((entry) => CONVERSION.test(entry.change));
@@ -346,20 +385,36 @@ function historyClauses(doc: FmeaDocument): string[] {
   return doc.meta.history.flatMap((entry) => blankQuotedStops(entry.change).split(/;|\.(?!\w)/));
 }
 
-// A clause records a default when it names the field together with the count as a standalone
-// integer, adjacent to no letter, digit, `-` or `_`, so neither a date nor `ch-1` counts; with the
-// count's number word under the same neighbour rule; or with every affected row's chain id or
-// element name, each a whole token.
-function recordsSubstitution(clause: string, names: RegExp, { count, rows }: Substitution): boolean {
-  if (!names.test(clause)) return false;
+// A clause holds `count` as a standalone integer, adjacent to no letter, digit, `-` or `_`, so
+// neither a date nor `ch-1` counts, or holds its number word under the same neighbour rule, so
+// `one-to-one` is not the count one, as `row-1` is not 1.
+function holdsCount(clause: string, count: number): boolean {
   if (new RegExp(`(?<![\\w-])${count}(?![\\w-])`).test(clause)) return true;
-  // The integer's neighbour rule, so `one-to-one` is not the count one, as `row-1` is not 1.
-  if (count <= 10 && new RegExp(`(?<![\\w-])${NUMBER_WORDS[count - 1]}(?![\\w-])`, "i").test(clause)) return true;
+  return count <= NUMBER_WORDS.length && new RegExp(`(?<![\\w-])${NUMBER_WORDS[count - 1]}(?![\\w-])`, "i").test(clause);
+}
+
+// A clause records a default when it names the field together with the count, or the ratings'
+// count where the default has one, as holdsCount reads them; or with every affected row's chain id
+// or element name, or every affected element's id or name, each a whole token.
+function recordsSubstitution(clause: string, names: RegExp, { count, rows, ratingCount }: Substitution): boolean {
+  if (!names.test(clause)) return false;
+  if (holdsCount(clause, count) || (ratingCount !== undefined && holdsCount(clause, ratingCount))) return true;
   return rows.every((row) => wholeToken(clause, row.id) || (row.name !== undefined && wholeToken(clause, row.name)));
 }
 
-// The finding's message, `unit` being row or control; the rationale's reads as it shipped.
+// A clause records a field's default as recordsSubstitution reads it, or, where the field has
+// `alsoRecordedBy`, whenever it matches that pattern, whatever its count.
+function recordedBy(clause: string, { names, alsoRecordedBy }: DefaultField, sub: Substitution): boolean {
+  return alsoRecordedBy?.test(clause) === true || recordsSubstitution(clause, names, sub);
+}
+
+// The finding's message. A row's or a control's reads in the shipped form, so the rationale's reads
+// as it shipped; an element's, the typing's, in its own words.
 function substitutionMessage(count: number, unit: DefaultField["unit"], field: string): string {
+  if (unit === "element") {
+    return `${count} element(s) carry the default ${field}, and no meta.history clause names the ${field} with that count or with every element's id or name. ` +
+      `Keep the ${field}, and add that clause to meta.history, not to an assumption, a ground rule or a row's history.`;
+  }
   return `${count} ${unit}(s) carry the default ${field}, and no meta.history clause names ${field} with that count or with those rows' chain ids or element names. ` +
     "Keep the default, and add that clause to meta.history, not to an assumption or a row's history.";
 }
@@ -369,10 +424,10 @@ function substitutionMessage(count: number, unit: DefaultField["unit"], field: s
 function substitutionLint(doc: FmeaDocument): Lint[] {
   const clauses = historyClauses(doc);
   const conversion = readsConversionDefaults(doc);
-  return DEFAULT_FIELDS.flatMap(({ field, unit, names, conversionOnly, find }) => {
-    const sub = conversionOnly && !conversion ? undefined : find(doc);
-    if (sub === undefined || clauses.some((clause) => recordsSubstitution(clause, names, sub))) return [];
-    return [lint("conversion-substitution-unrecorded", "warning", ptr("meta", "history"), substitutionMessage(sub.count, unit, field))];
+  return DEFAULT_FIELDS.flatMap((entry) => {
+    const sub = entry.conversionOnly && !conversion ? undefined : entry.find(doc);
+    if (sub === undefined || clauses.some((clause) => recordedBy(clause, entry, sub))) return [];
+    return [lint("conversion-substitution-unrecorded", "warning", ptr("meta", "history"), substitutionMessage(sub.count, entry.unit, entry.field))];
   });
 }
 
@@ -642,7 +697,7 @@ export const MACHINE_RULES: MachineRule[] = [
     },
   },
   {
-    // A conversion's declared default is a substitution only when meta.history itself says so, by count or by row: the clause rubric c11 reads. The default rationale in any document; since the stage-1 gate, in a conversion of two chains or more, the controls' status and evidence kind and the local and next-level effects as well (spec §11.5, ruling 4).
+    // A conversion's declared default is a substitution only when meta.history itself says so, by count or by row: the clause rubric c11 reads. The default rationale in any document; since the stage-1 gate, in a conversion of two chains or more, the controls' status and evidence kind and the local and next-level effects as well (spec §11.5, ruling 4); since the second stage-1 gate, the ratings' evidence kind and the elements' typing too (spec §11.6, ruling 3).
     id: "conversion-substitution-unrecorded",
     severity: "warning",
     check(doc) {

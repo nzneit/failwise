@@ -980,15 +980,23 @@ test("conversion-substitution-unrecorded: minimalDoc stays silent", () => {
 // build/evals/prose-1/results.json names the default each failing run left uncounted.
 
 const DEFAULT_MESSAGE = (count: number, unit: string, field: string): string => `${count} ${unit}(s) carry the default ${field}, and no meta.history clause names ${field} with that count or with those rows' chain ids or element names. Keep the default, and add that clause to meta.history, not to an assumption or a row's history.`;
+const TYPING_MESSAGE = (count: number): string => `${count} element(s) carry the default typing, and no meta.history clause names the typing with that count or with every element's id or name. Keep the typing, and add that clause to meta.history, not to an assumption, a ground rule or a row's history.`;
 const unrecordedDefaults = (...found: [number, string, string][]): Lint[] =>
-  found.map(([count, unit, field]) => ({ rule: UNRECORDED, severity: "warning", pointer: "/meta/history", message: DEFAULT_MESSAGE(count, unit, field) }));
+  found.map(([count, unit, field]) => ({ rule: UNRECORDED, severity: "warning", pointer: "/meta/history", message: unit === "element" ? TYPING_MESSAGE(count) : DEFAULT_MESSAGE(count, unit, field) }));
 const FOUR_DEFAULTS = ["status", "evidence.kind", "effects.local", "effects.next_level"];
 const SHEET = "Converted from legacy-rpn-sheet.csv";
 const RATIONALE_1 = "rationale defaulted on 1 row";
+const KIND_4 = "evidence_kind estimate on 4 rows";
+const TYPING_4 = "typing by the converter on 4 elements";
+// The rationale and the two defaults of §11.6 ruling 3 recorded, so a test of the four control and
+// effect defaults reads those four alone.
+const RECORDED_3 = `${RATIONALE_1}; ${KIND_4}; ${TYPING_4}`;
 
 /** convertedDoc with ch-2's default rationale and the conversion's four other defaults applied, as
  *  the legacy sheet's conversion writes them: one control per chain with status existing and
- *  evidence kind none, and the same local and next-level effect on every chain. */
+ *  evidence kind none, and the same local and next-level effect on every chain. Every rating is an
+ *  estimate, as minimalDoc's are, and there are four elements, so the ratings' evidence_kind and
+ *  the elements' typing are defaults of it as well. */
 function defaultedDoc(changes: string[]): FmeaDocument {
   const doc = convertedDoc(["ch-2"], changes);
   for (const chain of doc.chains) {
@@ -1030,36 +1038,38 @@ test("conversion-substitution-unrecorded's rationale finding keeps the shipped m
   assert.equal(DEFAULT_MESSAGE(1, "row", "rationale"), MESSAGE(1));
 });
 
-test("conversion-substitution-unrecorded fires on prose-1's p6/high/run1 on status only: its history counts evidence.kind on 4 controls, the two effects on 4 chains and rationale on 1 row", () => {
+test("conversion-substitution-unrecorded fires on prose-1's p6/high/run1 on status only: its history counts evidence.kind on 4 controls, the two effects on 4 chains, rationale on 1 row, evidence_kind on 12 ratings and the typing's boundary on 4 elements", () => {
   assert.deepEqual(fired(defaultedDoc(PROSE1_HIGH_RUN1), UNRECORDED), unrecordedDefaults([4, "control", "status"]));
 });
 
-test("conversion-substitution-unrecorded fires on prose-1's p6/high/run2 on status only, which no clause names", () => {
+test("conversion-substitution-unrecorded fires on prose-1's p6/high/run2 on status only, which no clause names; it counts evidence_kind on 12 ratings and types all 4 elements", () => {
   assert.deepEqual(fired(defaultedDoc(PROSE1_HIGH_RUN2), UNRECORDED), unrecordedDefaults([4, "control", "status"]));
 });
 
-test("conversion-substitution-unrecorded fires on prose-1's p6/medium/run2 on effects.local and effects.next_level only, which neither history entry names", () => {
+test("conversion-substitution-unrecorded fires on prose-1's p6/medium/run2 on effects.local and effects.next_level only, which neither history entry names; it counts evidence_kind on 12 ratings and the typing on 4 elements", () => {
   assert.deepEqual(fired(defaultedDoc(PROSE1_MEDIUM_RUN2), UNRECORDED), unrecordedDefaults([4, "row", "effects.local"], [4, "row", "effects.next_level"]));
 });
 
-test("conversion-substitution-unrecorded is silent on prose-1's p6/medium/run1, which counts all five defaults", () => {
+test("conversion-substitution-unrecorded is silent on prose-1's p6/medium/run1, which counts all five defaults, evidence_kind on 12 ratings and the typing's boundary on all four elements", () => {
   assert.deepEqual(fired(defaultedDoc(PROSE1_MEDIUM_RUN1), UNRECORDED), []);
 });
 
-test("conversion-substitution-unrecorded is silent on all five defaults of the shipped expected conversion, which counts each on 4 of 4 rows", () => {
+test("conversion-substitution-unrecorded is silent on all seven defaults of the shipped expected conversion, which counts each on 4 of 4 rows and names each element with its type", () => {
   const doc = loadFixture<FmeaDocument>("legacy-rpn-sheet.expected.fmea.json");
   const controls = doc.chains.flatMap((chain) => chain.controls);
   assert.ok(controls.length > 0 && controls.every((c) => c.status === "existing" && c.evidence.kind === "none"), "every control carries both control defaults");
   assert.equal(new Set(doc.chains.map((chain) => chain.effects.local)).size, 1, "one local effect on every chain");
   assert.equal(new Set(doc.chains.map((chain) => chain.effects.next_level)).size, 1, "one next-level effect on every chain");
+  assert.ok(doc.chains.every((chain) => (["S", "O", "D"] as const).every((f) => chain.ratings[f].evidence_kind === "estimate")), "every rating is an estimate");
+  assert.equal(doc.elements.length, 4, "four typed elements");
   assert.deepEqual(fired(doc, UNRECORDED), []);
 });
 
 test("conversion-substitution-unrecorded: a document that is not a conversion is read for the rationale default only, and any of the three detector phrases makes it one", () => {
-  assert.deepEqual(unrecordedFields(defaultedDoc(["Imported legacy-rpn-sheet.csv", RATIONALE_1])), []);
+  assert.deepEqual(unrecordedFields(defaultedDoc(["Imported legacy-rpn-sheet.csv", RECORDED_3])), []);
   assert.deepEqual(fired(defaultedDoc([]), UNRECORDED), unrecorded(1));
   for (const detector of [SHEET, "column mapping: Item -> elements[].name", "Conversion notes"]) {
-    assert.deepEqual(unrecordedFields(defaultedDoc([detector, RATIONALE_1])), FOUR_DEFAULTS, detector);
+    assert.deepEqual(unrecordedFields(defaultedDoc([detector, RECORDED_3])), FOUR_DEFAULTS, detector);
   }
 });
 
@@ -1070,22 +1080,22 @@ test("conversion-substitution-unrecorded: a conversion of one chain is read for 
 });
 
 test("conversion-substitution-unrecorded: a control default holds when every control carries it and there is one, and counts the controls", () => {
-  const planned = defaultedDoc([SHEET, RATIONALE_1]);
+  const planned = defaultedDoc([SHEET, RECORDED_3]);
   planned.chains[0].controls[0].status = "planned";
   assert.deepEqual(unrecordedFields(planned), ["evidence.kind", "effects.local", "effects.next_level"]);
-  const evidenced = defaultedDoc([SHEET, RATIONALE_1]);
+  const evidenced = defaultedDoc([SHEET, RECORDED_3]);
   evidenced.chains[3].controls[0].evidence = { kind: "test_result", ref: "detect.spec" };
   assert.deepEqual(unrecordedFields(evidenced), ["status", "effects.local", "effects.next_level"]);
-  const bare = defaultedDoc([SHEET, RATIONALE_1]);
+  const bare = defaultedDoc([SHEET, RECORDED_3]);
   for (const chain of bare.chains) chain.controls = [];
   assert.deepEqual(unrecordedFields(bare), ["effects.local", "effects.next_level"]);
-  const five = defaultedDoc([SHEET, RATIONALE_1, "effects.local and effects.next_level defaulted on 4 rows"]);
+  const five = defaultedDoc([SHEET, RECORDED_3, "effects.local and effects.next_level defaulted on 4 rows"]);
   five.chains[0].controls.push(clone(five.chains[0].controls[0]));
   assert.deepEqual(fired(five, UNRECORDED), unrecordedDefaults([5, "control", "status"], [5, "control", "evidence.kind"]));
 });
 
 test("conversion-substitution-unrecorded: an effect default holds when every chain carries the same text, empty and absent counted as the same", () => {
-  const blank = defaultedDoc([SHEET, RATIONALE_1, "controls[].status existing and controls[].evidence.kind none on 4 controls"]);
+  const blank = defaultedDoc([SHEET, RECORDED_3, "controls[].status existing and controls[].evidence.kind none on 4 controls"]);
   for (const chain of blank.chains) chain.effects.local = "";
   delete (blank.chains[2].effects as Partial<Effects>).local;
   assert.deepEqual(fired(blank, UNRECORDED), unrecordedDefaults([4, "row", "effects.local"], [4, "row", "effects.next_level"]));
@@ -1094,24 +1104,25 @@ test("conversion-substitution-unrecorded: an effect default holds when every cha
 });
 
 test("conversion-substitution-unrecorded: a clause records a default when it names the field, case-insensitively, with the count, its number word, or every affected row by chain id or element name", () => {
-  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause]));
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RECORDED_3, clause]));
   const recording: [string, string[]][] = [
     ["status", ["controls[].status existing on 4 controls", "Status existing on four controls", "status existing on ch-1, ch-2, ch-3 and ch-4", "status existing on the Checkout API, Payment Gateway, Order Store and Pricing Service rows"]],
-    ["evidence.kind", ["controls[].evidence.kind none on 4 controls", "Evidence kind none on 4 controls", "evidence_kind none on 4 controls"]],
+    ["evidence.kind", ["controls[].evidence.kind none on 4 controls", "Evidence kind none on 4 controls"]],
     ["effects.local", ["effects.local on 4 rows", "the local effect on 4 rows", "Local defaulted on 4 rows", "the localised effects on 4 rows"]],
     ["effects.next_level", ["effects.next_level on 4 rows", "next_level on 4 rows", "Next level on 4 rows", "next-level on 4 rows"]],
   ];
   for (const [field, clauses] of recording) {
     for (const clause of clauses) assert.deepEqual(unrecordedWith(clause), FOUR_DEFAULTS.filter((f) => f !== field), clause);
   }
-  for (const clause of ["statuses existing on 4 controls", "status existing on 3 controls", "status existing on ch-1, ch-2 and ch-3", "evidence none on 4 controls", "kind none on 4 controls", "effects on 4 rows", "locale on 4 rows", "level on 4 rows", "nextlevel on 4 rows"]) {
+  // Since §11.6 ruling 3, `evidence_kind` names the ratings' field and no longer the controls'.
+  for (const clause of ["statuses existing on 4 controls", "status existing on 3 controls", "status existing on ch-1, ch-2 and ch-3", "evidence none on 4 controls", "kind none on 4 controls", "evidence_kind none on 4 controls", "effects on 4 rows", "locale on 4 rows", "level on 4 rows", "nextlevel on 4 rows"]) {
     assert.deepEqual(unrecordedWith(clause), FOUR_DEFAULTS, clause);
   }
 });
 
 test("conversion-substitution-unrecorded: a full stop or a semicolon ends a clause, and a dot that continues a dotted name does not", () => {
   for (const clause of ["status existing. 4 controls took it", "status existing; 4 controls took it", "evidence.kind none. 4 controls"]) {
-    assert.deepEqual(unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause])), FOUR_DEFAULTS, clause);
+    assert.deepEqual(unrecordedFields(defaultedDoc([SHEET, RECORDED_3, clause])), FOUR_DEFAULTS, clause);
   }
   assert.deepEqual(fired(convertedDoc(["ch-2"], ["1 row carries the default chains[].ratings.S.rationale"]), UNRECORDED), []);
 });
@@ -1143,7 +1154,7 @@ test("conversion-substitution-unrecorded is silent on prose-0's p6/medium/run2, 
 });
 
 test("conversion-substitution-unrecorded: a `;` or a `.` inside a quoted span does not end a clause, in straight or curly single or double quotes, and an unmatched opening quote runs to the end", () => {
-  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause]));
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RECORDED_3, clause]));
   const recorded = FOUR_DEFAULTS.filter((f) => f !== "status");
   for (const clause of [
     "status set to 'existing; the sheet records none' on 4 controls",
@@ -1161,8 +1172,172 @@ test("conversion-substitution-unrecorded: a `;` or a `.` inside a quoted span do
 
 // An apostrophe has a word character on one side: it neither opens a span nor, inside one, closes it.
 test("conversion-substitution-unrecorded: an apostrophe is not a quote, so it neither opens nor closes a quoted span", () => {
-  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, clause]));
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RECORDED_3, clause]));
   assert.deepEqual(unrecordedWith("status taken from the sheet's controls; 4 controls in all"), FOUR_DEFAULTS);
   assert.deepEqual(unrecordedWith("status taken from the rows' controls; 4 controls in all"), FOUR_DEFAULTS);
   assert.deepEqual(unrecordedWith("status set to 'the sheet's default; existing' on 4 controls"), FOUR_DEFAULTS.filter((f) => f !== "status"));
+});
+
+// ---- Ruling 3 of the second stage-1 gate (spec §11.6): in a conversion of two chains or more, the
+// ratings' evidence_kind estimate, counted by row or by rating, and the elements' typing, counted
+// by element or recorded by a clause that maps a column to elements[].kind or elements[].boundary.
+// The history entries are round 1b's prompt-6 documents verbatim, each named by its source.
+
+// build/evals/prose-1b/p6/high/run1/analysis.json, meta.history[0].change to meta.history[4].change.
+const PROSE1B_HIGH_RUN1 = [
+  "Converted from inputs/legacy-rpn-sheet.csv, prepared by J. Legacy and dated 2025-11-30, by column mapping: Item -> elements[].name, with the element id taken from it as lowercased kebab-case; Function -> functions[].statement; Failure Mode -> chains[].failure_mode; Effect -> chains[].effects.end; Cause -> chains[].causes[].text; Current Controls -> chains[].controls[].description, with the cell's 'Detection:' or 'Prevention:' prefix mapped to controls[].kind and removed from the description; S, O and D -> chains[].ratings.S, ratings.O and ratings.D; RPN -> checked against the product of the three ratings and never copied; Recommended Action -> chains[].actions[].description; Owner -> chains[].actions[].owner, the action owner and never an element owner; Status -> chains[].actions[].status; Justification -> chains[].ratings[].rationale. Every column of the sheet is named here and none was left unused.",
+  "Element typing, typed by the converter from the item text, the sheet carrying no type, owner or external column: Checkout API is an interface, an item named as an API with no deployable of its own named and a contract analysed in its own right; Payment Gateway and Pricing Service are services, each answering requests with a runtime of its own; Order Store is a datastore, holding state at rest that other elements read or write and doing nothing on its own. All 4 elements take boundary in_scope, the sheet classifying no ownership, and security_relevant is false on those 4 elements as a declared default because no item text says a security property depends on the element.",
+  "Declared substitutions: rationale: 1 row (row-2) carries the default 'converted from inputs/legacy-rpn-sheet.csv; no rationale recorded', its Justification cell being empty; evidence_kind: estimate on 4 rows and evidence_ref left empty on 4 rows, the sheet carrying no evidence column; controls[].status: existing on 4 controls, the sheet's Current Controls column naming controls that are in place now; controls[].evidence.kind: none on 4 controls, the sheet stating no evidence for any control; effects.local carries the default 'converted from inputs/legacy-rpn-sheet.csv; no local effect recorded' on 4 rows; effects.next_level carries the default 'converted from inputs/legacy-rpn-sheet.csv; no next-level effect recorded' on 4 rows, the sheet having a single Effect column; actions[].target_date: 2026-10-15 on 4 actions, the sheet recording no target date; functions[].for_whom carries the default 'not named in the sheet' on 4 functions and functions[].conditions is empty on those 4 functions; trigger is left empty on 4 chains; causes[].origin is left unclassified on 4 chains; chains[].flows is absent on 4 chains and flows[] is absent, the sheet naming no critical flow; catalog_refs is empty on 4 chains; row ids row-1 to row-4 were generated by the converter, the sheet carrying no row id column.",
+  "chains[].priority and its rpn are written by priority.ts from the retained ratings with the shipped table; the sheet states RPN 120 for row-1, 144 for row-2, 200 for row-3 and 40 for row-4, of which row-3 alone differs from the product of its ratings 7, 5 and 6, which is 210, so the sheet's 200 is recorded in the history of row-3 and no sheet RPN was copied or used to rank.",
+  "meta.codebases is absent and no element carries a codebase, the sheet naming no repository, and the missing value is recorded as an open assumption rather than invented. meta.ground_rules carries 4 rules declared by the converter, the sheet stating none, and meta.assumptions carries 8 open assumptions owned by user for the inputs the sheet does not supply. No review is recorded: no team report of a review of this conversion was given. No cause link and no catalog_refs are written, because the conversion adds no link even where a Cause cell restates another row's Failure Mode, and adds no catalog row; both are later work for the person through an ordinary update.",
+];
+
+// build/evals/prose-1b/p6/high/run2/analysis.json, meta.history[0].change and meta.history[1].change.
+const PROSE1B_HIGH_RUN2 = [
+  "Converted from the legacy RPN sheet legacy-rpn-sheet.csv. The column mapping: the columns Item, Function, Failure Mode, Effect, Cause, Current Controls, S, O, D, RPN, Recommended Action, Owner, Status and Justification were all used; Item maps to elements[].name and each element id is taken from it; Function maps to functions[].statement; Failure Mode maps to chains[].failure_mode; Effect maps to chains[].effects.end; Cause maps to chains[].causes[].text; Current Controls maps to chains[].controls[], with the cell's '<Prevention or Detection>: ' prefix mapped to controls[].kind and the text after that prefix mapped to controls[].description; S, O and D map to chains[].ratings[].value; Recommended Action maps to chains[].actions[].description; Owner maps to chains[].actions[].owner and is the action owner and never an element owner; Status maps to chains[].actions[].status; Justification maps to chains[].ratings[].rationale wherever the cell is filled; Prepared by maps to chains[].ratings[].review.by and Date maps to chains[].ratings[].review.date; the RPN column is not copied, the row's priority being computed by priority.ts, and where the stated RPN differs from S times O times D the sheet's value is recorded in that row's history[].",
+  "Declared substitutions of the conversion. elements[].boundary is in_scope on 4 elements and elements[].security_relevant is false on 4 elements, both read by the converter because the sheet carries no type, external or boundary column; each element's role is typed by the converter from the item text, checkout-api as an interface, payment-gateway as a service, order-store as a datastore and pricing-service as a service; elements[].description is left empty on 4 elements; functions[].conditions is left empty on 4 functions; functions[].for_whom takes the declared default 'converted from legacy-rpn-sheet.csv; no consumer recorded' on 4 functions; chains[].trigger is left empty on 4 rows, the sheet naming no trigger and no trigger-kind vocabulary being sourced; chains[].catalog_refs is empty on 4 rows, the conversion adding no catalog row; chains[].stale carries the false flag on 4 rows; chains[].post_ratings is left out on 4 rows, no action being Completed; controls[].status takes the declared default existing on 4 controls; controls[].evidence.kind takes the declared default none on 4 controls, the sheet carrying no evidence column; effects.local takes the declared default 'converted from legacy-rpn-sheet.csv; no local effect recorded' on 4 rows, the sheet carrying a single effect column; effects.next_level takes the declared default 'converted from legacy-rpn-sheet.csv; no next-level effect recorded' on 4 rows, the sheet carrying a single effect column; rationale takes the declared default 'converted from legacy-rpn-sheet.csv; no rationale recorded' on 1 row, the Payment Gateway row, whose Justification cell is empty; ratings[].evidence_kind is estimate on 12 ratings, the sheet carrying no evidence column; ratings[].review is authored on 12 ratings, by J. Legacy at 2025-11-30 from the sheet's Prepared by and Date rows; actions[].target_date takes the sheet's date 2025-11-30 as a declared default on 4 actions; actions[].completed_date is left out on 4 actions, no action being Completed. The conversion adds no chain link, even where a Cause cell restates another row's Failure Mode, and the step-4 linking pass does not run on a converted sheet; it adds no codebase, so meta.codebases[] is absent and no element carries a codebase; it authors no flow, so flows[] is absent; dependencies[] is empty, the sheet carrying no strength, SLA or limits for any item; meta.scales.version is set to 2 from the scales version line of scales-software.md.",
+];
+
+// build/evals/prose-1b/p6/medium/run1/analysis.json, meta.history[0].change.
+const PROSE1B_MEDIUM_RUN1 = [
+  "Converted from the legacy RPN sheet legacy-rpn-sheet.csv, prepared by J. Legacy and dated 2025-11-30, four rows; column mapping: Item to elements[].name, Function to functions[].statement, Failure Mode to chains[].failure_mode, Effect to chains[].effects.end, Cause to chains[].causes[].text, Current Controls to chains[].controls[] with the cell's leading Detection or Prevention word mapping to controls[].kind and the remaining text to controls[].description, S, O and D to chains[].ratings[].value, Recommended Action to chains[].actions[].description, Owner to chains[].actions[].owner, Status to chains[].actions[].status, and Justification to the rationale of each of the row's three ratings; the sheet's stated RPN is kept in the row's own history where it differs from S times O times D, which is the row Order Store with 200 against 210, while priority.rpn and the priority value are computed by the skill's table and never copied from the sheet; the sheet carries no row-id, type, boundary, strength, SLA, limits, target-date, trigger, origin, flow, codebase or owner-of-element column; each element is typed by the converter from the item text and the ids are the converter's; effects.local default \"converted from legacy-rpn-sheet.csv; no local effect recorded\" on four rows; effects.next_level default \"converted from legacy-rpn-sheet.csv; no next-level effect recorded\" on four rows; controls[].status default existing on four controls; controls[].evidence.kind default none on four controls; rationale default \"converted from legacy-rpn-sheet.csv; no rationale recorded\" on one row, the row whose Justification cell is empty, which is Payment Gateway; functions[].for_whom default \"converted from legacy-rpn-sheet.csv; no consumer recorded\" on four functions; functions[].conditions left empty on four functions; ratings[].evidence_kind default estimate on twelve ratings; actions[].target_date default the sheet date 2025-11-30 on four actions; chains[].trigger left empty on four rows; causes[].origin left empty on four causes; chains[].flows, chains[].catalog_refs, chains[].handoff and chains[].source_incident left empty on four rows; elements[].description left empty on four elements; security_relevant default false on four elements; meta.codebases left absent and dependencies[] left empty; no link between rows is added, even where a Cause cell restates another row's Failure Mode, and no codebase is added, both later work for the person through an ordinary update; the sheet's ratings are kept with review status authored, by J. Legacy and dated 2025-11-30, and are never re-rated.",
+];
+
+// build/evals/prose-1b/p6/medium/run2/analysis.json, meta.history[0].change and meta.history[1].change.
+const PROSE1B_MEDIUM_RUN2 = [
+  "Converted from the legacy RPN sheet inputs/legacy-rpn-sheet.csv, prepared by J. Legacy on 2025-11-30; column mapping: Item to elements[].id and elements[].name; Function to functions[].statement; Failure Mode to chains[].failure_mode; Effect to chains[].effects.end; Cause to chains[].causes[].text; Current Controls to chains[].controls[], the leading Detection: or Prevention: label selecting controls[].kind and kept in the control's description; S, O and D to chains[].ratings.S, chains[].ratings.O and chains[].ratings.D; RPN to no field, priority.rpn being recomputed as the product of the converted ratings; Recommended Action to chains[].actions[].description; Owner to chains[].actions[].owner; Status to chains[].actions[].status; Justification to chains[].ratings[].rationale. The sheet's header block supplies the author J. Legacy and the date 2025-11-30. Chain ids, function ids and action ids are generated by the converter from the sheet's Item and Failure Mode cells, the sheet carrying no id column, and each row's chain history names the sheet row it came from.",
+  "Substituted fields of the conversion, each named with its count: rationale one row carries the declared default text where the Justification cell is empty; controls[].status four controls carry the declared default existing; controls[].evidence.kind four controls carry the declared default none, the sheet recording no control evidence; effects.local four rows carry the same declared default text; effects.next-level four rows carry the same declared default text; actions[].target_date four actions carry the conversion date 2026-10-15 as a declared default, the sheet stating no due date; functions[].for_whom four functions carry the declared default not named by the sheet; elements[].security_relevant four elements take the declared default false; trigger left empty on four rows, the sheet naming no initiating event for any row. The sheet states RPN 200 on its Order Store row while the product of that row's converted ratings is 210; the sheet's value is recorded in that row's chain history and never in priority.rpn.",
+];
+
+// The same document's meta.assumptions entries on the two defaults, and its ground rule on the typing.
+const PROSE1B_MEDIUM_RUN2_ASSUMPTIONS: Assumption[] = [
+  { text: "The sheet's Justification cells refer to a storefront outage in the spring release, a failover drill in the autumn and a pricing incident review, but none of those records was supplied, so every converted rating carries evidence_kind estimate. A named person should produce the records and re-score the ratings against the anchors.", owner: "user", status: "open" },
+  { text: "The sheet carries no type, owner or external column, so each element's role and boundary were typed by the converter from the item text: the Checkout API as an interface, the Payment Gateway and the Pricing Service as services, the Order Store as a datastore, and all four as in_scope. A named person should confirm each role and boundary, and whether any item is owned outside this analysis or is third-party.", owner: "user", status: "open" },
+];
+const PROSE1B_MEDIUM_RUN2_GROUND_RULE = "Each element's role and boundary are typed by the converter from the item text, and security_relevant is false unless the sheet says otherwise.";
+
+/** The control and effect defaults of defaultedDoc recorded, in one history entry of two clauses. */
+const CONTROLS_EFFECTS_4 = "controls[].status existing and controls[].evidence.kind none on 4 controls; effects.local and effects.next_level on 4 rows";
+
+test("conversion-substitution-unrecorded is silent on prose-1b's p6/high/run1, which counts evidence_kind on 4 rows and the typing's boundary on all 4 elements", () => {
+  assert.deepEqual(fired(defaultedDoc(PROSE1B_HIGH_RUN1), UNRECORDED), []);
+});
+
+test("conversion-substitution-unrecorded is silent on prose-1b's p6/high/run2, which counts evidence_kind on 12 ratings and elements[].boundary on 4 elements", () => {
+  assert.deepEqual(fired(defaultedDoc(PROSE1B_HIGH_RUN2), UNRECORDED), []);
+});
+
+test("conversion-substitution-unrecorded fires on prose-1b's p6/medium/run1 on the typing only: it counts evidence_kind on twelve ratings, and says each element is typed by the converter with no count and no element named, a known gap", () => {
+  assert.deepEqual(fired(defaultedDoc(PROSE1B_MEDIUM_RUN1), UNRECORDED), unrecordedDefaults([4, "element", "typing"]));
+});
+
+test("conversion-substitution-unrecorded fires on prose-1b's p6/medium/run2 on evidence_kind and the typing, which it records only in meta.assumptions and a ground rule", () => {
+  const doc = defaultedDoc(PROSE1B_MEDIUM_RUN2);
+  doc.meta.assumptions = PROSE1B_MEDIUM_RUN2_ASSUMPTIONS;
+  doc.meta.ground_rules = [PROSE1B_MEDIUM_RUN2_GROUND_RULE];
+  assert.deepEqual(fired(doc, UNRECORDED), unrecordedDefaults([4, "row", "evidence_kind"], [4, "element", "typing"]));
+});
+
+test("conversion-substitution-unrecorded gives a finding per default in order, the ratings' evidence_kind counted by row and the typing by element in its own wording", () => {
+  assert.deepEqual(fired(defaultedDoc([SHEET]), UNRECORDED), unrecordedDefaults(
+    [1, "row", "rationale"], [4, "control", "status"], [4, "control", "evidence.kind"], [4, "row", "effects.local"], [4, "row", "effects.next_level"],
+    [4, "row", "evidence_kind"], [4, "element", "typing"],
+  ));
+});
+
+test("conversion-substitution-unrecorded: the ratings' evidence_kind clause does not stand in for the controls' evidence.kind, nor the controls' clause for the ratings'", () => {
+  const others = [SHEET, RATIONALE_1, TYPING_4, "controls[].status existing on 4 controls", "effects.local and effects.next_level on 4 rows"];
+  assert.deepEqual(unrecordedFields(defaultedDoc([...others, "evidence_kind: estimate on 4 rows"])), ["evidence.kind"]);
+  assert.deepEqual(unrecordedFields(defaultedDoc([...others, "evidence_kind: estimate on 4 rows", "controls[].evidence.kind: none on 4 controls"])), []);
+  assert.deepEqual(unrecordedFields(defaultedDoc([...others, "controls[].evidence.kind: none on 4 controls"])), ["evidence_kind"]);
+});
+
+test("conversion-substitution-unrecorded: evidence_kind is recorded by a clause naming it, or estimate, with the count of rows, the count of ratings, either's number word, or every chain by id or element name", () => {
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, TYPING_4, CONTROLS_EFFECTS_4, clause]));
+  for (const clause of [
+    "evidence_kind estimate on 4 rows", "Evidence_Kind estimate on four rows", "ratings[].evidence_kind is estimate on 12 ratings", "default estimate on twelve ratings",
+    "evidence_kind estimate on ch-1, ch-2, ch-3 and ch-4", "estimate on the Checkout API, Payment Gateway, Order Store and Pricing Service rows",
+  ]) {
+    assert.deepEqual(unrecordedWith(clause), [], clause);
+  }
+  for (const clause of ["evidence_kind estimate on 3 rows", "evidence_kind estimate on 13 ratings", "estimates on 4 rows", "evidence kind on 4 rows", "evidence_kind estimate on ch-1, ch-2 and ch-3"]) {
+    assert.deepEqual(unrecordedWith(clause), ["evidence_kind"], clause);
+  }
+});
+
+test("conversion-substitution-unrecorded: the count of ratings is three times the rows, and it records the ratings' evidence_kind alone", () => {
+  const twoRows = (clause: string): FmeaDocument => {
+    const doc = defaultedDoc([SHEET, RATIONALE_1, TYPING_4, CONTROLS_EFFECTS_4, clause]);
+    doc.chains = doc.chains.slice(0, 2);
+    return doc;
+  };
+  assert.ok(!unrecordedFields(twoRows("evidence_kind estimate on 6 ratings")).includes("evidence_kind"));
+  assert.ok(unrecordedFields(twoRows("evidence_kind estimate on 12 ratings")).includes("evidence_kind"));
+  for (const clause of ["controls[].status existing and controls[].evidence.kind none on 12 controls", "effects.local and effects.next_level on 12 rows", "rationale defaulted on 3 rows", "typed by the converter on 12 elements"]) {
+    const doc = defaultedDoc([SHEET, KIND_4, clause]);
+    assert.deepEqual(unrecordedFields(doc), ["rationale", ...FOUR_DEFAULTS, "typing"], clause);
+  }
+});
+
+test("conversion-substitution-unrecorded: a document with one rating that is not an estimate carries no evidence_kind default", () => {
+  for (const factor of ["S", "O", "D"] as const) {
+    const doc = defaultedDoc([SHEET, RATIONALE_1, TYPING_4, CONTROLS_EFFECTS_4]);
+    assert.deepEqual(unrecordedFields(doc), ["evidence_kind"], factor);
+    doc.chains[3].ratings[factor].evidence_kind = "test_result";
+    assert.deepEqual(unrecordedFields(doc), [], factor);
+  }
+});
+
+test("conversion-substitution-unrecorded: the typing is recorded by a clause naming it with the count of elements, its number word, or every element by id or by name", () => {
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, KIND_4, CONTROLS_EFFECTS_4, clause]));
+  for (const clause of [
+    "typed by the converter on 4 elements", "Typing on four elements", "each element's role from the item text, 4 elements", "boundary in_scope on 4 elements", "types set on 4 elements",
+    "typed checkout-api, payment-gateway, order-store and pricing-service", "typed Checkout API, Payment Gateway, Order Store and Pricing Service",
+  ]) {
+    assert.deepEqual(unrecordedWith(clause), [], clause);
+  }
+  for (const clause of [
+    "typed by the converter", "typed by the converter on 3 elements", "typed checkout-api, payment-gateway and order-store", "subtype on 4 elements", "typical on 4 elements", "roles on 4 elements",
+    "kind set by the converter on 4 elements", "evidence.kind none on 4 elements",
+  ]) {
+    assert.deepEqual(unrecordedWith(clause), ["typing"], clause);
+  }
+});
+
+test("conversion-substitution-unrecorded: a clause that maps a column to elements[].kind or elements[].boundary records the typing whatever its count, and records no other default", () => {
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, KIND_4, CONTROLS_EFFECTS_4, clause]));
+  for (const clause of ["Type to elements[].kind", "Item -> elements[].kind", "Owner to elements[].boundary"]) {
+    assert.deepEqual(unrecordedWith(clause), [], clause);
+  }
+  assert.deepEqual(unrecordedFields(defaultedDoc([SHEET, "Item -> elements[].kind, Owner -> elements[].boundary"])), ["rationale", ...FOUR_DEFAULTS, "evidence_kind"]);
+});
+
+// The mapping test is case-sensitive, so the capitalised name is read by the field's own name with its count.
+test("conversion-substitution-unrecorded: elements[].kind as a whole token names the typing, so with the count it records it, and kind alone does not", () => {
+  const unrecordedWith = (clause: string): string[] => unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, KIND_4, CONTROLS_EFFECTS_4, clause]));
+  for (const clause of ["elements[].kind set by the converter on 4 elements", "Elements[].Kind set by the converter on 4 elements"]) {
+    assert.deepEqual(unrecordedWith(clause), [], clause);
+  }
+  for (const clause of ["Elements[].Kind set by the converter", "Elements[].Kinds set by the converter on 4 elements", "kind set by the converter on 4 elements"]) {
+    assert.deepEqual(unrecordedWith(clause), ["typing"], clause);
+  }
+});
+
+test("conversion-substitution-unrecorded: the typing counts every element, a chain on it or not, and a document with no element carries none", () => {
+  const extra = defaultedDoc([SHEET, RATIONALE_1, KIND_4, CONTROLS_EFFECTS_4]);
+  extra.elements.push(newElement("audit-log", { name: "Audit Log" }));
+  assert.deepEqual(fired(extra, UNRECORDED), unrecordedDefaults([5, "element", "typing"]));
+  extra.meta.history.push({ version: 1, date: "2026-10-15", change: "typed by the converter on 5 elements" });
+  assert.deepEqual(fired(extra, UNRECORDED), []);
+  const none = defaultedDoc([SHEET, RATIONALE_1, KIND_4, CONTROLS_EFFECTS_4]);
+  none.elements = [];
+  assert.deepEqual(unrecordedFields(none), []);
+});
+
+test("conversion-substitution-unrecorded: a conversion of one chain, and a document that is not a conversion, read neither evidence_kind nor the typing", () => {
+  const single = defaultedDoc([SHEET, RATIONALE_1]);
+  single.chains = single.chains.slice(1, 2);
+  assert.deepEqual(fired(single, UNRECORDED), []);
+  assert.deepEqual(fired(defaultedDoc(["Imported legacy-rpn-sheet.csv", RATIONALE_1]), UNRECORDED), []);
+  assert.deepEqual(unrecordedFields(defaultedDoc([SHEET, RATIONALE_1, CONTROLS_EFFECTS_4])), ["evidence_kind", "typing"], "the same four chains as a conversion read both");
 });
