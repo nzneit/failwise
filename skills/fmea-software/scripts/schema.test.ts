@@ -417,6 +417,21 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
 });
 
+test("the sla, limits, rationale and history.change descriptions carry the stage-1 rules", () => {
+  const schema = loadSchema();
+  const defs = schema.$defs as Record<string, SchemaNode>;
+  const props = (def: string): Record<string, SchemaNode> => defs[def].properties as Record<string, SchemaNode>;
+  const text = (node: SchemaNode): string => String(node.description);
+  for (const field of ["sla", "limits"]) {
+    assert.ok(text(props("dependencyEdge")[field]).includes("leave the field out"), field);
+    assert.ok(text(props("dependencyEdge")[field]).includes("Record an open assumption owned by user that names the provider and the field"), field);
+    assert.ok(text(props("dependencyEdge")[field]).includes("Never write a placeholder"), field);
+    assert.ok(!text(props("dependencyEdge")[field]).includes("Nothing computes on it."), field);
+  }
+  assert.ok(text(props("rating").rationale).endsWith("each such row included; an open assumption does not record it."));
+  assert.ok(text(props("historyEntry").change).includes("every field it substituted with its count, empty cells and element-level defaults included"));
+});
+
 // `minimalDoc()` plus a tracker target and one action carrying a link, in the shapes of the
 // work tracking design's §5.2 and §5.3: every optional field present, so each new node is instantiated.
 function trackedDoc(): FmeaDocument {
