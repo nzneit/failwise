@@ -626,7 +626,7 @@ four pairs fail a criterion they passed at baseline, c6 on (1, high) and (7, hig
 clause; neither stage-1 warning reaches a final document. The Fable result gate ruled pass (plan B's sixth
 Fable call) and named three scores of 2 as borderline. The user ruled on 2026-10-15 that each stands, with no
 re-judge; the readings are two dated paragraphs in rubric 4, one in c1 and one in c11, which add no criterion,
-and the skill text round 1c measured is unchanged.
+so the rubric stays 4 (D4), and the skill text round 1c measured is unchanged.
 
 1. Where the control inventory lists a control with no evidence, `test_result` on it with a `ref` that restates its inventory line is not an invented input under c1's control-evidence paragraph, the ref being one the inputs give; an incident or action item cited for `observed_incident` stays under the origin reading of ruling 2 of §11.6. The kind label is the matter of the control-inventory sentence of `scales-software.md`, which no criterion reads. p1/medium/run1's 2 stands (rubric c1's paragraph of the third stage-1 gate).
 2. The typing the converter does from the item text is one declared default covering `kind` and `boundary`; a `meta.history` clause in the phrase the conversion rule prescribes, with its count of elements and each element's kind and not its boundary, names the default, the fixture's per-element form being the form and not the requirement, and the reading narrows nothing in rubric c11's earlier 2026-10-15 paragraph, which takes the count or every element the default affects. p6/high/run1's 2 stands (rubric c11's paragraph of the third stage-1 gate).
