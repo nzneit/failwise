@@ -247,9 +247,9 @@ a person the inputs never mention:
 
 The model reads field descriptions at the point of writing, so they carry the rule too. No validation changes.
 
-- `$defs/dependencyEdge/properties/sla/description` and `…/limits/description`: "Nothing computes on it." is replaced by: when the inputs do not state it, leave the field out and record an open assumption owned by `user` naming the provider and the field; when they state that there is none, copy their words; never write a placeholder of your own.
-- `$defs/rating/properties/rationale/description` gains: an empty cell in a sheet that has a rationale column takes this default too, and that row counts as a substitution recorded in `meta.history`.
-- `$defs/historyEntry/properties/change/description`: "the fields it substituted with row counts" becomes "the fields it substituted with row counts, empty cells included".
+- `$defs/dependencyEdge/properties/sla/description` and `…/limits/description`: "Nothing computes on it." is replaced by: when the inputs do not state it, leave the field out and record an open assumption owned by `user` naming the provider and the field; when they state that there is none, copy their words; never write a placeholder of your own. (amended 2026-10-14 at plan B1: the shipped text is the gated one, `build/prose/stage1-text.md`, which reads, for `sla`: `The availability or latency commitment, as free text in the source's own terms. When the inputs say nothing about it, leave the field out. Record an open assumption owned by user that names the provider and the field. When the inputs say the provider has none, or publishes none, copy their words. Never write a placeholder such as TBD, unknown or not stated, even one the inputs use.`; and for `limits`: `Scaling or rate limits, as free text in the source's own terms. When the inputs say nothing about them, leave the field out. Record an open assumption owned by user that names the provider and the field. When the inputs say the provider has none, or publishes none, copy their words. Never write a placeholder such as TBD, unknown or not stated, even one the inputs use.`)
+- `$defs/rating/properties/rationale/description` gains: an empty cell in a sheet that has a rationale column takes this default too, and that row counts as a substitution recorded in `meta.history`. (amended 2026-10-14 at plan B1: the shipped text is the gated one, `build/prose/stage1-text.md`, which reads: `Why this value against the anchors, in prose; mandatory. For a converted sheet without a rationale column, the declared default 'converted from <sheet file name>; no rationale recorded', with the substitution recorded in meta.history. An empty cell in a sheet with a rationale column, under any heading, takes this default too. Record it in meta.history as a rationale substitution with its row count, each such row included; an open assumption does not record it.`)
+- `$defs/historyEntry/properties/change/description`: "the fields it substituted with row counts" becomes "the fields it substituted with row counts, empty cells included". (amended 2026-10-14 at plan B1: the shipped text is the gated one, `build/prose/stage1-text.md`, whose two opening sentences read: `What changed, in prose. In meta.history, a conversion gives its column mapping, its empty-trigger note, and every field it substituted with its count, empty cells and element-level defaults included.`)
 
 A test asserts each new sentence is present, so a later schema edit cannot drop it silently.
 
@@ -273,7 +273,7 @@ unstated when it is absent, empty, or matches the run-placeholder pattern: case-
 `meta.assumptions[]` with `status: open` and `owner: user` both names the provider, by its element id or its name,
 case-insensitive, and names the field, by containing one of `limit`, `limits`, `ceiling`, `scaling`, `rate`,
 `sla`, `availability` or `latency`. Message:
-`edge <from> -> <to>: <field> is not stated and no open assumption names <to> and the field; record the missing value as an open assumption owned by user, or copy the inputs' words`.
+`edge <from> -> <to>: <field> is not stated and no open assumption names <to> and the field; record the missing value as an open assumption owned by user, or copy the inputs' words` (amended 2026-10-14 at plan B1: the shipped message is the gated one: `edge <from> -> <to>: <field> is missing or a placeholder, and no open assumption owned by user names <to> and <field>. Leave <field> out and record that assumption; copy the inputs' words instead only where they say there is none or none is published.`).
 An unstated field beside such an assumption does not fire, matching the 2026-10-13 ruling that a field beside an
 open assumption is not scored 0. Reach on the 0.7.0 documents: fires on p1/high/run1, p1/high/run2 and
 p1/medium/run1, the three c1 failures; silent on p1/medium/run2, whose assumption names pricing and its scaling
@@ -294,7 +294,7 @@ entry into clauses on `.` and `;`. The lint fires when `r > 0` and no clause con
 together with one of: `r` as a standalone integer, not adjacent to a letter, `-` or `_` (so a chain id such as
 `ch-1` does not count and a date does not count); the number word for `r` from one to ten; or the id or name of
 every chain whose rationale carries the default. Message:
-`<r> row(s) carry the default rationale and no history clause records a rationale substitution with that count or those rows`.
+`<r> row(s) carry the default rationale and no history clause records a rationale substitution with that count or those rows` (amended 2026-10-14 at plan B1: the shipped message is the gated one: `<r> row(s) carry the default rationale, and no meta.history clause names rationale with that count or with those rows' chain ids or element names. Keep the default, and add that clause to meta.history, not to an assumption or a row's history.`).
 A document the rubric passes by naming the rows is silent, as c11 allows a record "by count or by naming them".
 Reach: fires on p6/high/run2 and p6/medium/run2, whose only `rationale` clause is the column mapping; silent on
 p6/high/run1 ("on 1 rating column"), p6/medium/run1 ("on the one row whose Justification cell is empty") and
@@ -303,7 +303,7 @@ become the fire and no-fire fixtures of `scripts/lints.test.ts`. A substring mat
 silenced by every history date, and a whole-token match by chain ids ending in `-1`.
 
 **The render line.** After a successful render, when `n > 0` ratings are provisional, `render.ts` prints one line
-to stdout: `provisional: <n> of <m> ratings are provisional. Every priority you state rests on provisional ratings: say so in the same sentence, and say that a named person is to re-score each rating against the anchors, one at a time, as the next step.`
+to stdout: `provisional: <n> of <m> ratings are provisional. Every priority you state rests on provisional ratings: say so in the same sentence, and say that a named person is to re-score each rating against the anchors, one at a time, as the next step.` (amended 2026-10-14 at plan B1: the shipped line is the gated one: `provisional: <n> of <m> ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.`)
 The line is printed with the render result; the 0.7.0 runs read such output within a few turns of the final
 message, two of the three scored prompt-7 runs having run `validate.ts` once more after `render.ts`.
 
@@ -457,7 +457,7 @@ artefacts and the criteria, not the controller's conclusions.
 | Stage 2 drafting | one drafter per `SKILL.md` section and per §7.2 section; one rule-preservation critic per draft listing every rule before and after, flagging any rule lost, added, moved from its stage-1 position or changed, checking tags | Opus |
 | Stage 2 checks | the prose checker and the pinned-literal tests after every file; the private distill Recheck over `SKILL.md` and each changed reference | scripts |
 | Stage 2 result gate, final acceptance | one judge reads the diff, the results note, §8.4 and the rewritten `SKILL.md` as one document, asking whether a model acting from it would do the right thing in the right order | Fable (3) |
-| Eval judging | the existing workflow: Opus judges, Sonnet stability and persist, Opus critic | Opus, Sonnet |
+| Eval judging | the existing workflow: Opus judges, Sonnet stability, Opus critic | Opus, Sonnet |
 
 Every report names the tier per phase and the Fable count. Three Fable subagent calls are planned; the controller
 runs on Fable throughout.
@@ -523,7 +523,7 @@ Decisions 1 and 2 are dated readings in rubric 4 that add no criterion, so the r
 three rounds (D4).
 
 1. c2, repository sources: strict. Ruling 7 of 2026-10-13 goes into rubric 4's c2 as a dated paragraph, and p1/high/run1 is re-judged on c2 alone under it. The skill wording behind such refs (`design-inputs.md:105`, `structure-elements.md:156-158`) is a follow-up decision after stage 2, not stage-1 scope.
-2. c11, band 2's substitution clause: the broad reading stands. A dated paragraph in rubric 4's c11 says the clause covers every declared default `fixtures/legacy-rpn-sheet.expected.fmea.json`'s `meta.history` enumerates, element-level ones included, and not the `meta.scales` pin; p6/high/run1 stays at 1, with no re-judge.
+2. c11, band 2's substitution clause: the broad reading stands. A dated paragraph in rubric 4's c11 says the clause covers every declared default `fixtures/legacy-rpn-sheet.expected.fmea.json`'s `meta.history` enumerates that the run's conversion applied, element-level ones included, and not the `meta.scales` pin; p6/high/run1 stays at 1, with no re-judge.
 3. The payment gateway's boundary on prompt 6: neither side changes now. The rubric keeps `third_party`, and the converter text at `SKILL.md:60-62` stays as §11.3 logs it; if stage 2's rewrite changes the behaviour, c13 and c14 show it, and since both fail at baseline and neither is a must, §8.3 carries no regression risk from it.
 4. The stability count predicate: the 0.2 absolute-count bound stays through stages 1 and 2, and the four pairs that fail it stay failed. The acceptance note names (1, high) and (7, medium) as row-count cases and (1, medium) and (5, high) as rating drift. The stability predicate redesign, a share-based or shared-chains predicate, goes on the v1 acceptance agenda, where the rubric, `COUNT_BOUND_FRACTION` and the tests move together.
 5. The c3 catalog rows: nothing changes now. `cat-security-04`'s cause column joins `cat-dependency-01`'s in §11.3, and the stage-1 gate revisits both, with the option to fold them into stage 2's reference rewrite.
