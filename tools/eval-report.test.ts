@@ -428,6 +428,62 @@ test("a results file whose runs carry no context field renders exactly as before
   }
 });
 
+/** A round.json as tools/run-round.ts writes it, for a round of 21m 04s; `overrides` replaces whole fields. */
+function roundFile(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    method: "parallel", concurrency: 4, canary: "p1:high:1",
+    started: "2026-10-16T08:00:00.000Z", ended: "2026-10-16T08:21:04.000Z", cli_version: "2.1.300",
+    cells: [{ cell: "p1:high:1", started: "2026-10-16T08:00:00.000Z", ended: "2026-10-16T08:09:00.000Z", exit: 0, summary: "p1 high run1: model=deepseek-flash" }],
+    ...overrides,
+  }, null, 2);
+}
+
+/** sampleResults with each run carrying context and a full context.json in its own folder under root, which the caller removes. */
+function withHarness(root: string): EvalResults {
+  const r = sampleResults();
+  r.runs = r.runs.map((run, i) => {
+    const dir = join(root, `run${i}`);
+    mkdirSync(dir);
+    writeFileSync(join(dir, "context.json"), JSON.stringify(contextFile(), null, 2));
+    return { ...run, dir, context: { window: "x: 786.4k tokens", compactions: 0, peak_context_tokens: 238429 } };
+  });
+  return r;
+}
+
+test("a round.json gives one Round method line directly under the Harness table, with the concurrency, the canary and the elapsed time; a round without one gives none", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-round-"));
+  try {
+    const r = withHarness(root);
+    const file = join(root, "round.json");
+    const options = { ...V1_OPTIONS, roundFile: file };
+    assert.ok(!renderReport(r, options).includes("Round method"), "a round with no round.json printed a Round method line");
+    assert.ok(!renderReport(r).includes("Round method"));
+    writeFileSync(file, roundFile());
+    assert.match(renderReport(r, options), /\| 0 \/ no \|\n\nRound method: parallel, concurrency 4, canary p1 high run1, 21m 04s\n\n/);
+    writeFileSync(file, roundFile({ concurrency: 6, canary: null, ended: "2026-10-16T09:02:05.000Z" }));
+    assert.match(renderReport(r, options), /^Round method: parallel, concurrency 6, no canary, 1h 02m 05s$/m);
+    for (const text of ["{", JSON.stringify({ method: "parallel" }), roundFile({ ended: "yesterday" })]) {
+      writeFileSync(file, text);
+      assert.match(renderReport(r, options), /^Round method: round\.json unreadable at [^/][^\n]*round\.json$/m, text);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the CLI reads round.json from the folder of the results file", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-round-cli-"));
+  try {
+    writeFileSync(join(root, "results.json"), JSON.stringify(withHarness(root)));
+    writeFileSync(join(root, "round.json"), roundFile());
+    const run = spawnSync(process.execPath, [join(import.meta.dirname, "eval-report.ts"), "--results", join(root, "results.json"), "--out", join(root, "out.md")], { encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(readFileSync(join(root, "out.md"), "utf8"), /^Round method: parallel, concurrency 4, canary p1 high run1, 21m 04s$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 /** A models.json as tools/run-eval.sh writes it. */
 function modelsFile(high: string, medium: string): string {
   return `{\n  "basis": "FMEA_EVAL_MODELS",\n  "models": { "high": "${high}", "medium": "${medium}", "low": "" },\n  "effort": "high"\n}\n`;

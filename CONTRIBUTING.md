@@ -165,6 +165,15 @@ them with Claude Code's Workflow tool,
 results object and writes no file. Write it to `build/evals/results.json` for `eval-report.ts` to
 read, as `JSON.stringify(result, null, 2)` of the `result` key of the Workflow task's output.
 
+From the prose stage-2 round on, `node tools/run-round.ts <stage>` (or `bun tools/run-round.ts
+<stage>`) runs the sixteen runs of a round on DeepSeek Flash into `build/evals/prose-<stage>/`,
+reading the gateway key from the login keyring and smoke-testing the gateway first. It runs the
+first cell alone as a canary, then the other fifteen at most `--parallel <n>` at once (4 by
+default, more than 8 only with `--force-parallel`), each logging to `logs/` in that folder. It
+prints the summary lines in roster order, writes `round.json`, from which `eval-report.ts` prints
+a `Round method` line under the Harness table, and names the `--cells` command for any cell that
+needs a re-run.
+
 Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
 `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
 `~/.claude` (its CLAUDE.md, memory, skills, settings and login) stays out of the run. A run on the

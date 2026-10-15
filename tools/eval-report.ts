@@ -9,7 +9,9 @@
 // models table and the Fable agents.
 // A Harness table follows the overall table when the runs carry the context
 // the judging copied from each run's context.json, and reads the rest of each
-// run's context.json itself. Two optional sections come before the critic when
+// run's context.json itself; when a round.json written by tools/run-round.ts
+// lies beside the results file, one line under that table names the round's
+// method, concurrency, canary and elapsed time. Two optional sections come before the critic when
 // the results file carries their fields: the session checks (session_checks)
 // and the prompts not re-run (not_rerun).
 //
@@ -22,8 +24,9 @@
 // scores rather than trusting the judge's arithmetic.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { isEntry } from "./lib/entry.ts";
+import { readRoundRecord, roundMethodLine } from "./lib/round-record.ts";
 import type { EvalContext } from "./eval-context.ts";
 import type { FlowComparison } from "./eval-stability.ts";
 
@@ -771,8 +774,12 @@ function stabilityFor(results: EvalResults, prompt: number, capability: string):
   return results.stability.find((s) => s.prompt === prompt && s.model_capability === capability);
 }
 
-/** The document's title and how its header names the results file. */
-interface ReportOptions { title: string; resultsLabel: string }
+/**
+ * The document's title, how its header names the results file, and the
+ * round.json the Harness section reads its Round method line from, beside the
+ * results file when the CLI runs; absent, no line is printed.
+ */
+interface ReportOptions { title: string; resultsLabel: string; roundFile?: string }
 
 /** The options the v1 document was generated with, and the CLI's defaults. */
 const V1_OPTIONS: ReportOptions = { title: "Eval results, v1", resultsLabel: "build/evals/results.json" };
@@ -791,7 +798,7 @@ export function renderReport(results: EvalResults, options: ReportOptions = V1_O
     ...scoresPerPromptSection(results, prompts),
     ...stabilitySection(results, prompts, capabilities),
     ...overallSection(results, prompts, capabilities),
-    ...harnessSection(results),
+    ...harnessSection(results, options.roundFile),
     ...unverifiedUnitsSection(results),
     ...unevaluatedChecksSection(results),
     ...sessionChecksSection(results),
@@ -1042,11 +1049,14 @@ interface HarnessRun { r: RunResult; ctx: ContextRead }
  * the context gate closes on, a dash for a file written before it), the final
  * message's completeness (prose design §8.1, which the gate also closes on, a
  * dash for a file written before 2026-10-15) and the other cells are read from
- * the run's own context.json. The lines under the table
+ * the run's own context.json. Directly under the table, a round run by
+ * tools/run-round.ts gets one line from its round.json: the method, the
+ * concurrency, the canary and the elapsed time (prose design §11.5 ruling 10);
+ * a round with no round.json gets none. The lines after it
  * name the CLI versions when the readable files carry more than one, each file
  * that could not be read, and each copy its file does not bear out.
  */
-function harnessSection(results: EvalResults): string[] {
+function harnessSection(results: EvalResults, roundFile?: string): string[] {
   if (!results.runs.some((r) => r.context !== undefined)) return [];
   const rows: HarnessRun[] = inTableOrder(results.runs).map((r) => ({ r, ctx: readContextFile(r.dir) }));
   const firstFile = rows.map((x) => x.ctx).find((ctx): ctx is EvalContext => typeof ctx !== "string");
@@ -1060,6 +1070,8 @@ function harnessSection(results: EvalResults): string[] {
   ];
   for (const { r, ctx } of rows) lines.push(harnessRow(r, ctx, lintIds));
   lines.push("");
+  const method = roundFile === undefined ? null : roundMethodLine(readRoundRecord(roundFile), relative(ROOT, roundFile));
+  if (method !== null) lines.push(method, "");
   const notes = [versionsLine(rows), ...rows.flatMap(({ r, ctx }) => [unreadableLine(r, ctx), disagreementLine(r, ctx)])].filter((l): l is string => l !== null);
   if (notes.length > 0) lines.push(...notes, "");
   return lines;
@@ -1687,7 +1699,8 @@ function main(argv: string[]): number {
     fail("IO_READ", `${resultsPath} ${problem}`);
     return 3;
   }
-  writeFileSync(outPath, renderReport(parsed as EvalResults, { title, resultsLabel: resultsLabel(resultsPath) }));
+  const roundFile = join(dirname(resolve(resultsPath)), "round.json");
+  writeFileSync(outPath, renderReport(parsed as EvalResults, { title, resultsLabel: resultsLabel(resultsPath), roundFile }));
   process.stdout.write(`wrote ${outPath}\n`);
   return 0;
 }
