@@ -32,6 +32,15 @@
 // invocations "missing", which every reader prints as missing; a missing
 // validate.json leaves each lint's final state null.
 //
+// Last comes final_message, whether the run's final message is complete (prose
+// design §8.1, amended 2026-10-15 at the stage-1 gate): p5/high/run2 of the
+// stage-1 round ended mid-word with stop reason end_turn and no error, and no
+// usage figure could show it, so the message itself is read. It is the result
+// string of transcript.json, the file the judge reads it from; a missing or
+// unreadable transcript.json, or one with no result string, records complete
+// null with the reason and never refuses the record. The judging gate holds a
+// run unverified unless complete is true, an absent field included.
+//
 // A line that is not JSON refuses the whole stream, and so do a missing
 // transcript, a missing autocompact.txt and a probe reply with no window line: a
 // run whose context cannot be read is unverified at judging, never scored.
@@ -70,6 +79,12 @@ export interface EvalContext {
   invocations: "present" | "missing";
   denied: { bun: number; other: number };
   lints: { id: string; fired: number | null; final: boolean | null }[];
+  /**
+   * Whether the final message is complete (§8.1). `reason` names the first clause that fails, null when it is
+   * complete; `length` is the message's length with trailing whitespace trimmed. `complete` and `length` are null when
+   * transcript.json cannot give the message, and `reason` then says why.
+   */
+  final_message: { complete: boolean | null; reason: string | null; length: number | null };
 }
 
 export interface TranscriptFacts {
@@ -286,6 +301,54 @@ function lintsOf(lintIds: string[], fired: Record<string, number>, calls: CallRe
   }));
 }
 
+type FinalMessage = EvalContext["final_message"];
+
+/** The characters a complete final message may end with (§8.1). */
+const FINAL_ENDINGS = new Set([".", "!", "?", ":", "|", ")", "]", '"', "'", "`", "*"]);
+
+/**
+ * The final message's completeness by the predicate of prose design §8.1, dated 2026-10-15: "the message in
+ * `transcript.json`'s `result`, trailing whitespace trimmed, is complete when it is non-empty, ends with one of `.`,
+ * `!`, `?`, `:`, `|`, `)`, `]`, `"`, `'`, `` ` `` or `*`, or with a line that is a closing code fence, and opens no
+ * code fence it does not close." A closing fence line is three or more backticks and nothing else, so it ends in a
+ * backtick and the set covers that clause. A fence line is one that starts with three or more backticks, and an odd
+ * count of them leaves one open. The reason names the first clause that fails, in words a note can print.
+ */
+function finalMessageOf(result: string): FinalMessage {
+  const text = result.trimEnd();
+  const length = text.length;
+  if (text === "") return { complete: false, reason: "empty", length };
+  // The last character, whole when it lies outside the Basic Multilingual Plane.
+  const last = Array.from(text.slice(-2)).pop() ?? "";
+  if (!FINAL_ENDINGS.has(last)) return { complete: false, reason: `ends with ${JSON.stringify(last)}`, length };
+  const fences = text.split("\n").filter((line) => line.startsWith("```")).length;
+  if (fences % 2 !== 0) return { complete: false, reason: "unclosed code fence", length };
+  return { complete: true, reason: null, length };
+}
+
+/** A final message transcript.json could not give, with why. */
+function unchecked(reason: string): FinalMessage {
+  return { complete: null, reason, length: null };
+}
+
+/** The completeness of the result string transcript.json holds; complete null with the reason when the file cannot give one. */
+function finalMessageIn(path: string): FinalMessage {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    return unchecked(fieldOf(err, "code") === "ENOENT" ? "transcript.json missing" : "transcript.json unreadable");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return unchecked("transcript.json is not JSON");
+  }
+  const result = fieldOf(value, "result");
+  return typeof result === "string" ? finalMessageOf(result) : unchecked("transcript.json result is not a string");
+}
+
 /** The run's context record, or an Error naming the file that cannot be read. Never writes. */
 export function contextFor(runDir: string, options: { configDir: string; lintIds: string[]; env: Record<string, string | undefined> }): EvalContext {
   const transcript = join(runDir, "transcript.jsonl");
@@ -315,6 +378,7 @@ export function contextFor(runDir: string, options: { configDir: string; lintIds
     invocations: calls === null ? "missing" : "present",
     denied: deniedOf(calls ?? []),
     lints: lintsOf(options.lintIds, facts.lint_fired, calls, finalLintsOf(join(runDir, "validate.json"))),
+    final_message: finalMessageIn(join(runDir, "transcript.json")),
   };
 }
 

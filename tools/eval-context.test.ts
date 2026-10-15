@@ -218,7 +218,82 @@ test("contextFor assembles the file from the run directory: settings from the en
         { id: "edge-reliability-unstated", fired: 2, final: true },
         { id: "conversion-substitution-unrecorded", fired: 0, final: false },
       ],
+      final_message: { complete: null, reason: "transcript.json missing", length: null },
     });
+    // The field the stage-1 gate added comes last, so a reader of the earlier fields is unaffected.
+    assert.equal(Object.keys(context).at(-1), "final_message");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** transcript.json as tools/run-eval.sh writes it: the stream's last result line, whose result is the run's final message. */
+function resultFile(result: unknown): string {
+  return JSON.stringify({ type: "result", subtype: "success", is_error: false, stop_reason: "end_turn", result }, null, 2) + "\n";
+}
+
+/** The final_message contextFor records for a run directory holding the given transcript.json text, or none for null. */
+function finalMessageFor(transcriptJson: string | null): EvalContext["final_message"] {
+  const files: Record<string, string> = { "transcript.jsonl": initLine([], [], "/tmp/cfg/m/") + "\n", "autocompact.txt": `${WINDOW_LINE}\n` };
+  if (transcriptJson !== null) files["transcript.json"] = transcriptJson;
+  const dir = runDir(files);
+  try {
+    return contextFor(dir, { configDir: "/tmp/cfg", lintIds: [], env: {} }).final_message;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("final_message records a final message that ends mid-word as cut, naming its last character, as p5/high/run2 of the stage-1 round ended", () => {
+  const cut = "**Priorities: H for ch-1 and M, each resting on provisional ratings** *(the sh";
+  assert.deepEqual(finalMessageFor(resultFile(cut)), { complete: false, reason: 'ends with "h"', length: cut.length });
+  // Trailing whitespace is trimmed before the last character is read, and the
+  // length is the trimmed message's.
+  assert.deepEqual(finalMessageFor(resultFile("A named person re-scores each rating,\n\n  ")), { complete: false, reason: 'ends with ","', length: 37 });
+  for (const end of ["-", "}", ">", "a", "9", "…"]) {
+    assert.deepEqual(finalMessageFor(resultFile(`The next step${end}`)), { complete: false, reason: `ends with "${end}"`, length: 13 + end.length }, end);
+  }
+});
+
+test("final_message is complete for a message ending in a full stop, a table row, a closed code fence, or any other ending §8.1 lists, trailing whitespace trimmed", () => {
+  const complete = (text: string) => assert.deepEqual(finalMessageFor(resultFile(text)), { complete: true, reason: null, length: text.trimEnd().length }, text);
+  complete("Every rating this run wrote is provisional.");
+  complete("| Chain | Priority |\n|---|---|\n| ch-1 | H |\n| ch-2 | M |\n");
+  complete("Run the validator again:\n\n```bash\nnode scripts/validate.ts analysis.json\n```\n");
+  complete("Done.  \n\t\n");
+  for (const end of [".", "!", "?", ":", "|", ")", "]", '"', "'", "`", "*"]) complete(`The next step${end}`);
+});
+
+test("final_message is cut for an empty message and for one that opens a code fence it does not close, the reason naming the first clause that fails", () => {
+  assert.deepEqual(finalMessageFor(resultFile("")), { complete: false, reason: "empty", length: 0 });
+  assert.deepEqual(finalMessageFor(resultFile(" \n\t\n")), { complete: false, reason: "empty", length: 0 });
+  const open = "Run the validator again:\n\n```bash\nnode scripts/validate.ts analysis.json.";
+  assert.deepEqual(finalMessageFor(resultFile(open)), { complete: false, reason: "unclosed code fence", length: open.length });
+  // A last line that is a fence does not close the count: three fence lines leave one open.
+  const third = "```json\n{}\n```\n\nThen:\n\n```";
+  assert.deepEqual(finalMessageFor(resultFile(third)), { complete: false, reason: "unclosed code fence", length: third.length });
+  // A message that both ends mid-word and leaves a fence open fails on its ending first.
+  const both = "```bash\nnode scripts/validate.ts analysis.js";
+  assert.deepEqual(finalMessageFor(resultFile(both)), { complete: false, reason: 'ends with "s"', length: both.length });
+});
+
+test("final_message is null with the reason when transcript.json is missing, unreadable, not JSON or holds no result string, and the record is still written", () => {
+  const unchecked = (reason: string) => ({ complete: null, reason, length: null });
+  assert.deepEqual(finalMessageFor(null), unchecked("transcript.json missing"));
+  assert.deepEqual(finalMessageFor("{not json"), unchecked("transcript.json is not JSON"));
+  assert.deepEqual(finalMessageFor("null\n"), unchecked("transcript.json result is not a string"));
+  for (const result of [null, 42, ["Done."], undefined]) {
+    assert.deepEqual(finalMessageFor(resultFile(result)), unchecked("transcript.json result is not a string"), String(result));
+  }
+
+  // A transcript.json that cannot be read as a file: here a directory of that name.
+  const dir = runDir({ "transcript.jsonl": initLine([], [], "/tmp/cfg/m/") + "\n", "autocompact.txt": `${WINDOW_LINE}\n` });
+  try {
+    mkdirSync(join(dir, "transcript.json"));
+    const r = runCli([dir, "--config-dir", "/tmp/cfg"]);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(join(dir, "context.json"), "utf8")) as EvalContext;
+    assert.deepEqual(written.final_message, unchecked("transcript.json unreadable"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

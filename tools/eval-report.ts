@@ -1039,8 +1039,10 @@ interface HarnessRun { r: RunResult; ctx: ContextRead }
  * field, so a results file written before 2026-10-14 renders as it always did
  * (prose design §5.3). Window, compactions and peak are the copies the judging
  * wrote into results.json; the CLI version, the lines without usage (the count
- * the context gate closes on, a dash for a file written before it) and the other
- * cells are read from the run's own context.json. The lines under the table
+ * the context gate closes on, a dash for a file written before it), the final
+ * message's completeness (prose design §8.1, which the gate also closes on, a
+ * dash for a file written before 2026-10-15) and the other cells are read from
+ * the run's own context.json. The lines under the table
  * name the CLI versions when the readable files carry more than one, each file
  * that could not be read, and each copy its file does not bear out.
  */
@@ -1053,8 +1055,8 @@ function harnessSection(results: EvalResults): string[] {
   const lines = [
     "## Harness",
     "",
-    `| Prompt | Model capability | Run | CLI | Window | Compactions | Peak context | Lines without usage | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
-    `|${"---|".repeat(11 + lintIds.length)}`,
+    `| Prompt | Model capability | Run | CLI | Window | Compactions | Peak context | Lines without usage | Final message | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
+    `|${"---|".repeat(12 + lintIds.length)}`,
   ];
   for (const { r, ctx } of rows) lines.push(harnessRow(r, ctx, lintIds));
   lines.push("");
@@ -1101,17 +1103,29 @@ function harnessRunLabel(r: RunResult): string {
   return `p${r.prompt} ${r.model_capability} run ${r.run}`;
 }
 
-/** One row of the Harness table: the CLI version, the three copied cells, the lines without usage, then the cells read from context.json, dashes when it could not be read. */
+/** One row of the Harness table: the CLI version, the three copied cells, the lines without usage, the final message, then the cells read from context.json, dashes when it could not be read. */
 function harnessRow(r: RunResult, ctx: ContextRead, lintIds: string[]): string {
   const read = typeof ctx === "string"
     ? Array<string>(3 + lintIds.length).fill("—")
     : [cell(isolationText(ctx)), String(ctx.init.skills_unnamespaced.length), deniedText(ctx), ...lintIds.map((id) => lintCell(ctx.lints.find((l) => l.id === id)))];
-  return `| ${[String(r.prompt), r.model_capability, String(r.run), cell(cliVersionOf(ctx) ?? "—"), ...copiedCells(r.context), withoutUsageCell(ctx), ...read].join(" | ")} |`;
+  return `| ${[String(r.prompt), r.model_capability, String(r.run), cell(cliVersionOf(ctx) ?? "—"), ...copiedCells(r.context), withoutUsageCell(ctx), finalMessageCell(ctx), ...read].join(" | ")} |`;
 }
 
 /** The count of top-level assistant lines without usage a run's context.json records, or a dash when the file could not be read or holds no integer count. */
 function withoutUsageCell(ctx: ContextRead): string {
   return typeof ctx !== "string" && Number.isInteger(ctx.assistant_lines_without_usage) ? String(ctx.assistant_lines_without_usage) : "—";
+}
+
+/**
+ * Whether a run's final message is complete, as its context.json records it (prose design §8.1): `complete`,
+ * `cut (<reason>)`, or a dash when the file could not be read, was written before the field, or could not check the
+ * message, whose reason the gate's unverified unit carries.
+ */
+function finalMessageCell(ctx: ContextRead): string {
+  const final: unknown = typeof ctx === "string" ? undefined : ctx.final_message;
+  if (!isObject(final)) return "—";
+  if (final.complete === true) return "complete";
+  return final.complete === false ? cell(`cut (${String(final.reason)})`) : "—";
 }
 
 /** The CLI version a run's context.json records, or null when the file could not be read or records none. */

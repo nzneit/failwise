@@ -12,7 +12,7 @@
 # context.json (tools/eval-context.ts), copies the finished run into
 # build/evals/p<id>/<capability>/run<n>/,
 # and prints one summary line:
-#   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n> invocations=<present|missing> context=<present|missing>
+#   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n> invocations=<present|missing> context=<present|missing> final=<complete|cut|missing>
 #
 # Model capabilities, not model names (amended 2026-09-12 by the user's ruling
 # at the eval re-run: the eval axis is a capability level, and the model that
@@ -412,4 +412,12 @@ ANALYSIS=missing;    [ -f analysis.json ]    && ANALYSIS=present
 REPORT=missing;      [ -f report.html ]      && REPORT=present
 INVOCATIONS=missing; [ -f invocations.json ] && INVOCATIONS=present
 CONTEXT=missing;     [ -f context.json ]     && CONTEXT=present
-echo "p$PID $MODEL_CAPABILITY run$RUN: model=$MODEL_NAME basis=$MODELS_BASIS effort=$EFFORT analysis=$ANALYSIS report=$REPORT validate_exit=$VALIDATE_EXIT invocations=$INVOCATIONS context=$CONTEXT"
+# Whether the final message is complete, from the context.json just written
+# (prose design §8.1, dated 2026-10-15): final_message.complete true reads
+# complete, false reads cut, and an absent field, a null or no context.json
+# reads missing. A cut or missing run is unverified at judging.
+FINAL=missing;       [ -f context.json ]     && FINAL=$(node -e '
+  const c = JSON.parse(require("node:fs").readFileSync("context.json", "utf8")).final_message?.complete;
+  process.stdout.write(c === true ? "complete" : c === false ? "cut" : "missing");
+' 2> /dev/null) || FINAL=missing
+echo "p$PID $MODEL_CAPABILITY run$RUN: model=$MODEL_NAME basis=$MODELS_BASIS effort=$EFFORT analysis=$ANALYSIS report=$REPORT validate_exit=$VALIDATE_EXIT invocations=$INVOCATIONS context=$CONTEXT final=$FINAL"

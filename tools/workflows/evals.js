@@ -46,7 +46,10 @@
 // 0, with no top-level assistant line (assistant_lines 0), or with a top-level
 // assistant line that lacks its usage figures (assistant_lines_without_usage not
 // 0: the compactions and the peak are inferred from what the stream carries, so
-// a stream that lost its usage would read as uncompacted) is recorded unverified
+// a stream that lost its usage would read as uncompacted), or whose final
+// message is not recorded complete (no final_message object, or its complete
+// not true: prose design §8.1, dated 2026-10-15, after a stage-1 run's final
+// message ended mid-word with no error signal) is recorded unverified
 // with no scores and no judge call, the rule 2fea11a set for a run with no
 // report; so is a run whose context agent returned nothing. Each run's entry
 // carries the window line, the compactions and the peak context as `context`,
@@ -65,7 +68,7 @@ export const meta = {
   name: 'fmea-evals',
   description: 'Judge the fmea-software eval runs of a roster, check stability, and list what is missing',
   phases: [
-    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file, with compactions above 0, with no top-level assistant line, or with an assistant line without usage figures is unverified before any judge is called' },
+    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file, with compactions above 0, with no top-level assistant line, with an assistant line without usage figures, or with a final message not recorded complete is unverified before any judge is called' },
     { title: 'Judge', detail: 'one judge per run directory, scoring by evals/rubric.md' },
     { title: 'Stability', detail: 'one agent per (prompt, model capability) running tools/eval-stability.ts' },
     { title: 'Critic', detail: 'one completeness critic over every score and stability result' },
@@ -320,8 +323,9 @@ function contextPrompt(item) {
 
 // null when the context agent returned nothing; present false when the run has
 // no context.json, or, with the problem named, when its text is not JSON or a
-// field the gate reads is missing or of the wrong type; otherwise the five
-// fields the gate reads, the first three of which results.json carries.
+// field the gate reads is missing or of the wrong type; otherwise the six
+// fields the gate reads, the first three of which results.json carries, with
+// final_message cut to its complete and its reason.
 function parseContext(reply) {
   if (!reply) return null
   if (reply.exists !== true) return { present: false }
@@ -335,15 +339,20 @@ function parseContext(reply) {
     if (!Number.isInteger(file?.[field])) return { present: false, problem: `${field} missing or not an integer` }
   }
   if (typeof file.window_line !== 'string') return { present: false, problem: 'window_line missing or not a string' }
-  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line, assistant_lines: file.assistant_lines, assistant_lines_without_usage: file.assistant_lines_without_usage }
+  if (typeof file.final_message !== 'object' || file.final_message === null) return { present: false, problem: 'final_message missing or not an object' }
+  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line, assistant_lines: file.assistant_lines, assistant_lines_without_usage: file.assistant_lines_without_usage, final_message: { complete: file.final_message.complete, reason: file.final_message.reason } }
 }
 
 // A run is gated, unverified with no judge call, unless its context.json was
 // read and shows no compaction over at least one top-level assistant line, every
-// one of them with its usage figures. The predicate is spelled the same in
-// rejudge.js, and the sync test in tools/eval-report.test.ts pins both.
+// one of them with its usage figures, and a final message recorded complete
+// (prose design §8.1, dated 2026-10-15: final_message.complete true; a
+// context.json written before that date has no final_message and stays gated
+// until tools/eval-context.ts is run on the run directory again). The predicate
+// is spelled the same in evals.js and rejudge.js, and the sync test in
+// tools/eval-report.test.ts pins both.
 function gated(ctx) {
-  return !ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0
+  return !ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0 || ctx.final_message.complete !== true
 }
 
 // Why a gated run is unverified, one sentence per way the gate closes.
@@ -353,7 +362,9 @@ function contextDetail(ctx) {
   if (ctx.present !== true) return 'the run has no context.json; it is unverified and no judge was called'
   if (ctx.assistant_lines === 0) return `the run's transcript carries no top-level assistant line; it is unverified (prose design §5.3) and no judge was called`
   if (ctx.assistant_lines_without_usage !== 0) return `the run has ${ctx.assistant_lines_without_usage} top-level assistant line(s) without usage figures, so its compaction count and peak cannot be trusted; it is unverified (prose design §5.3) and no judge was called`
-  return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
+  if (ctx.compactions !== 0) return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
+  if (ctx.final_message.complete === false) return `the run's final message is cut off (${ctx.final_message.reason}); a cut-off run is unverified (prose design §8.1), its cell is re-run once, and no judge was called`
+  return `the run's final message could not be checked (${ctx.final_message.reason}); it is unverified (prose design §8.1) and no judge was called`
 }
 
 function judgePrompt(item) {

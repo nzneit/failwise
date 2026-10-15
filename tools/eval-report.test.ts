@@ -334,16 +334,18 @@ function contextFile(overrides: Partial<EvalContext> = {}): EvalContext {
       { id: "edge-reliability-unstated", fired: 2, final: true },
       { id: "conversion-substitution-unrecorded", fired: 0, final: false },
     ],
+    final_message: { complete: true, reason: null, length: 4579 },
     ...overrides,
   };
 }
 
-test("a run that carries context prints the Harness table with its window, compactions and peak, reads the CLI version, the lines without usage, isolation, denials and lint counts from its context.json, and marks the gaps and the CLI versions when they differ", () => {
+test("a run that carries context prints the Harness table with its window, compactions and peak, reads the CLI version, the lines without usage, the final message, denials and lint counts from its context.json, and marks the gaps and the CLI versions when they differ", () => {
   const r = sampleResults();
   // Four absolute temp run directories: A holds a full context.json; B one that
   // compacted twice (the copy below says once) under another window line than
   // its copy's, with no init line, so no CLI version, no invocations.json and no
-  // validate.json, and written before the count of lines without usage; C none,
+  // validate.json, and written before the count of lines without usage and the
+  // final message's completeness; C none,
   // while its copied context is non-null; D a full one like A, while its run
   // entry has no context key.
   const root = mkdtempSync(join(tmpdir(), "eval-report-harness-"));
@@ -353,6 +355,7 @@ test("a run that carries context prints the Harness table with its window, compa
   writeFileSync(join(B, "context.json"), JSON.stringify(contextFile({
     cli_version: null,
     assistant_lines_without_usage: undefined,
+    final_message: undefined,
     compactions: 2,
     peak_context_tokens: 170039,
     init: { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false },
@@ -368,20 +371,47 @@ test("a run that carries context prints the Harness table with its window, compa
     r.runs[3] = { ...r.runs[3], dir: D };
     const md = renderReport(r);
     assert.match(md, /^## Harness$/m);
-    assert.match(md, /\| Prompt \| Model capability \| Run \| CLI \| Window \| Compactions \| Peak context \| Lines without usage \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|\n\|(---\|){13}\n/);
-    assert.match(md, /\| 1 \| high \| 1 \| 2\.1\.299 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| 0 \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
-    assert.match(md, /\| 1 \| high \| 2 \| — \| 200k tokens \| 1 \| 170,039 \| — \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
+    assert.match(md, /\| Prompt \| Model capability \| Run \| CLI \| Window \| Compactions \| Peak context \| Lines without usage \| Final message \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|\n\|(---\|){14}\n/);
+    assert.match(md, /\| 1 \| high \| 1 \| 2\.1\.299 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| 0 \| complete \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
+    assert.match(md, /\| 1 \| high \| 2 \| — \| 200k tokens \| 1 \| 170,039 \| — \| — \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
     assert.match(md, /^- p1 high run 2: results\.json context disagrees with context\.json \(window: x: 200k tokens vs Auto-compact window for deepseek-flash: 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\); compactions: 1 vs 2\)$/m);
-    assert.match(md, /\| 1 \| medium \| 1 \| — \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \| — \|/);
+    assert.match(md, /\| 1 \| medium \| 1 \| — \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \| — \| — \|/);
     assert.match(md, /^- p1 medium run 1: context\.json unreadable at [^/].*$/m);   // a repository-relative path, never /home
     assert.match(md, /^- p1 medium run 1: results\.json context disagrees with context\.json \(file missing\)$/m);
-    assert.match(md, /\| 1 \| medium \| 2 \| 2\.1\.299 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| 0 \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
+    assert.match(md, /\| 1 \| medium \| 2 \| 2\.1\.299 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| 0 \| complete \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
     assert.ok(!md.includes("p1 medium run 2: results.json context disagrees"), "a run with no context key is never a disagreement");
     assert.ok(!md.includes("CLI versions differ"), "the readable files carry one CLI version");
 
     // A round whose readable files carry two CLI versions says so under the table.
     writeFileSync(join(D, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.300" }), null, 2));
     assert.match(renderReport(r), /^- CLI versions differ across the round: 2\.1\.299 on p1 high run 1; 2\.1\.300 on p1 medium run 2$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the Harness table's Final message column reads complete, cut with the reason, or a dash for a context.json written before the field and for one that could not check the message", () => {
+  const r = sampleResults();
+  const root = mkdtempSync(join(tmpdir(), "eval-report-final-"));
+  // In table order: complete, cut, written before the field, not checked.
+  const finals: (EvalContext["final_message"] | undefined)[] = [
+    { complete: true, reason: null, length: 4579 },
+    { complete: false, reason: 'ends with "h"', length: 2433 },
+    undefined,
+    { complete: null, reason: "transcript.json missing", length: null },
+  ];
+  try {
+    r.runs = r.runs.map((run, i) => {
+      const dir = join(root, `run${i}`);
+      mkdirSync(dir);
+      writeFileSync(join(dir, "context.json"), JSON.stringify(contextFile({ final_message: finals[i] }), null, 2));
+      return { ...run, dir, context: { window: "x: 786.4k tokens", compactions: 0, peak_context_tokens: 238429 } };
+    });
+    const md = renderReport(r);
+    const row = (capability: string, run: number, final: string) => `| 1 | ${capability} | ${run} | 2.1.296 | 786.4k tokens | 0 | 238,429 | 0 | ${final} | yes | 1 | 0 / 1 | 2 / yes | 0 / no |`;
+    for (const want of [row("high", 1, "complete"), row("high", 2, 'cut (ends with "h")'), row("medium", 1, "—"), row("medium", 2, "—")]) {
+      assert.ok(md.includes(`\n${want}\n`), `no row ${want} in\n${md}`);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -520,7 +550,7 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]) }));
   assert.deepEqual(fromRejudge, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts })));
   for (const script of [workflow, rejudge]) {
-    assert.ok(script.includes("!ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0"), "the context gate predicate");
+    assert.ok(script.includes("!ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0 || ctx.final_message.complete !== true"), "the context gate predicate");
   }
 });
 
@@ -566,15 +596,18 @@ function gateOf(script: string): WorkflowGate {
   return new Function(source)() as WorkflowGate;
 }
 
-/** A context.json that passes the gate: read in full, no compaction, one top-level assistant line, every one with its usage. */
-const GATE_FULL = { window_line: "x", compactions: 0, peak_context_tokens: 1, assistant_lines: 1, assistant_lines_without_usage: 0 };
+/** A context.json that passes the gate: read in full, no compaction, one top-level assistant line, every one with its usage, and a final message recorded complete. */
+const GATE_FULL = { window_line: "x", compactions: 0, peak_context_tokens: 1, assistant_lines: 1, assistant_lines_without_usage: 0, final_message: { complete: true, reason: null, length: 1 } };
+
+/** The final_message of p5/high/run2 of the stage-1 round, whose final message ended mid-word (prose design §8.1). */
+const CUT = { complete: false, reason: 'ends with "h"', length: 2433 };
 
 /** A context agent's reply carrying the given fields as the file's text. */
 function gateReply(fields: unknown): { exists: true; text: string } {
   return { exists: true, text: JSON.stringify(fields) };
 }
 
-test("the context gate closes on every reply but a context.json read in full with no compaction and every top-level assistant line carrying its usage, in both workflows", () => {
+test("the context gate closes on every reply but a context.json read in full with no compaction, every top-level assistant line carrying its usage and a final message recorded complete, in both workflows", () => {
   const full = GATE_FULL;
   const file = gateReply;
   const closing: [string, unknown][] = [
@@ -591,6 +624,13 @@ test("the context gate closes on every reply but a context.json read in full wit
     ["assistant_lines 0", file({ ...full, assistant_lines: 0 })],
     ["no assistant_lines_without_usage", file({ ...full, assistant_lines_without_usage: undefined })],
     ["assistant_lines_without_usage 1", file({ ...full, assistant_lines_without_usage: 1 })],
+    ["no final_message, as a context.json written before 2026-10-15", file({ ...full, final_message: undefined })],
+    ["final_message null", file({ ...full, final_message: null })],
+    ["final_message true", file({ ...full, final_message: true })],
+    ["final_message {}", file({ ...full, final_message: {} })],
+    ["final message cut", file({ ...full, final_message: CUT })],
+    ["final message unchecked", file({ ...full, final_message: { complete: null, reason: "transcript.json missing", length: null } })],
+    ['complete "true"', file({ ...full, final_message: { ...full.final_message, complete: "true" } })],
     ["text null", { exists: true, text: "null" }],
     ["text []", { exists: true, text: "[]" }],
   ];
@@ -598,7 +638,19 @@ test("the context gate closes on every reply but a context.json read in full wit
     const { parseContext, gated } = gateOf(script);
     const gate = (reply: unknown) => gated(parseContext(reply));
     for (const [name, reply] of closing) assert.equal(gate(reply), true, `${name} passed the gate`);
-    assert.equal(gate(file(full)), false, "a context.json read in full with no compaction and every line's usage was gated");
+    assert.equal(gate(file(full)), false, "a context.json read in full with no compaction, every line's usage and a complete final message was gated");
+  }
+});
+
+test("a gated run's detail names a cut-off final message with its reason, a final message that could not be checked, and a context.json without the field, after a compaction, in both workflows", () => {
+  for (const script of workflowScripts()) {
+    const { parseContext, contextDetail } = gateOf(script);
+    const detail = (fields: unknown) => contextDetail(parseContext(gateReply(fields)));
+    assert.equal(detail({ ...GATE_FULL, final_message: CUT }), `the run's final message is cut off (ends with "h"); a cut-off run is unverified (prose design §8.1), its cell is re-run once, and no judge was called`);
+    assert.equal(detail({ ...GATE_FULL, final_message: { complete: null, reason: "transcript.json missing", length: null } }), "the run's final message could not be checked (transcript.json missing); it is unverified (prose design §8.1) and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, final_message: undefined }), "the run's context.json could not be read in code (final_message missing or not an object); it is unverified and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, final_message: null }), "the run's context.json could not be read in code (final_message missing or not an object); it is unverified and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, compactions: 1, final_message: CUT }), "the run compacted 1 time(s) under the window x; a compacted run is unverified (prose design §5.3) and no judge was called");
   }
 });
 
