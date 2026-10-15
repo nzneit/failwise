@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import process from "node:process";
 import { ScriptError } from "./lib/codes.ts";
 import type { Action, Chain, DependencyEdge, Element, FmeaDocument, Ratings, Factor, ValuePriority } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
@@ -514,8 +515,7 @@ function provenanceHtml(doc: FmeaDocument): string {
   return frameHtml("Provenance", `<table><thead><tr><th>Row</th><th>Catalog row</th><th>Tag</th><th>Record</th></tr></thead><tbody>${rows.join("")}</tbody></table>`);
 }
 
-export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string, vocabulary: Vocabulary): string {
-  const model = buildReportModel(doc, table);
+export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: string, vocabulary: Vocabulary, model: ReportModel = buildReportModel(doc, table)): string {
   const values: Record<(typeof SLOTS)[number], string> = {
     title: e(doc.meta.name),
     header: headerHtml(doc, model),
@@ -533,6 +533,13 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
   let html = template;
   for (const slot of SLOTS) html = html.split(`<!--@${slot}-->`).join(values[slot]);
   return html;
+}
+
+// The prose design's §6.4: after a successful render, one stdout line when n > 0 of the m ratings are
+// provisional, and nothing when n is 0. The model reads it within a few turns of the final message,
+// where the hand-over is written, so the line carries the hand-over rule; the report is unchanged.
+function provisionalLine(n: number, m: number): string {
+  return `provisional: ${n} of ${m} ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n`;
 }
 
 function main(argv: string[]): number {
@@ -563,7 +570,10 @@ function main(argv: string[]): number {
   }
   const template = readTextFile(TEMPLATE_PATH);
   const vocabulary = loadVocabulary();
-  writeFileAtomic(out, renderHtml(doc, table, template, vocabulary));
+  const model = buildReportModel(doc, table);
+  writeFileAtomic(out, renderHtml(doc, table, template, vocabulary, model));
+  const { provisional, total } = model.tiles.ratings;
+  if (provisional > 0) process.stdout.write(provisionalLine(provisional, total));
   return 0;
 }
 

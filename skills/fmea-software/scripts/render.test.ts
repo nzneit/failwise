@@ -833,6 +833,7 @@ test("the CLI writes the report and exits 0", () => {
     const r = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out]);
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
+    assert.equal(r.stdout, "provisional: 11 of 30 ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n");
     assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
   });
 });
@@ -1442,6 +1443,7 @@ test("a document validated under a --table-file that breaks a priority property 
     const r = runCli("render.ts", [path, "--out", out, "--table-file", tableFile]);
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stderr, "");
+    assert.equal(r.stdout, "");
     const checks = sectionOf(readFileSync(out, "utf8"), "lints", "provenance");
     assert.ok(checks.includes(escapeHtml('table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)')), checks);
   });

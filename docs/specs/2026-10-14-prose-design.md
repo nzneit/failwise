@@ -296,7 +296,7 @@ alternative the user may prefer is to narrow the lint instead.
 entry into clauses on `.` and `;`. The lint fires when `r > 0` and no clause contains the word `rationale`
 together with one of: `r` as a standalone integer, not adjacent to a letter, `-` or `_` (so a chain id such as
 `ch-1` does not count and a date does not count); the number word for `r` from one to ten; or the id or name of
-every chain whose rationale carries the default. Message:
+every chain whose rationale carries the default. (amended 2026-10-14 at plan B3: the integer's neighbours also exclude a digit, and the number word matches under the same neighbour rule, so "one-to-one" is not the count one; a colon beside the count, as in "(1:1)", and the pronoun in "no one" still count, two known gaps left as written) Message:
 `<r> row(s) carry the default rationale and no history clause records a rationale substitution with that count or those rows` (amended 2026-10-14 at plan B1: the shipped message is the gated one: `<r> row(s) carry the default rationale, and no meta.history clause names rationale with that count or with those rows' chain ids or element names. Keep the default, and add that clause to meta.history, not to an assumption or a row's history.`).
 A document the rubric passes by naming the rows is silent, as c11 allows a record "by count or by naming them".
 Reach: fires on p6/high/run2 and p6/medium/run2, whose only `rationale` clause is the column mapping; silent on
