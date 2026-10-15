@@ -513,3 +513,46 @@ EOF
 ```
 
 (with `docs/specs/2026-10-14-prose-eval-results-1b.md` added when it exists).
+
+## Epilogue after the second stage-1 gate (2026-10-15)
+
+Round 1b, `build/evals/prose-1b/`, failed §8.3's first clause on three pairs outside the planted gap, c1 on (5, high) and (5, medium) and c11 on (6, medium), and the Fable result gate ruled escalate, so the plan ended at the user gate as B7 says. The planted-gap target held on every prompt-1 and prompt-5 run, c5 passed on all six pairs, and no target criterion regressed from baseline. On 2026-10-15 the user accepted the four rulings below and this epilogue. It writes the rulings, re-judges the two disputed pairs, revises the text once more with §6.3's scope widened to the seed section, widens the c11 lint, adds a count check and the launcher's environment rule to the harness, fixes the pre-branch findings, and runs round 1c through the parallel launcher. Round 1c is then the stage-1 round of record that part C compares against, and part C's C2 writes the prose baseline on its text.
+
+Tiers: Opus implementers, skeptics, reviewers and judges; Sonnet re-reviewers, context and stability agents; Fable at E3's draft gate and E7's result gate, two calls. The global constraints and the commit rules of parts A and B apply unchanged.
+
+**The rulings (spec §11.6, written by E1):**
+
+1. **Action dates are c1 inputs.** The schema requires `target_date` on every action and `completed_date` on a Completed one, and the three postmortems give an action item's owner and status only, so a seeded run must fill both; a date filled with no declaration is band 1 of c1 as written. p5/high/run2's 1 stands. The seed section gains the rule that the run's own date is the declared default for both, named in `meta.history` with its count, with the real dates asked for as an open assumption owned by `user`. §6.3's scope widens to the seed section under a dated note, so the round-1c reading attributes a prompt-5 change to it as well.
+2. **An incident whose action item created a control is the control's origin, not its evidence.** `scales-software.md:99` already says it for seeded chains: a control that acted in the incident carries `observed_incident`, one that existed and did not catch the mode carries `none`, and one added after the incident is planned until an inventory lists it as existing. A completed action item's control is `existing` where the inputs list it so and `planned` otherwise, and its `evidence.kind` is `none` unless the inputs give a test or an incident in which it acted. Both (5, medium) runs are re-judged on c1 alone under a dated rubric paragraph that says so; p1/high/run1's 2 stands, its fallback control having acted in INC-2026-0502. The seed section carries the rule.
+3. **The two c11 defaults are named and the record's place is fixed.** The Convert list names the ratings' `evidence_kind` `estimate` and the elements' `kind` and `boundary` typed by the converter, each with its count, and its last item becomes generic: no declared default is recorded by a column-mapping line, an open assumption, a ground rule or the final message. `conversion-substitution-unrecorded` widens to both defaults. Rubric c11's "recorded only in `meta.assumptions[]`" clause extends to a ground rule and the final message. p6/medium/run2's 1 stands.
+4. **c6 stands as written.** A count of rows by priority is not a priority value under band 2's third clause. p1/medium/run1 is re-judged on c6 alone under a dated rubric sentence. The harness gains a check that compares the counts by priority the final message states with the document and reports it in the note's Harness table; it makes no run unverified.
+
+Carried: the launcher strips every inherited variable whose name starts with `CLAUDE` from its children and the smoke call and records the names in `round.json`, and the note's Round method line says so; the baseline re-run on CLI 2.1.300 is deferred, stage 2 comparing against round 1c, which runs on the same CLI; `run-eval.sh` removes its scratch directories on SIGTERM, SIGINT and SIGHUP as on EXIT; the R4 and R5 minors are fixed; round 1b's note is regenerated after the re-judges and committed again; the §6.3 split sentence (ruling 7 of §11.5), `SKILL.md`'s singular "that substitution", and the stability predicate stay with part C.
+
+### Task E1: The second gate's rulings written into the rubric and the spec
+
+**Files:** `skills/fmea-software/evals/rubric.md` (c1, c6, c11); `docs/specs/2026-10-14-prose-design.md` (§6.3 dated note, §8.1 two dated sentences, a new §11.6, the three "the stage-1 gate's revision" notes renamed). Not §6.1, not §6.4, not `SKILL.md`. One commit, both runners green. Brief: `task-E1-brief.md` in the plan workspace.
+
+### Task E2: The re-judges and the regenerated note (controller)
+
+`tools/workflows/rejudge.js` on c1 for p5 medium run1 and run2, and on c6 for p1 medium run1 (three Opus judges, 0 Fable), after E1's commit so the judges read the dated paragraphs; `merge-rejudge.cjs` into `build/evals/prose-1b/results.json` with the date and the reason; `tools/eval-report.ts` regenerated into the 1b note with the hand-written tail re-spliced; the §8.3 reading repeated; the ledger records the scores before and after. Commit "Evals: round 1b re-judged on c1 and c6 under the second gate's rulings".
+
+### Task E3: The seed sentences and the Convert items, gated and landed
+
+Draft v1 in `build/prose/stage1c-text.md`: the seed section's new sentences and its "Before you write a seeded document" list (rulings 1 and 2), and the Convert list's new item and its generic last item (ruling 3). Two Opus skeptics (c1 on the seed text, c11 on the Convert text) through a Workflow; the controller applies or rejects each finding with a reason; one Fable draft gate on the revised draft (the one-revise rule of B1); then an Opus implementer lands the gated text byte for byte in `SKILL.md`, with a dated note in §6.1 and §6.3, and moves any pinned literal. Commit "Skill: the seed section declares action dates and control origin, and the Convert list names every default".
+
+### Task E4: `conversion-substitution-unrecorded` reads the ratings' evidence kind and the element typing
+
+`DEFAULT_FIELDS` gains, after `effects.next_level`, the ratings' `evidence_kind` (every rating of every chain `estimate`, counted by row; names `/evidence_kind|\bestimate\b/i`) and the typing (every element, counted by element; names `/\btyp(e|ed|es|ing)\b|\bboundary\b|\brole\b/i`, or a clause mapping a sheet column to `elements[].kind` or `elements[].boundary`); the control default's names regex drops the underscore (`/evidence[. ]kind/i`) so the ratings' clause does not stand in for it; both read only in a conversion of two chains or more. Tests on the eight prompt-6 documents of rounds 1 and 1b and the expected fixture; the registry row and the lint's doc comment; a dated §6.4 line. Commit "Lints: conversion-substitution-unrecorded reads the ratings' evidence kind and the element typing".
+
+### Task E5: The harness: the count check, the launcher's environment, the runner's traps
+
+`tools/eval-context.ts` writes `message_counts` (the pairs of number and priority value the final message states, each compared with the document's counts before and after action; `checked` false with a reason when nothing is stated or the files cannot be read); `tools/eval-report.ts` prints a Counts column in the Harness table; `tools/run-round.ts` drops every `CLAUDE*` variable from the environment of its children and the smoke call, records the dropped names in `round.json` as `env_stripped`, and the Round method line names the count; `tools/run-eval.sh` traps TERM, INT and HUP; the R4 minors; `CONTRIBUTING.md`. Commit "Harness: the final message's counts by priority are checked, and the launcher strips the session's variables".
+
+### Task E6: The pre-branch findings and the parked minors, one commit named as pre-branch
+
+Ruling 8 of §11.5 (the C201 tier bullets, the §5.5 cross-reference, the C063 clause, the `value_priority`, decomposition and WS8 tags, `design-inputs.md:64`), `SKILL.md`'s untagged "Two adjustments." and the IEC `[cites:C055]` finding, and the seed sentence c5-7 named (a seeded run's ratings are provisional until a named person re-scores each one), from the two Recheck result files in the plan workspace. Commit "Skill: the distill Recheck's pre-branch findings fixed, and the parked review minors".
+
+### Task E7: Round 1c through the launcher, judging, the note, the reading, the result gate, the user gate (controller)
+
+`node tools/run-round.ts 1c --parallel 4` (canary first, environment stripped); the per-run checks and the key check; judging by `evals.js` (16 Opus judges, 16 Sonnet context, 8 Sonnet stability, 1 Opus critic, 0 Fable); the note `docs/specs/2026-10-14-prose-eval-results-1c.md`, title "Eval results, prose stage 1, third round", the hand-written sections appended; the §8.3 reading against baseline 0, with round 1b beside it; the Fable result gate once (plan B Fable call 6); then the user gate with the notes. Stage 1 passes by §8.3 as amended; a failure goes to the user with the findings. Round 1c is committed as the round of record after the user reads the note.
