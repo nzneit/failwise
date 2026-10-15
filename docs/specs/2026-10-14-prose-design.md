@@ -493,7 +493,8 @@ tooling, since the eval rounds name the skill explicitly and do not measure trig
 
 ### 11.3 Logged, not fixed on this branch
 
-The readers found these while inventorying; each is a content question for its own change:
+The readers found these while inventorying, and the stage-0 gate added three (§11.4); each is a content question
+for its own change:
 
 - the catalog's 60% at `design-failure-catalog.md:55` against `quality-and-lint.md:103`'s "59 percent";
 - `NOTICES.md` saying `adapted-from:C090` appears once in `quality-and-lint.md`, where it appears twice;
@@ -504,9 +505,31 @@ The readers found these while inventorying; each is a content question for its o
 - `scales-software.md:129`'s "refused only when its shape fails" against `TABLE_ID_MISMATCH`;
 - where the ML or LLM questions live, catalog `component` against a structure-elements `service`;
 - `cat-dependency-01`'s cause column restating its own mode (already an agreed follow-up);
+- `cat-security-04`'s cause column (`design-failure-catalog.md:114`) restating its own fails-open mode, logged beside `cat-dependency-01`'s at the stage-0 gate;
 - the update summaries' missing inventory controls, the converter's boundary typing, and c2's bare repository references (0.7.0 skill findings);
+- the update mode editing carried-forward rationales under a reviewer's `rescored` stamp (prose-0 p7/medium/run1: ch-2 O and D, ch-4 S and O, and ch-2 D gained a content sentence), the attribution hole the strict c5 reading would close, with the rule "carry note in `history[]`, rationale byte-identical" as `SKILL.md` text for after stage 2;
+- the conversion reading sheet cells without a parsing script (prose-0 p6/medium/run2 read the Pricing Service row's filled Justification as empty);
 - the differing word-count bases in the inventory, which the checker's single basis replaces;
 - the frontmatter description length (§11.2).
+
+### 11.4 Rulings at the stage-0 gate (2026-10-14)
+
+The baseline round, prose-0, was judged under rubric 4. Its critic raised twelve questions, and plan A's final
+review made two recommendations. The user ruled on them interactively at the stage-0 gate. The decisions follow in
+the order the user took them, each with where it lands; plan B's start is the work done before task B1. Decisions 1
+and 2 are dated readings in rubric 4 that add no criterion, so the rubric stays 4 for all three rounds (D4).
+
+1. c2, repository sources: strict. Ruling 7 of 2026-10-13 goes into rubric 4's c2 as a dated paragraph, and p1/high/run1 is re-judged on c2 alone under it. The skill wording behind such refs (`design-inputs.md:105`, `structure-elements.md:156-158`) is a follow-up decision after stage 2, not stage-1 scope.
+2. c11, band 2's substitution clause: the broad reading stands. A dated sentence in rubric 4's c11 says the clause covers every declared default, element-level ones included; p6/high/run1 stays at 1, with no re-judge.
+3. The payment gateway's boundary on prompt 6: neither side changes now. The rubric keeps `third_party`, and the converter text at `SKILL.md:60-62` stays as §11.3 logs it; if stage 2's rewrite changes the behaviour, c13 and c14 show it, and since both fail at baseline and neither is a must, §8.3 carries no regression risk from it.
+4. The stability count predicate: the 0.2 absolute-count bound stays through stages 1 and 2, and the four pairs that fail it stay failed. The acceptance note names (1, high) and (7, medium) as row-count cases and (1, medium) and (5, high) as rating drift. The stability predicate redesign, a share-based or shared-chains predicate, goes on the v1 acceptance agenda, where the rubric, `COUNT_BOUND_FRACTION` and the tests move together.
+5. The c3 catalog rows: nothing changes now. `cat-security-04`'s cause column joins `cat-dependency-01`'s in §11.3, and the stage-1 gate revisits both, with the option to fold them into stage 2's reference rewrite.
+6. c5's open reading, D15: the lenient reading is confirmed, and p7/medium/run1 keeps its 2, with no re-judge. Its edited rationales are logged in §11.3, and the strict c5 reading goes on the v1 acceptance agenda.
+7. The Persist phase: dropped from `tools/workflows/evals.js` at plan B's start, with its unverified unit. The controller then writes `build/evals/prose-<stage>/results.json` from the Workflow task's output and checks that it parses and holds the run count; the "1 Sonnet persist" tier line of plans B and C becomes a recorded deviation.
+8. The stream-drift flag: recorded and gated at plan B's start. `tools/eval-context.ts` counts `assistant_lines_without_usage`, both workflow files hold a run unverified when that count is not 0 or `assistant_lines` is 0, and the note's harness table gains a `Lines without usage` column; every prose-0 run reads 0, so no baseline verdict moves.
+9. What the rounds count as: the prose baseline and the stage comparisons only, not v1 evidence for criterion 2 of the base design's §15, since both capabilities ran `deepseek-flash`. At plan B's start `tools/eval-report.ts` prints, under the note's header, the run model per capability, the judging tiers and the Fable count.
+10. Sheet parsing on prompt 6: no script now. §11.3 logs p6/medium/run2's misread Justification cell, and the sheet parser goes on the v1 acceptance agenda, to be judged on three rounds of c11 scores.
+11. Go: stage 1 (plan B) starts as planned, with every B1 wording item, c5's included. The acceptance note of stage 1 records that c5's failure did not reproduce at baseline (0 of 4 prompt-7 runs under the lenient reading), so its stage-1 result shows non-regression only; it also records that c1's premise held on 6 of the 8 planted-gap runs, not on (1, high), and c11's mechanism on 2 of 4 under decision 2.
 
 ## 12. Acceptance criteria
 
