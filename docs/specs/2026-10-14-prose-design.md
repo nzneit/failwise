@@ -1,8 +1,8 @@
 # Prose: design
 
 **Date:** 2026-10-14
-**Status:** approved in conversation section by section; revised after two Fable reviews (§13); three decisions
-pending the user's confirmation, each written with its default (D13 to D15)
+**Status:** approved in conversation section by section; revised after two Fable reviews (§13); the user confirmed
+the defaults of D13 to D15 on 2026-10-14, before plan A, and D15 again at the stage-0 gate (§11.4)
 **Precedes:** implementation (via the writing-plans skill), then one results note per round and an acceptance note
 **Branch:** `prose`, stacked on `flow-model` at `97261fc`, in the worktree `.claude/worktrees/prose`
 **Evidence:** the flow-model eval round of 2026-10-13 (`docs/specs/2026-10-12-flow-model-eval-results.md`,
@@ -44,7 +44,7 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D1 | Route: rule placement, scope wording and three machine checks, then the readability pass. The user chose this over prose-only on 2026-10-14. | §6, §7 |
 | D2 | Branch `prose` stacked on `flow-model`, in its own worktree; it rebases when `flow-model` merges. | header |
 | D3 | Three eval rounds, one per stage, on DeepSeek Flash at both capabilities, 16 runs each, prompt 5 included. | §8 |
-| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13). `rubric.md` is otherwise out of scope: it is the instrument. | §5.2, §4 |
+| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. | §5.2, §4, §11.4 |
 | D5 | The descriptive sections of the references and all frozen text (§4.3) are out of stage 2; the prose checker's ratchet holds them from getting worse. | §7.3 |
 | D6 | The two new lints are warnings, not blockers, so a valid document still renders, the quality score is untouched and the c1 reading of rubric 4 is unchanged. | §6.4 |
 | D7 | The prose checker is a ratchet against a baseline file, not a set of hard caps, and fails closed. | §7.6 |
@@ -53,9 +53,9 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D10 | STE is applied as structure plus five vocabulary substitutions in skill-authored sentences. The rest of the STE dictionary is not applied, because it collides with domain terms (§7.5). | §7 |
 | D11 | The context-window gate moves from the gitignored round scripts into the tracked harness, each run records its window and compactions, and a run that compacted is unverified. | §5.3 |
 | D12 | Stage 1 changes nothing in the prose beyond what §6 names, so its round measures placement, wording and the checks alone. | §6 |
-| D13 | Pending the user: the two shipped fixtures the c1 lint would fire on are amended to agree with their inputs, rather than the lint narrowed. Default: amend. | §6.4 |
-| D14 | Pending the user: `evals/rubric.md` is outside the prose checker, because it carries no provenance tags and changes by dated ruling. Default: outside. | §7.6 |
-| D15 | Pending the user: the stricter c5 reading the acceptance note left unruled is not applied; the 2026-10-13 lenient reading stands and every note names the open reading. Default: lenient stands. | §8.5 |
+| D13 | The two shipped fixtures the c1 lint would fire on are amended to agree with their inputs, rather than the lint narrowed. Confirmed by the user on 2026-10-14, before plan A. | §6.4 |
+| D14 | `evals/rubric.md` is outside the prose checker, because it carries no provenance tags and changes by dated ruling. Confirmed by the user on 2026-10-14, before plan A. | §7.6 |
+| D15 | The stricter c5 reading the acceptance note left unruled is not applied; the 2026-10-13 lenient reading stands and every note names the open reading. Confirmed at the stage-0 gate (§11.4, decision 6); the attribution hole the strict reading would close is on the acceptance agenda. | §8.5, §11.4 |
 
 ## 3. Evidence
 
@@ -189,8 +189,9 @@ the workflow passes. `tools/eval-stability.ts` takes two documents and a table a
 argument for the flag; `tools/workflows/evals.js` passes it for prompt 6; with the flag the comparison reports
 `not_applicable` whatever the two runs carry, as the ruling reads. `evals/rubric.md:232` ("passes when all three
 hold") gains the clause and `:236` gains the state; the `STABILITY_SCHEMA` enum in `evals.js` and `isFlows` in
-`tools/eval-report.ts` gain the value, and their tests follow. This is the only rubric change on the branch and
-it lands before the baseline round, so all three rounds judge under the same text (D4).
+`tools/eval-report.ts` gain the value, and their tests follow. This is the only rubric change before the baseline
+round, so all three rounds judge under the same text (D4); the stage-0 gate's two dated readings of c2 and c11 add
+no criterion, and p1/high/run1 is re-judged on c2 under the first (§11.4).
 
 ### 5.3 The context window is recorded and gated
 
@@ -507,28 +508,30 @@ for its own change:
 - `cat-dependency-01`'s cause column restating its own mode (already an agreed follow-up);
 - `cat-security-04`'s cause column (`design-failure-catalog.md:114`) restating its own fails-open mode, logged beside `cat-dependency-01`'s at the stage-0 gate;
 - the update summaries' missing inventory controls, the converter's boundary typing, and c2's bare repository references (0.7.0 skill findings);
-- the update mode editing carried-forward rationales under a reviewer's `rescored` stamp (prose-0 p7/medium/run1: ch-2 O and D, ch-4 S and O, and ch-2 D gained a content sentence), the attribution hole the strict c5 reading would close, with the rule "carry note in `history[]`, rationale byte-identical" as `SKILL.md` text for after stage 2;
+- the update mode editing carried-forward rationales under A. Reviewer's `rescored` stamp (prose-0 p7/medium/run1: ch-2 O and D, ch-4 S and O, and ch-2 D gained a content sentence), the attribution hole the strict c5 reading would close, with the rule "carry note goes in history[], rationale stays byte-identical" as `SKILL.md` text for after stage 2;
 - the conversion reading sheet cells without a parsing script (prose-0 p6/medium/run2 read the Pricing Service row's filled Justification as empty);
 - the differing word-count bases in the inventory, which the checker's single basis replaces;
 - the frontmatter description length (§11.2).
 
 ### 11.4 Rulings at the stage-0 gate (2026-10-14)
 
-The baseline round, prose-0, was judged under rubric 4. Its critic raised twelve questions, and plan A's final
-review made two recommendations. The user ruled on them interactively at the stage-0 gate. The decisions follow in
-the order the user took them, each with where it lands; plan B's start is the work done before task B1. Decisions 1
-and 2 are dated readings in rubric 4 that add no criterion, so the rubric stays 4 for all three rounds (D4).
+The baseline round, prose-0, was judged under rubric 4. Its critic named twelve blocking candidates, and two of
+plan A's final-review recommendations came to the gate. The user ruled interactively on each one that needed a
+ruling: the critic's candidates 1 and 2 are findings, and its candidate 9 is already in §11.3. The decisions follow
+in the order the user took them, each with where it lands; plan B's start is the work done before task B1.
+Decisions 1 and 2 are dated readings in rubric 4 that add no criterion, so the rubric stays 4 for all
+three rounds (D4).
 
 1. c2, repository sources: strict. Ruling 7 of 2026-10-13 goes into rubric 4's c2 as a dated paragraph, and p1/high/run1 is re-judged on c2 alone under it. The skill wording behind such refs (`design-inputs.md:105`, `structure-elements.md:156-158`) is a follow-up decision after stage 2, not stage-1 scope.
 2. c11, band 2's substitution clause: the broad reading stands. A dated sentence in rubric 4's c11 says the clause covers every declared default, element-level ones included; p6/high/run1 stays at 1, with no re-judge.
 3. The payment gateway's boundary on prompt 6: neither side changes now. The rubric keeps `third_party`, and the converter text at `SKILL.md:60-62` stays as §11.3 logs it; if stage 2's rewrite changes the behaviour, c13 and c14 show it, and since both fail at baseline and neither is a must, §8.3 carries no regression risk from it.
 4. The stability count predicate: the 0.2 absolute-count bound stays through stages 1 and 2, and the four pairs that fail it stay failed. The acceptance note names (1, high) and (7, medium) as row-count cases and (1, medium) and (5, high) as rating drift. The stability predicate redesign, a share-based or shared-chains predicate, goes on the v1 acceptance agenda, where the rubric, `COUNT_BOUND_FRACTION` and the tests move together.
 5. The c3 catalog rows: nothing changes now. `cat-security-04`'s cause column joins `cat-dependency-01`'s in §11.3, and the stage-1 gate revisits both, with the option to fold them into stage 2's reference rewrite.
-6. c5's open reading, D15: the lenient reading is confirmed, and p7/medium/run1 keeps its 2, with no re-judge. Its edited rationales are logged in §11.3, and the strict c5 reading goes on the v1 acceptance agenda.
+6. c5's open reading, D15: the lenient reading is confirmed, and p7/medium/run1 keeps its 2, with no re-judge. Its edited rationales are logged in §11.3, and the attribution hole, which the strict c5 reading would close, goes on the acceptance agenda.
 7. The Persist phase: dropped from `tools/workflows/evals.js` at plan B's start, with its unverified unit. The controller then writes `build/evals/prose-<stage>/results.json` from the Workflow task's output and checks that it parses and holds the run count; the "1 Sonnet persist" tier line of plans B and C becomes a recorded deviation.
 8. The stream-drift flag: recorded and gated at plan B's start. `tools/eval-context.ts` counts `assistant_lines_without_usage`, both workflow files hold a run unverified when that count is not 0 or `assistant_lines` is 0, and the note's harness table gains a `Lines without usage` column; every prose-0 run reads 0, so no baseline verdict moves.
 9. What the rounds count as: the prose baseline and the stage comparisons only, not v1 evidence for criterion 2 of the base design's §15, since both capabilities ran `deepseek-flash`. At plan B's start `tools/eval-report.ts` prints, under the note's header, the run model per capability, the judging tiers and the Fable count.
-10. Sheet parsing on prompt 6: no script now. §11.3 logs p6/medium/run2's misread Justification cell, and the sheet parser goes on the v1 acceptance agenda, to be judged on three rounds of c11 scores.
+10. Sheet parsing on prompt 6: no script now. §11.3 logs p6/medium/run2's misread Justification cell, and the sheet parser is revisited at acceptance, on three rounds of c11 scores.
 11. Go: stage 1 (plan B) starts as planned, with every B1 wording item, c5's included. The acceptance note of stage 1 records that c5's failure did not reproduce at baseline (0 of 4 prompt-7 runs under the lenient reading), so its stage-1 result shows non-regression only; it also records that c1's premise held on 6 of the 8 planted-gap runs, not on (1, high), and c11's mechanism on 2 of 4 under decision 2.
 
 ## 12. Acceptance criteria
