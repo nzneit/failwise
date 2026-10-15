@@ -440,6 +440,8 @@ test("the Harness table's Counts column reads match with the number of pairs sta
       [{ checked: true, reason: null, document: after, stated: stated([8, "H", false], [5, "M", true], [6, "M", false]) }, "mismatch: 8 H (document 9), 6 M (document 5, after 2)"],
       [{ checked: false, reason: "no count stated", document: before, stated: [] }, "none stated"],
       [undefined, "—"],
+      // A record that says it was checked but holds no pair is not read as a match of nothing.
+      [{ checked: true, reason: null, document: before, stated: [] }, "—"],
       [{ checked: false, reason: "analysis.json missing", document: {}, stated: [] }, "— (analysis.json missing)"],
       [{ checked: false, reason: "transcript.json missing", document: before, stated: [] }, "— (transcript.json missing)"],
     ];

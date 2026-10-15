@@ -2,8 +2,8 @@
 //
 // One sixteen-run eval round of the prose evals (prose design 2026-10-14, §8.1)
 // on DeepSeek Flash through the Anthropic-compatible gateway, run in parallel
-// rather than one cell after another (§11.5 ruling 10: built while round 1b ran,
-// used from the stage-2 round on). The roster is the sequential script's:
+// rather than one cell after another (§11.5 ruling 10: built while round 1b ran;
+// used from round 1c on, §11.6). The roster is the sequential script's:
 // prompts 1, 5, 6 and 7 at high and medium, runs 1 and 2, in that order. Each
 // cell is one tools/run-eval.sh child, which already gives a run its own
 // working, plugin and config folders, its own /autocompact probe and its own

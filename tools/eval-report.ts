@@ -1159,12 +1159,13 @@ function isMessageCounts(v: unknown): v is MessageCounts {
  * (prose design §8.1, §11.6 ruling 4): `match (<n>)` when every one of the n pairs matches; `mismatch: ` and each pair
  * that does not, with the document's count of the value before action and, when the document has chains at it after
  * action, that count too; `none stated` when the message states no pair; `— (<reason>)` when the counts could not be
- * checked; and a dash when the file could not be read or was written before the field.
+ * checked; and a dash when the file could not be read, was written before the field, or says it was checked while
+ * holding no pair.
  */
 function countsCell(ctx: ContextRead): string {
   const counts: unknown = typeof ctx === "string" ? undefined : ctx.message_counts;
   if (!isMessageCounts(counts)) return "—";
-  if (counts.checked) return cell(statedText(counts));
+  if (counts.checked) return counts.stated.length > 0 ? cell(statedText(counts)) : "—";
   if (counts.reason === "no count stated") return "none stated";
   return typeof counts.reason === "string" ? cell(`— (${counts.reason})`) : "—";
 }

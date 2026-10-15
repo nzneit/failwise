@@ -534,9 +534,13 @@ test("a re-run of named cells into a round that has a round.json replaces those 
   const cell = (id: string) => ({ cell: id, started: "2026-10-14T08:01:00.000Z", ended: "2026-10-14T08:15:00.000Z", exit: 0, summary: `${id} line` });
   const original = { method: "parallel", concurrency: 4, canary: "p1:high:1", started: "2026-10-14T08:00:00.000Z", ended: "2026-10-14T08:21:04.000Z", cli_version: "2.1.300", cells: ROSTER.map(cell) };
   writeFileSync(join(s.root, "round.json"), JSON.stringify(original, null, 2));
-  const r = launch(s, ["--no-canary", "--cells", "p5:high:2", "--parallel", "2"]);
+  // The re-run strips CLAUDECODE, and a round recorded before env_stripped still gains no such field: its other cells
+  // inherited the variables.
+  const r = launch({ ...s, env: { ...s.env, CLAUDECODE: "1" } }, ["--no-canary", "--cells", "p5:high:2", "--parallel", "2"]);
   assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^env: 1 CLAUDE\* variable stripped$/m);
   const round = readRound(s);
+  assert.ok(!("env_stripped" in round), JSON.stringify(round.env_stripped));
   assert.deepEqual({ ...round, cells: [] }, { ...original, cells: [] });
   assert.deepEqual(round.cells.map((c) => c.cell), ROSTER);
   const rerun = round.cells.find((c) => c.cell === "p5:high:2");
@@ -544,8 +548,7 @@ test("a re-run of named cells into a round that has a round.json replaces those 
   assert.ok(Date.parse(rerun.started) > Date.parse(original.ended));
   assert.deepEqual(round.cells.filter((c) => c.cell !== "p5:high:2"), original.cells.filter((c) => c.cell !== "p5:high:2"));
 
-  // A round that records the variables its launch stripped gains those this re-run strips; one written before the
-  // field gains none (above), its other cells having inherited them.
+  // A round that records the variables its launch stripped gains those this re-run strips.
   writeFileSync(join(s.root, "round.json"), JSON.stringify({ ...original, env_stripped: ["CLAUDE_EFFORT"] }, null, 2));
   renameSync(join(s.root, "p5", "high", "run2"), join(s.dir, "p5-high-run2.first"));
   const v = launch({ ...s, env: { ...s.env, CLAUDECODE: "1", CLAUDE_EFFORT: "high" } }, ["--no-canary", "--cells", "p5:high:2"]);

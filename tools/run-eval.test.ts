@@ -335,6 +335,15 @@ test("the summary line's final field reads final_message.complete from the conte
   }
 });
 
+/** Sends SIGKILL to a process group; a group with no member left (ESRCH) is not an error. */
+function killGroup(group: number): void {
+  try {
+    process.kill(-group, "SIGKILL");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ESRCH") throw err;
+  }
+}
+
 /** Whether the check holds within twenty seconds, polled every fifty milliseconds. */
 async function until(check: () => boolean): Promise<boolean> {
   const deadline = Date.now() + 20_000;
@@ -347,21 +356,28 @@ test("SIGTERM, SIGINT or SIGHUP to the run's process group exits with 128 plus t
   const cases = [false, true].flatMap((linger) => ([["SIGTERM", 143], ["SIGINT", 130], ["SIGHUP", 129]] as const).map(([signal, status]) => ({ linger, signal, status })));
   for (const { linger, signal, status } of cases) {
     const s = sandbox();
+    const started = join(s.dir, "started");
+    const env = { ...s.env, FMEA_STUB_HANG: started, ...(linger ? { FMEA_STUB_LINGER: "1" } : {}) };
+    const child = spawn("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env, detached: true, stdio: "ignore" });
+    let ended = false;
+    const closed = new Promise<number | null>((done) => child.on("close", (code) => {
+      ended = true;
+      done(code);
+    }));
     try {
-      const started = join(s.dir, "started");
-      const env = { ...s.env, FMEA_STUB_HANG: started, ...(linger ? { FMEA_STUB_LINGER: "1" } : {}) };
-      const child = spawn("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env, detached: true, stdio: "ignore" });
-      const closed = new Promise<number | null>((done) => child.on("close", (code) => done(code)));
       const label = linger ? `${signal}, a session that writes on its way out` : signal;
+      assert.ok(child.pid !== undefined, `${label}: the script did not start`);
       assert.ok(await until(() => existsSync(started)), `${label}: the run never reached its claude call`);
       assert.deepEqual(scratch(s).map((n) => n.replace(/-[^-]+$/, "")).sort(), ["fmea-config-p1-medium-run1", "fmea-eval-p1-medium-run1", "fmea-plugin-p1-medium-run1"], label);
-      process.kill(-(child.pid ?? 0), signal);
+      process.kill(-child.pid, signal);
       assert.equal(await closed, status, label);
       // A script that cleaned up at once, under the session, would find its config directory written again here.
       if (linger) assert.ok(await until(() => existsSync(`${started}.done`)), `${label}: the session never finished writing`);
       assert.deepEqual(scratch(s), [], `${label}: a scratch directory survived`);
       assert.ok(!existsSync(join(s.publish, "p1")), `${label}: the stopped run was published`);
     } finally {
+      // An assertion that failed before the script ended leaves nothing of its process group running.
+      if (!ended && child.pid !== undefined) killGroup(child.pid);
       rmSync(s.dir, { recursive: true, force: true });
     }
   }

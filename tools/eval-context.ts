@@ -48,8 +48,10 @@
 // value its chains carry, before or after action, it counts the chains at that
 // value before action (priority) and after (post_priority). The message is
 // searched for each value as a whole token, a count before it (`8 H`, `2 rows
-// at H`) or after a colon or an equals sign (`H: 8`), and a pair matches when
-// its count is the value's count before or after action. Only the document's
+// at H`) or after a colon or an equals sign (`H: 8`), the value bold or not
+// (`7 **H**`), a count read after a colon or an equals sign never read again
+// before the next value (`H=8 M=4`), and a pair matches when its count is the
+// value's count before or after action. Only the document's
 // values are searched, so a count of a value no chain carries is not read. The
 // check is reported, in the Harness table of tools/eval-report.ts, and makes no
 // run unverified: no judging gate reads it, and a wrong count does not move
@@ -408,33 +410,54 @@ function documentCountsIn(path: string): DocumentCounts | string {
   return Object.fromEntries(counts);
 }
 
-/** A pattern body matched as a whole token: no word character or hyphen just before it or just after it. */
-function wholeToken(body: string): string {
-  return `(?<![\\w-])${body}(?![\\w-])`;
+/**
+ * The whole-token guards: no word character or hyphen just before a pattern or just after it. On the side where the
+ * value's markup may stand, an asterisk is refused too, so the guard falls outside the asterisks and `x**M: 4` or
+ * `7 **H**x` states nothing.
+ */
+const TOKEN_START = "(?<![\\w-])";
+const TOKEN_END = "(?![\\w-])";
+const MARKUP_START = "(?<![\\w*-])";
+const MARKUP_END = "(?![\\w*-])";
+
+/**
+ * The two patterns a priority value is searched with (§11.6 ruling 4, amended at E5's review), each capturing the
+ * count: A, a count before the value, as in `8 H`, `2 rows at H` or `4 rated priority M`, and B, the value before a
+ * colon or an equals sign and the count, as in `H: 8`. The value may carry one or two asterisks on each side, as in
+ * `7 **H**` or `**H**: 8`. A value followed by a bare number, as in `H 504`, is not a count: in a per-row table that
+ * number is the row's RPN.
+ */
+function countPatterns(value: string): { a: RegExp; b: RegExp } {
+  const v = `\\*{0,2}${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\*{0,2}`;
+  return {
+    a: new RegExp(`${TOKEN_START}(\\d+)\\s*(?:rows?\\s+)?(?:at\\s+|rated\\s+|in\\s+)?(?:priority\\s+)?${v}${MARKUP_END}`, "g"),
+    b: new RegExp(`${MARKUP_START}${v}\\s*[:=]\\s*(\\d+)${TOKEN_END}`, "g"),
+  };
+}
+
+/** One pattern's match: where it starts and ends in the message, and the pair it states. */
+interface Found { at: number; end: number; pair: MessageCounts["stated"][number] }
+
+/** Every match of a pattern in the message, each a pair of its count and the value, matching when the count is the value's before or after action. */
+function matchesOf(text: string, re: RegExp, value: string, counts: DocumentCounts[string]): Found[] {
+  return [...text.matchAll(re)].map((m) => {
+    const count = Number(m[1]);
+    return { at: m.index, end: m.index + m[0].length, pair: { count, value, matches: count === counts.before || count === counts.after } };
+  });
 }
 
 /**
- * The two patterns a priority value is searched with (§11.6 ruling 4), each capturing the count: a count before the
- * value, as in `8 H`, `2 rows at H` or `4 rated priority M`, and the value before a colon or an equals sign and the
- * count, as in `H: 8`.
+ * Every pair of a count and a document value the message states, in message order. A match of pattern A, which
+ * starts at its count, is dropped when that count lies inside a match of pattern B, so `H=8 M=4.` states 8 H and 4 M
+ * and not also 8 M.
  */
-function countPatterns(value: string): RegExp[] {
-  const v = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return [
-    new RegExp(wholeToken(`(\\d+)\\s*(?:rows?\\s+)?(?:at\\s+|rated\\s+|in\\s+)?(?:priority\\s+)?${v}`), "g"),
-    new RegExp(wholeToken(`${v}\\s*[:=]\\s*(\\d+)`), "g"),
-  ];
-}
-
-/** Every pair of a count and a document value the message states, in message order, each matching when its count is the value's before or after action. */
 function statedCounts(text: string, document: DocumentCounts): MessageCounts["stated"] {
-  const found = Object.entries(document).flatMap(([value, counts]) =>
-    countPatterns(value).flatMap((re) =>
-      [...text.matchAll(re)].map((m) => {
-        const count = Number(m[1]);
-        return { at: m.index, pair: { count, value, matches: count === counts.before || count === counts.after } };
-      })));
-  return found.sort((a, b) => a.at - b.at).map((f) => f.pair);
+  const patterns = Object.entries(document).map(([value, counts]) => ({ value, counts, ...countPatterns(value) }));
+  const valueFirst = patterns.flatMap((p) => matchesOf(text, p.b, p.value, p.counts));
+  const countFirst = patterns
+    .flatMap((p) => matchesOf(text, p.a, p.value, p.counts))
+    .filter((f) => !valueFirst.some((b) => f.at >= b.at && f.at < b.end));
+  return [...countFirst, ...valueFirst].sort((x, y) => x.at - y.at).map((f) => f.pair);
 }
 
 /** The counts not checked, with why, and the document's counts when they could be read. */

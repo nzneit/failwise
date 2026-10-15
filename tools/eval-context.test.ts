@@ -361,6 +361,7 @@ That is 2 rows at H and 4 at M before action, and 1 H and 1 M after action — e
 const P5_MEDIUM_RUN1 = `- By priority: 7 **H** (rests on provisional ratings) and 4 **M** (rests on provisional ratings).
 - Highest RPN is CH-09 at 567 (rests on provisional ratings); then CH-02 at 560, CH-05 at 450 and CH-01 at 441 (each rests on provisional ratings). RPN never ranks — the table's cell map does.
 - Ranked by the table: CH-09 H (provisional), CH-02 H (provisional), CH-05 H (provisional), CH-01 H (provisional), CH-06 H (provisional), CH-11 H (provisional), CH-10 H (provisional), then CH-07 M, CH-08 M, CH-03 M, CH-04 M (each provisional).`;
+const P1_MEDIUM_RUN2 = "**Priorities — every one of these rests on provisional ratings.** Computed with the shipped table: 11 rows at **H** (rests on provisional ratings) and 3 rows at **M** (rests on provisional ratings), none at L. By RPN, which the table carries for reference and never ranks by: chk-04 and gw-01 at 441, chk-07 at 400, chk-01 at 350, gw-02 at 343, chk-03 at 336, st-02 at 320, chk-08 at 280, chk-06 at 256, chk-02 at 240, chk-05 at 189, chk-09 and st-01 at 162, prc-01 at 96 — each of those RPNs rests on provisional ratings. The three **M** rows (rest on provisional ratings) are chk-02, chk-03 and prc-01; the eleven **H** rows (rest on provisional ratings) are chk-01, chk-04, chk-05, chk-06, chk-07, chk-08, chk-09, gw-01, gw-02, st-01 and st-02.";
 
 test("message_counts compares each count by priority the final message states with the document's: p1/medium/run1's 8 H and 6 M against 9 H and 5 M do not match", () => {
   assert.deepEqual(countsFor(P1_MEDIUM_RUN1, [...chains(9, "H"), ...chains(5, "M")]), {
@@ -395,14 +396,36 @@ test("message_counts matches a stated count against the document's count before 
   assert.deepEqual(countsFor(P5_HIGH_RUN1, moved).stated, [pair(2, "H", true), pair(4, "M", true), pair(1, "H", false), pair(1, "M", false)]);
 });
 
-test("message_counts records no count stated when no pair matches the patterns: p5/medium/run1's CH-09 H, whose digits follow a hyphen, and its 7 **H**, whose markup parts the count from the value", () => {
+test("message_counts reads a value set in bold, one or two asterisks on each side: p5/medium/run1's 7 **H** and 4 **M**, and p1/medium/run2's 11 rows at **H** and 3 rows at **M**", () => {
   const rows = [...chains(2, "H", "H"), ...chains(5, "H"), ["M", "M"], ...chains(3, "M")];
+  // p5/medium/run1's ranked list, CH-09 H and the rest, states nothing: each value's digits follow a hyphen.
   assert.deepEqual(countsFor(P5_MEDIUM_RUN1, rows), {
+    checked: true,
+    reason: null,
+    document: { H: { before: 7, after: 2 }, M: { before: 4, after: 1 } },
+    stated: [pair(7, "H", true), pair(4, "M", true)],
+  });
+  assert.deepEqual(countsFor(P1_MEDIUM_RUN2, [...chains(11, "H"), ...chains(3, "M")]).stated, [pair(11, "H", true), pair(3, "M", true)]);
+  assert.deepEqual(countsFor("Counts: *H*: 2, H**=3 and 4 *M*.", [...chains(2, "H"), ...chains(4, "M")]).stated, [pair(2, "H", true), pair(3, "H", false), pair(4, "M", true)]);
+});
+
+test("message_counts records no count stated when no pair matches the patterns: a ranked list of chain ids, a value followed by a number with no colon or equals sign, and markup glued to a word", () => {
+  const ranked = P5_MEDIUM_RUN1.split("\n").at(-1) ?? "";
+  // In a per-row table H 504 is a value and its RPN, never a count; the whole-token guards stand outside the asterisks.
+  const message = `${ranked}\n\n| ch-1 | H 504 |\n| ch-2 | M 112 |\n\nNeither 7 **H**x nor x**M: 4 is a count.`;
+  assert.deepEqual(countsFor(message, [...chains(7, "H"), ...chains(4, "M")]), {
     checked: false,
     reason: "no count stated",
-    document: { H: { before: 7, after: 2 }, M: { before: 4, after: 1 } },
+    document: { H: { before: 7, after: 0 }, M: { before: 4, after: 0 } },
     stated: [],
   });
+});
+
+test("message_counts reads a count once when two value-and-count statements abut: the count after H= is not also read before M", () => {
+  const rows = [...chains(8, "H"), ...chains(4, "M")];
+  for (const message of ["H=8 M=4.", "H: 8 M: 4.", "**H**: 8 **M**: 4."]) {
+    assert.deepEqual(countsFor(message, rows).stated, [pair(8, "H", true), pair(4, "M", true)], message);
+  }
 });
 
 test("message_counts escapes a value's regular-expression characters, matches it as a whole token, and reads a value followed by a colon or an equals sign and the count", () => {

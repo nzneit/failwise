@@ -166,7 +166,7 @@ them with Claude Code's Workflow tool,
 results object and writes no file. Write it to `build/evals/results.json` for `eval-report.ts` to
 read, as `JSON.stringify(result, null, 2)` of the `result` key of the Workflow task's output.
 
-From the prose stage-2 round on, `node tools/run-round.ts <stage>` (or `bun tools/run-round.ts
+From the prose round 1c on, `node tools/run-round.ts <stage>` (or `bun tools/run-round.ts
 <stage>`) runs the sixteen runs of a round on DeepSeek Flash into `build/evals/prose-<stage>/`, or
 into the folder `--publish-root <dir>` names. It reads the gateway key from the login keyring, the
 entry of service `goose` whose secret is JSON with the field `DEEPSEEK_API_KEY`, and smoke-tests the
