@@ -53,8 +53,10 @@
 //    process group the launch started gets SIGTERM. The launcher then waits
 //    until every group is gone, the claude sessions under a runner included,
 //    for up to 30 seconds, and sends SIGKILL to the groups that remain; only
-//    then does it write round.json and exit 130. The finished cells' folders
-//    stay in place, and the smoke call's config folder is removed.
+//    then does it write round.json and exit 130, even when its own stdout or
+//    stderr died with the signal: a line it cannot write is dropped. The
+//    finished cells' folders stay in place, and the smoke call's config folder
+//    is removed.
 //
 // The publish root is build/evals/prose-<stage>/ unless --publish-root names
 // another folder. FMEA_RUN_EVAL names another one-cell runner, FMEA_SECRET_TOOL
@@ -108,13 +110,32 @@ function runDir(root: string, c: Cell): string {
   return join(root, `p${c.prompt}`, c.capability, `run${c.run}`);
 }
 
+/**
+ * Writes a line, dropping it when the stream has died: a terminal window that
+ * closed, or a pipe whose reader died with the signal, as `| tee log` does on
+ * Ctrl-C. Writes on such a stream fail, and the launcher must still wait for
+ * the groups and write round.json (step 6).
+ */
+function write(stream: NodeJS.WriteStream, line: string): void {
+  try {
+    stream.write(`${line}\n`);
+  } catch {
+    // the stream has died; the line is dropped
+  }
+}
+
+/** A dead stdout or stderr reports its failed writes as an 'error' event, which would end the launcher unheard; this listener drops them. */
+function ignoreDeadOutput(): void {
+  for (const stream of [process.stdout, process.stderr]) stream.on("error", () => undefined);
+}
+
 function say(line: string): void {
-  process.stdout.write(`${line}\n`);
+  write(process.stdout, line);
 }
 
 /** Prints a refusal on stderr and returns the exit status 1. */
 function refuse(line: string): 1 {
-  process.stderr.write(`${line}\n`);
+  write(process.stderr, line);
   return 1;
 }
 
@@ -208,7 +229,7 @@ function roundFile(opts: Options): string {
 /** Why the launch cannot go ahead before the keyring is read, or null: a run folder already holding a transcript, or a --cells launch into an unreadable round.json. */
 function guardProblem(opts: Options): string | null {
   const taken = opts.cells.map((c) => runDir(opts.publishRoot, c)).find((d) => existsSync(join(d, "transcript.json")));
-  if (taken !== undefined) return `error: ${taken} already holds a transcript; move the folder aside to re-run the cell`;
+  if (taken !== undefined) return `error: ${taken} already holds a transcript; move the folder out of ${opts.publishRoot} to re-run the cell`;
   if (opts.cellsGiven && readRoundRecord(roundFile(opts)) === "unreadable") {
     return `error: ${roundFile(opts)} is not a round record; move it aside before re-running cells into this round`;
   }
@@ -327,6 +348,7 @@ function signalGroup(group: number, signal: NodeJS.Signals | 0): boolean {
     process.kill(-group, signal);
     return true;
   } catch {
+    // ESRCH: the group has no member left. EPERM, which a group of this launch's own children does not raise, counts as gone too.
     return false;
   }
 }
@@ -606,7 +628,7 @@ function report(round: Round, elapsed: number, runs: CellRun[]): number {
   say("");
   say(`cells to re-run: ${failing.map((f) => `${cellId(f.r.cell)} (${problemText(f.problems)})`).join(", ")}`);
   const published = failing.map((f) => runDir(opts.publishRoot, f.r.cell)).filter((d) => existsSync(d));
-  if (published.length > 0) say(`move each published folder aside first, keeping it for the record: ${published.join(" ")}`);
+  if (published.length > 0) say(`move each published folder out of ${opts.publishRoot} first, keeping it for the record: ${published.join(" ")}`);
   const root = opts.publishRootGiven === null ? "" : ` --publish-root ${opts.publishRootGiven}`;
   say(`re-run them with: node tools/run-round.ts ${opts.stage} --no-canary --cells ${failing.map((f) => cellId(f.r.cell)).join(",")}${root}`);
   return 1;
@@ -620,7 +642,7 @@ function canaryVerdict(round: Round, canary: CellRun): number | null {
   say("");
   say(`round stopped: the canary ${cellId(canary.cell)} ended with ${problemText(problems)}; no other cell was started; log ${canary.log}`);
   const dir = runDir(round.opts.publishRoot, canary.cell);
-  if (existsSync(dir)) say(`move ${dir} aside before launching the round again`);
+  if (existsSync(dir)) say(`move ${dir} out of ${round.opts.publishRoot} before launching the round again`);
   return 1;
 }
 
@@ -658,6 +680,7 @@ async function runRound(opts: Options, pre: Preflight): Promise<number> {
 }
 
 async function main(argv: string[]): Promise<number> {
+  ignoreDeadOutput();
   const opts = parseArgs(argv);
   const problem = typeof opts === "string" ? opts : guardProblem(opts);
   if (problem !== null || typeof opts === "string") return refuse(problem ?? USAGE);

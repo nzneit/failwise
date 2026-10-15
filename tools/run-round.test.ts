@@ -213,13 +213,17 @@ function recordedPids(s: Sandbox, prefix: string): Map<string, number> {
   }));
 }
 
-/** The launcher started without waiting: the child, its exit status when it closes, and its stdout so far. */
-function launchAsync(s: Sandbox, args: string[]): { kill: (signal: NodeJS.Signals) => void; closed: Promise<number | null>; stdout: () => string } {
+/** The launcher started without waiting: a signal to it, its exit status when it closes, its stdout so far, and a way to close the reading end of its stdout and stderr. */
+function launchAsync(s: Sandbox, args: string[]): { kill: (signal: NodeJS.Signals) => void; closed: Promise<number | null>; stdout: () => string; closeOutput: () => void } {
   const child = spawn(process.execPath, [LAUNCHER, "9z", "--publish-root", s.root, ...args], { cwd: ROOT, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
   const closed = new Promise<number | null>((done) => child.on("close", (code) => done(code)));
-  return { kill: (signal) => child.kill(signal), closed, stdout: () => stdout };
+  const closeOutput = (): void => {
+    child.stdout.destroy();
+    child.stderr.destroy();
+  };
+  return { kill: (signal) => child.kill(signal), closed, stdout: () => stdout, closeOutput };
 }
 
 const sandboxes: Sandbox[] = [];
@@ -337,7 +341,7 @@ test("a cell that refuses, leaves an artefact missing, fails validation or is cu
   assert.ok(r.stdout.includes(`\np5 high run2: no summary line (exit 1); log ${join(s.root, "logs", "p5-high-run2.log")}\n`), r.stdout);
   assert.match(r.stdout, /^round finished: \d+m \d\ds, concurrency 4, canary p1:high:1; runs under /m);
   assert.match(r.stdout, /^cells to re-run: p5:high:2 \(exit 1, no summary line\), p6:high:2 \(validate_exit=2\), p6:medium:1 \(analysis=missing\), p7:high:1 \(final=cut\)$/m);
-  assert.ok(r.stdout.includes(`\nmove each published folder aside first, keeping it for the record: ${["p6/high/run2", "p6/medium/run1", "p7/high/run1"].map((d) => join(s.root, d)).join(" ")}\n`), r.stdout);
+  assert.ok(r.stdout.includes(`\nmove each published folder out of ${s.root} first, keeping it for the record: ${["p6/high/run2", "p6/medium/run1", "p7/high/run1"].map((d) => join(s.root, d)).join(" ")}\n`), r.stdout);
   assert.ok(r.stdout.includes(`\nre-run them with: node tools/run-round.ts 9z --no-canary --cells p5:high:2,p6:high:2,p6:medium:1,p7:high:1 --publish-root ${s.root}\n`), r.stdout);
   const failed = readRound(s).cells.find((c) => c.cell === "p5:high:2");
   assert.ok(failed !== undefined && failed.exit === 1 && failed.summary === null, JSON.stringify(failed));
@@ -420,7 +424,7 @@ test("a cell whose run folder already holds a transcript is refused before the k
   writeFileSync(join(s.root, "p6", "high", "run1", "transcript.json"), "{}\n");
   const r = launch(s, []);
   assert.equal(r.status, 1, r.stderr);
-  assert.ok(r.stderr.includes(`error: ${join(s.root, "p6", "high", "run1")} already holds a transcript; move the folder aside to re-run the cell\n`), r.stderr);
+  assert.ok(r.stderr.includes(`error: ${join(s.root, "p6", "high", "run1")} already holds a transcript; move the folder out of ${s.root} to re-run the cell\n`), r.stderr);
   assert.ok(!existsSync(join(s.dir, "keyring-calls.txt")));
   assert.deepEqual(events(s), []);
 });
@@ -567,6 +571,25 @@ test("on a signal the launcher waits for every member of each cell's process gro
   assert.match(round.stdout(), /^round interrupted: 3 running cells were sent SIGTERM; /m);
 });
 
+test("a launcher whose stdout and stderr died with the signal still waits out the grace period, kills what remains and writes round.json", { skip: SKIP }, async () => {
+  // A terminal window that closes, or `| tee log` on Ctrl-C: the reader of the launcher's output is gone
+  // when the signal arrives, so every later line it prints fails with EPIPE or EIO.
+  const s = tracked({ FMEA_STUB_STUBBORN: "1", FMEA_STUB_SLOW: "0.05", FMEA_ROUND_GRACE_MS: "1500" });
+  const round = launchAsync(s, ["--parallel", "3"]);
+  assert.ok(await until(() => recordedPids(s, "stubborn-").size === 3), "the fan-out never had three cells waiting");
+  round.closeOutput();
+  round.kill("SIGHUP");
+  const began = Date.now();
+  assert.equal(await round.closed, 130);
+  const waited = Date.now() - began;
+  assert.ok(waited >= 1400 && waited < 10_000, `the launcher exited ${waited} ms after the signal`);
+  for (const [cell, pid] of recordedPids(s, "stubborn-")) {
+    assert.ok(await gone(pid), `${cell}'s member that ignores SIGTERM, ${pid}, is still alive: no SIGKILL reached it`);
+  }
+  assert.ok(statSync(join(s.root, "round.json")).mtimeMs >= began + 1400, "round.json was written before the groups were gone");
+  assert.deepEqual(readRound(s).cells.map((c) => c.exit), [0, null, null, null]);
+});
+
 test("a signal during the smoke call stops it, removes its config folder and exits 130 with no cell started", { skip: SKIP }, async () => {
   const s = tracked({ FMEA_STUB_SMOKE_HANG: "1" });
   const round = launchAsync(s, []);
@@ -586,7 +609,7 @@ test("a re-run appends to the cell's log after a dated separator line, keeps the
   const s = tracked({ FMEA_STUB_SLOW: "0.05" });
   const first = launch(s, ["--no-canary", "--cells", "p5:high:1"]);
   assert.equal(first.status, 0, first.stderr);
-  renameSync(join(s.root, "p5", "high", "run1"), join(s.root, "p5", "high", "run1.first"));
+  renameSync(join(s.root, "p5", "high", "run1"), join(s.dir, "p5-high-run1.first"));
   const second = launch({ ...s, env: { ...s.env, FMEA_STUB_FAIL: "p5:high:1" } }, ["--no-canary", "--cells", "p5:high:1"]);
   assert.equal(second.status, 1, second.stderr);
   assert.ok(second.stdout.includes(`\np5 high run1: no summary line (exit 1); log ${join(s.root, "logs", "p5-high-run1.log")}\n`), second.stdout);
