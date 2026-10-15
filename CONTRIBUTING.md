@@ -161,8 +161,9 @@ variable `FMEA_EVAL_MODELS`, as `high=<model>,medium=<model>`, names the model t
 capability for any provider, and defaults to the Anthropic table when unset. A full eval is
 sixteen runs, the four prompts at both capabilities twice each. After the sixteen runs, judge
 them with Claude Code's Workflow tool,
-`{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which writes
-`build/evals/results.json` for `eval-report.ts` to read.
+`{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which returns the
+results object and writes no file. Write it to `build/evals/results.json` for `eval-report.ts` to
+read, as `JSON.stringify(result, null, 2)` of the `result` key of the Workflow task's output.
 
 Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
 `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
@@ -188,8 +189,9 @@ the machine can still update the shared install, so each run records its CLI ver
 
 After the run, `tools/eval-context.ts` writes `context.json` into the run's folder: the CLI
 version, the window line, the compactions, the peak context, the isolation facts and the denied
-script calls. Both judging workflows read it before any judge: a run with no `context.json`, or
-with a compaction, is unverified and gets no judge. The context agent runs at the `medium` model
+script calls. Both judging workflows read it before any judge: a run with no `context.json`, with
+a compaction, with no top-level assistant line, or with a top-level assistant line that lacks its
+usage figures, is unverified and gets no judge. The context agent runs at the `medium` model
 capability, so `args.models`, when given, must name `medium` in both `tools/workflows/evals.js`
 and `tools/workflows/rejudge.js`. The report's Harness table shows each run's CLI version, and a
 line under the table names the versions when a round ran on more than one.

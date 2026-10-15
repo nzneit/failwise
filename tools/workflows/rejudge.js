@@ -41,8 +41,11 @@
 // round's results note. Before the judge, the context gate of evals.js (prose
 // design §5.3) runs on each run: one agent fetches its context.json and this
 // file reads it in code. A run whose context agent returned nothing, that has no
-// context.json, whose context.json cannot be read in code, or that compacted
-// (compactions above 0) is pushed onto `unverified` under the unit
+// context.json, whose context.json cannot be read in code, that compacted
+// (compactions above 0), whose transcript carries no top-level assistant line
+// (assistant_lines 0), or that has a top-level assistant line without its usage
+// figures (assistant_lines_without_usage not 0, a stream under which a compacted
+// run would read as uncompacted) is pushed onto `unverified` under the unit
 // `context p<prompt> <capability> run<n>`, and no judge is called. The caller
 // merges the returned scores into <evalsDir>/results.json mechanically: it
 // replaces this criterion's {id, score, evidence} entry in the scores[] of the
@@ -55,7 +58,8 @@
 // flag every critic entry and judge note that quotes a score the tables no
 // longer carry. tools/eval-report.ts then recomputes each run's total and pass
 // from the scores. This script writes no file, because the Persist agent of the
-// main judging workflow was caught abridging an evidence string on 2026-09-15.
+// main judging workflow was caught abridging an evidence string on 2026-09-15,
+// and since 2026-10-14 the main workflow no longer persists either.
 //
 // Model capabilities (spec D10): every judge runs at the high capability and
 // every context agent at medium, both filled from the table below, which
@@ -320,7 +324,7 @@ function contextPrompt(item) {
 
 // null when the context agent returned nothing; present false when the run has
 // no context.json, or, with the problem named, when its text is not JSON or a
-// field the gate reads is missing or of the wrong type; otherwise the three
+// field the gate reads is missing or of the wrong type; otherwise the five
 // fields the gate reads.
 function parseContext(reply) {
   if (!reply) return null
@@ -331,17 +335,18 @@ function parseContext(reply) {
   } catch {
     return { present: false, problem: 'text is not JSON' }
   }
-  for (const field of ['compactions', 'peak_context_tokens']) {
+  for (const field of ['compactions', 'peak_context_tokens', 'assistant_lines', 'assistant_lines_without_usage']) {
     if (!Number.isInteger(file?.[field])) return { present: false, problem: `${field} missing or not an integer` }
   }
   if (typeof file.window_line !== 'string') return { present: false, problem: 'window_line missing or not a string' }
-  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line }
+  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line, assistant_lines: file.assistant_lines, assistant_lines_without_usage: file.assistant_lines_without_usage }
 }
 
 // A run is gated, unverified with no judge call, unless its context.json was
-// read and shows no compaction.
+// read and shows no compaction over at least one top-level assistant line, every
+// one of them with its usage figures.
 function gated(ctx) {
-  return !ctx || ctx.present !== true || ctx.compactions !== 0
+  return !ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0
 }
 
 // Why a gated run is unverified, one sentence per way the gate closes.
@@ -349,6 +354,8 @@ function contextDetail(ctx) {
   if (!ctx) return 'the context agent returned nothing on three attempts; context.json was not read, so the run is unverified and no judge was called'
   if (ctx.problem) return `the run's context.json could not be read in code (${ctx.problem}); it is unverified and no judge was called`
   if (ctx.present !== true) return 'the run has no context.json; it is unverified and no judge was called'
+  if (ctx.assistant_lines === 0) return `the run's transcript carries no top-level assistant line; it is unverified (prose design §5.3) and no judge was called`
+  if (ctx.assistant_lines_without_usage !== 0) return `the run has ${ctx.assistant_lines_without_usage} top-level assistant line(s) without usage figures, so its compaction count and peak cannot be trusted; it is unverified (prose design §5.3) and no judge was called`
   return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
 }
 

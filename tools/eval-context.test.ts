@@ -55,15 +55,24 @@ test("compactions counts compact_boundary system lines: 0 without, 2 with", () =
   assert.equal(extractContext([init, turn, compactLine(), turn, compactLine(), turn].join("\n"), OPTIONS).compactions, 2);
 });
 
-test("peak_context_tokens is the largest input plus cache_read plus cache_creation over top-level assistant lines, and a subagent line never counts", () => {
+/** A top-level assistant line whose message carries the given usage, or none when it is undefined. */
+function assistantLineWithUsage(usage: unknown): string {
+  const message = { role: "assistant", content: [], ...(usage === undefined ? {} : { usage }) };
+  return JSON.stringify({ type: "assistant", message, parent_tool_use_id: null });
+}
+
+test("peak_context_tokens is the largest input plus cache_read plus cache_creation over top-level assistant lines, a subagent line never counts, and a top-level line without the three usage figures is counted apart", () => {
   const text = [
     assistantLine(SMALL),
     assistantLine({ input: 1000, cacheRead: 200000, cacheCreation: 37429 }),
     assistantLine({ input: 900000, cacheRead: 0, cacheCreation: 0 }, "toolu_1"),
+    assistantLineWithUsage(undefined),
+    assistantLineWithUsage({ input_tokens: 5000, cache_read_input_tokens: 0, output_tokens: 0 }),
   ].join("\n");
   const facts = extractContext(text, OPTIONS);
   assert.equal(facts.peak_context_tokens, 238429);
-  assert.equal(facts.assistant_lines, 2);
+  assert.equal(facts.assistant_lines, 4);
+  assert.equal(facts.assistant_lines_without_usage, 2);
 });
 
 test("init records the CLI version, every plugin with its source, the namespaced and the unnamespaced skills, and whether memory_paths.auto lies under the config dir; a stream with no init line is present false", () => {
@@ -193,6 +202,7 @@ test("contextFor assembles the file from the run directory: settings from the en
       compactions: 0,
       peak_context_tokens: 0,
       assistant_lines: 0,
+      assistant_lines_without_usage: 0,
       init: {
         present: true,
         plugins,
@@ -286,6 +296,7 @@ test("the CLI writes context.json into the run directory and prints nothing; it 
     assert.equal(written.compactions, 0);
     assert.equal(written.lints.length, 1);
     assert.equal(written.assistant_lines, 1);
+    assert.equal(written.assistant_lines_without_usage, 0);
 
     const missing = runCli([empty, "--config-dir", "/tmp/cfg"]);
     assert.equal(missing.status, 3);

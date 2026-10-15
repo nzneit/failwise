@@ -7,7 +7,13 @@
 // 2026-10-13. So the record keeps the two window settings the run was given, the
 // probe's window line verbatim, the count of compact_boundary lines, and the peak
 // context over the top-level assistant lines (input plus cache read plus cache
-// creation; a subagent's lines carry its own context and are left out). The init
+// creation; a subagent's lines carry its own context and are left out). Beside
+// the count of top-level assistant lines it keeps assistant_lines_without_usage,
+// those of them whose message.usage is not an object or lacks one of the three
+// figures as a number: the compaction count and the peak are inferred from what
+// the stream carries, so a stream whose lines lost their usage would read as
+// uncompacted with a low peak, and the judging's context gate reads this count
+// and closes on any line without usage, as it does on no assistant line. The init
 // line's isolation facts follow (the CLI version, every plugin with its source,
 // the namespaced and the unnamespaced skills, and whether the auto memory lies
 // under the run's CLAUDE_CONFIG_DIR, in resolved form or under its real path),
@@ -51,6 +57,7 @@ export interface EvalContext {
   compactions: number;
   peak_context_tokens: number;
   assistant_lines: number;
+  assistant_lines_without_usage: number;
   init: {
     present: boolean;
     plugins: { name: string; source: string }[];
@@ -70,6 +77,7 @@ export interface TranscriptFacts {
   compactions: number;
   peak_context_tokens: number;
   assistant_lines: number;
+  assistant_lines_without_usage: number;
   init: EvalContext["init"];
   leak_grep: EvalContext["leak_grep"];
   lint_fired: Record<string, number>;
@@ -93,17 +101,26 @@ interface Scan {
   compactions: number;
   peak: number;
   assistantLines: number;
+  assistantLinesWithoutUsage: number;
   leaks: EvalContext["leak_grep"];
   /** The first result text of each wanted tool_use id. */
   results: Map<string, string>;
 }
 
+/** The three usage figures whose sum is a line's context. */
+const USAGE_FIELDS = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"];
+
+/** The sum of the three usage figures; a figure that is missing or not a number counts 0. */
 function contextTokens(usage: unknown): number {
-  const count = (key: string) => {
+  return USAGE_FIELDS.reduce((sum, key) => {
     const n = fieldOf(usage, key);
-    return typeof n === "number" ? n : 0;
-  };
-  return count("input_tokens") + count("cache_read_input_tokens") + count("cache_creation_input_tokens");
+    return sum + (typeof n === "number" ? n : 0);
+  }, 0);
+}
+
+/** Whether a usage is an object carrying all three figures as numbers. */
+function hasUsage(usage: unknown): boolean {
+  return typeof usage === "object" && usage !== null && USAGE_FIELDS.every((key) => typeof fieldOf(usage, key) === "number");
 }
 
 function recordSystem(scan: Scan, m: Message): void {
@@ -111,11 +128,13 @@ function recordSystem(scan: Scan, m: Message): void {
   if (m.subtype === "compact_boundary") scan.compactions++;
 }
 
-/** A top-level assistant line counts toward the peak; a subagent's line names the tool call it serves. */
+/** A top-level assistant line counts toward the peak, and apart when it lacks its usage; a subagent's line names the tool call it serves. */
 function recordAssistant(scan: Scan, m: Message): void {
   if (m.parent_tool_use_id !== null && m.parent_tool_use_id !== undefined) return;
+  const usage = m.message?.usage;
   scan.assistantLines++;
-  scan.peak = Math.max(scan.peak, contextTokens(m.message?.usage));
+  if (!hasUsage(usage)) scan.assistantLinesWithoutUsage++;
+  scan.peak = Math.max(scan.peak, contextTokens(usage));
 }
 
 function recordResults(scan: Scan, m: Message, wanted: Set<string>): void {
@@ -183,7 +202,7 @@ function firedCount(results: Map<string, string>, id: string): number {
 
 /** The facts the transcript alone gives, in one pass. Throws on a line that is not JSON. */
 export function extractContext(text: string, options: { configDir: string; lintIds: string[]; validateCallIds: string[] }): TranscriptFacts {
-  const scan: Scan = { init: null, compactions: 0, peak: 0, assistantLines: 0, leaks: { "CLAUDE.md": 0, "~/.claude": 0 }, results: new Map() };
+  const scan: Scan = { init: null, compactions: 0, peak: 0, assistantLines: 0, assistantLinesWithoutUsage: 0, leaks: { "CLAUDE.md": 0, "~/.claude": 0 }, results: new Map() };
   const wanted = new Set(options.validateCallIds);
   text.split("\n").forEach((line, i) => scanLine(scan, line, i + 1, wanted));
   return {
@@ -191,6 +210,7 @@ export function extractContext(text: string, options: { configDir: string; lintI
     compactions: scan.compactions,
     peak_context_tokens: scan.peak,
     assistant_lines: scan.assistantLines,
+    assistant_lines_without_usage: scan.assistantLinesWithoutUsage,
     init: initOf(scan.init, options.configDir),
     leak_grep: scan.leaks,
     lint_fired: Object.fromEntries(options.lintIds.map((id) => [id, firedCount(scan.results, id)])),
@@ -289,6 +309,7 @@ export function contextFor(runDir: string, options: { configDir: string; lintIds
     compactions: facts.compactions,
     peak_context_tokens: facts.peak_context_tokens,
     assistant_lines: facts.assistant_lines,
+    assistant_lines_without_usage: facts.assistant_lines_without_usage,
     init: facts.init,
     leak_grep: facts.leak_grep,
     invocations: calls === null ? "missing" : "present",

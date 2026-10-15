@@ -3,8 +3,11 @@
 // Judges the unattended eval runs under the evals directory (by default the 16
 // under build/evals/: 4 prompts × 2 model capabilities × 2 runs, produced by
 // tools/run-eval.sh), checks run-to-run stability per (prompt, model
-// capability), runs one completeness critic, and writes the result to
-// results.json in that directory. Run with the Workflow tool:
+// capability), and runs one completeness critic. The caller persists the
+// returned object (it writes <evalsDir>/results.json as
+// JSON.stringify(result, null, 2) from the Workflow task's output, which carries
+// the returned object under `result`), because a Sonnet agent handed 125 KB of
+// JSON inline wrote 9,498 bytes of it on 2026-10-14. Run with the Workflow tool:
 // {scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>",
 // prompts: [1, 6, 7], capabilities: ["high"], evalsDir: "build/evals/element-kinds"}}.
 // args.root is required because a workflow script has no filesystem access and
@@ -13,7 +16,7 @@
 // [1, 5, 6, 7], default all four), args.capabilities (a non-empty subset of the
 // model table's keys, default ["high", "medium"]) and args.evalsDir (a path
 // relative to args.root, default "build/evals") are optional and choose the
-// roster this run judges and the directory it reads and writes; a value outside
+// roster this run judges and the directory it reads; a value outside
 // those refuses before any agent is called. Returns
 // {models, rubric, runs, stability, critic, unverified}: models is the
 // effective model table, rubric the rubric version the judges scored against.
@@ -38,17 +41,22 @@
 // per run fetches the run's context.json, written beside invocations.json by
 // tools/eval-context.ts, and returns its text, which this file reads in code. A
 // run with no context.json, with one whose text is not JSON or lacks an integer
-// compactions or peak_context_tokens or a string window_line, or with
-// compactions above 0 is recorded unverified with no scores and no judge call,
-// the rule 2fea11a set for a run with no report; so is a run whose context agent
-// returned nothing. Each run's entry carries the window line, the compactions and
-// the peak context as `context`, null when context.json was not read.
+// compactions, peak_context_tokens, assistant_lines or
+// assistant_lines_without_usage or a string window_line, with compactions above
+// 0, with no top-level assistant line (assistant_lines 0), or with a top-level
+// assistant line that lacks its usage figures (assistant_lines_without_usage not
+// 0: the compactions and the peak are inferred from what the stream carries, so
+// a stream that lost its usage would read as uncompacted) is recorded unverified
+// with no scores and no judge call, the rule 2fea11a set for a run with no
+// report; so is a run whose context agent returned nothing. Each run's entry
+// carries the window line, the compactions and the peak context as `context`,
+// null when context.json was not read.
 //
 // Model capabilities (spec D10, amended 2026-09-10 by the user's ruling, and
 // again 2026-09-12 by the user's ruling at the eval re-run): every agent names
-// a model capability, never a model — judging and the critic at high, the three
-// mechanical stages (reading a run's context.json, running a command, writing a
-// file) at medium — and the model that fills each capability comes from the
+// a model capability, never a model — judging and the critic at high, the two
+// mechanical stages (reading a run's context.json, running a command) at
+// medium — and the model that fills each capability comes from the
 // table below, so the same judging runs on any provider's lineup. results.json
 // carries the effective table as its `models` field, and every run and pair
 // below is keyed on the capability alone.
@@ -61,7 +69,6 @@ export const meta = {
     { title: 'Judge', detail: 'one judge per run directory, scoring by evals/rubric.md' },
     { title: 'Stability', detail: 'one agent per (prompt, model capability) running tools/eval-stability.ts' },
     { title: 'Critic', detail: 'one completeness critic over every score and stability result' },
-    { title: 'Persist', detail: 'one Sonnet agent writes the results object to results.json in the evals directory' },
   ],
 }
 
@@ -76,8 +83,8 @@ const DEFAULT_EVALS_DIR = 'build/evals'
 // capability it means to fill and no default survives unexamined beside an
 // override. A key that is not a model capability, an empty value, a table that
 // names no model for a capability this run judges at, or a table that names no
-// model for the medium capability, which the context, stability and persist
-// agents run at whatever capabilities the run judges, refuses before any agent
+// model for the medium capability, which the context and stability agents run
+// at whatever capabilities the run judges, refuses before any agent
 // is called; the refusal is returned, not logged away.
 const DEFAULT_MODELS_BY_CAPABILITY = { high: 'opus', medium: 'sonnet', low: 'haiku' }
 
@@ -131,7 +138,7 @@ if (argsModels !== null) {
     for (const capability of MODEL_CAPABILITIES) {
       if (!(capability in argsModels)) problems.push(`the table names no model for the ${capability} model capability this run judges at`)
     }
-    if (!('medium' in argsModels)) problems.push('the table names no model for the medium model capability the context, stability and persist agents run at')
+    if (!('medium' in argsModels)) problems.push('the table names no model for the medium model capability the context and stability agents run at')
   }
   if (problems.length > 0) {
     const refused = `args.models refuses the run: ${problems.join('; ')}`
@@ -243,16 +250,6 @@ const STABILITY_SCHEMA = {
   required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass', 'typing', 'flows', 'verified'],
 }
 
-const PERSIST_SCHEMA = {
-  type: 'object',
-  properties: {
-    written: { type: 'boolean' },
-    bytes: { type: 'integer' },
-    parses: { type: 'boolean' },
-  },
-  required: ['written', 'bytes', 'parses'],
-}
-
 const CRITIC_SCHEMA = {
   type: 'object',
   properties: {
@@ -281,8 +278,7 @@ const unverified = []
 // and skips the stage that would have recorded it as unverified, and the null
 // then crashes the summary below, losing every result the run had earned. So
 // every failure mode is funnelled into the same null return that the callers
-// already handle, for the pipeline stages and for the Critic and Persist calls
-// alike.
+// already handle, for the pipeline stages and for the Critic call alike.
 async function tryAgent(prompt, options) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -324,8 +320,8 @@ function contextPrompt(item) {
 
 // null when the context agent returned nothing; present false when the run has
 // no context.json, or, with the problem named, when its text is not JSON or a
-// field the gate reads is missing or of the wrong type; otherwise the three
-// fields the gate reads and results.json carries.
+// field the gate reads is missing or of the wrong type; otherwise the five
+// fields the gate reads, the first three of which results.json carries.
 function parseContext(reply) {
   if (!reply) return null
   if (reply.exists !== true) return { present: false }
@@ -335,18 +331,19 @@ function parseContext(reply) {
   } catch {
     return { present: false, problem: 'text is not JSON' }
   }
-  for (const field of ['compactions', 'peak_context_tokens']) {
+  for (const field of ['compactions', 'peak_context_tokens', 'assistant_lines', 'assistant_lines_without_usage']) {
     if (!Number.isInteger(file?.[field])) return { present: false, problem: `${field} missing or not an integer` }
   }
   if (typeof file.window_line !== 'string') return { present: false, problem: 'window_line missing or not a string' }
-  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line }
+  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line, assistant_lines: file.assistant_lines, assistant_lines_without_usage: file.assistant_lines_without_usage }
 }
 
 // A run is gated, unverified with no judge call, unless its context.json was
-// read and shows no compaction. The predicate is spelled the same in
+// read and shows no compaction over at least one top-level assistant line, every
+// one of them with its usage figures. The predicate is spelled the same in
 // rejudge.js, and the sync test in tools/eval-report.test.ts pins both.
 function gated(ctx) {
-  return !ctx || ctx.present !== true || ctx.compactions !== 0
+  return !ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0
 }
 
 // Why a gated run is unverified, one sentence per way the gate closes.
@@ -354,6 +351,8 @@ function contextDetail(ctx) {
   if (!ctx) return 'the context agent returned nothing on three attempts; context.json was not read, so the run is unverified and no judge was called'
   if (ctx.problem) return `the run's context.json could not be read in code (${ctx.problem}); it is unverified and no judge was called`
   if (ctx.present !== true) return 'the run has no context.json; it is unverified and no judge was called'
+  if (ctx.assistant_lines === 0) return `the run's transcript carries no top-level assistant line; it is unverified (prose design §5.3) and no judge was called`
+  if (ctx.assistant_lines_without_usage !== 0) return `the run has ${ctx.assistant_lines_without_usage} top-level assistant line(s) without usage figures, so its compaction count and peak cannot be trusted; it is unverified (prose design §5.3) and no judge was called`
   return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
 }
 
@@ -557,35 +556,5 @@ const results = { models: MODELS_BY_CAPABILITY, rubric: RUBRIC, runs, stability,
 const failing = runs.filter((r) => !r.pass && !r.unverified).map((r) => `p${r.prompt} ${r.model_capability} run${r.run}`)
 const unstable = stability.filter((s) => !s.pass && !s.unverified).map((s) => `p${s.prompt} ${s.model_capability}`)
 log(`runs failing the per-run rule: ${failing.length ? failing.join(', ') : 'none'}; unstable pairs: ${unstable.length ? unstable.join(', ') : 'none'}; blocking candidates: ${critic.blocking_candidates.length}; unverified units: ${unverified.length ? unverified.map((u) => u.unit).join(', ') : 'none'}`)
-
-// The results object is several KB of JSON. Rather than have the executor
-// retype it, one Sonnet agent writes it to disk; the task's next step checks
-// the file and falls back to writing it by hand if this agent failed.
-phase('Persist')
-const resultsJson = JSON.stringify(results, null, 2)
-const persisted = await tryAgent(
-  `Write a file. Everything between the two marker lines below, excluding the marker lines themselves, is the exact content of ${ROOT}/${EVALS_DIR}/results.json.
-
-Create ${ROOT}/${EVALS_DIR}/ if it does not exist, then write that text to ${ROOT}/${EVALS_DIR}/results.json unchanged: byte for byte, no reformatting, no re-indenting, no summarising, no truncation, no added commentary. Then read the file back, count its bytes, and check that JSON.parse succeeds on it.
-
-Return: written (true only if the file now holds the whole text), bytes (the file's size in bytes as you read it back), parses (whether JSON.parse succeeded).
-
------ BEGIN results.json -----
-${resultsJson}
------ END results.json -----`,
-  { label: 'persist results.json', phase: 'Persist', schema: PERSIST_SCHEMA, model: MODELS_BY_CAPABILITY.medium },
-)
-log(`${EVALS_DIR}/results.json: written=${persisted ? persisted.written : false} bytes=${persisted ? persisted.bytes : 0} parses=${persisted ? persisted.parses : false} (expected ${resultsJson.length} characters)`)
-
-// A Persist agent that never returned, or that did not confirm a whole file, is
-// not a written deliverable (plan reference §C: a unit that did not run is never
-// a pass). `results.unverified` is this same array, so the entry reaches the
-// returned object, which is what the task reports and Task 33 harvests; the
-// on-disk copy was serialised before this outcome was known and cannot carry the
-// entry, which is exactly why the next step re-checks the file itself.
-if (!persisted || persisted.written !== true) {
-  unverified.push({ unit: 'persist results.json', detail: `the persist agent returned nothing on three attempts; ${EVALS_DIR}/results.json is missing or half written` })
-  log('the persist agent did not confirm a written results.json; recorded as unverified')
-}
 
 return results
