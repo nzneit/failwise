@@ -255,6 +255,49 @@ function edgeReliabilityLints(doc: FmeaDocument, index: number, edge: Dependency
     `Leave ${field} out and record that assumption; copy the inputs' words instead only where they say there is none or none is published.`));
 }
 
+// The c11 lint's default rationale, a conversion's declared stand-in for an empty Justification
+// cell, and the number word of each count from one to ten.
+const DEFAULT_RATIONALE = /^converted from .+; no rationale recorded$/;
+const NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+interface DefaultRow { id: string; name: string | undefined }
+
+// Each chain with at least one rating that carries the default, with the name of the element its
+// function belongs to, since a chain has no name of its own; undefined when either does not resolve.
+function defaultRows(doc: FmeaDocument): DefaultRow[] {
+  const index = indexDocument(doc);
+  return doc.chains.flatMap((chain, i) => {
+    if (!FACTORS.some((f) => DEFAULT_RATIONALE.test(chain.ratings[f].rationale))) return [];
+    const at = chainElement(doc, index, i);
+    return [{ id: chain.id, name: at === undefined ? undefined : doc.elements[at].name }];
+  });
+}
+
+// Every clause of every meta.history entry, the change text split on `.` and `;`.
+function historyClauses(doc: FmeaDocument): string[] {
+  return doc.meta.history.flatMap((entry) => entry.change.split(/[.;]/));
+}
+
+// A clause records the substitution when it names rationale together with r as a standalone
+// integer, adjacent to no letter, digit, `-` or `_`, so neither a date nor `ch-1` counts; with r's
+// number word; or with every default row's id or element name, each a whole token.
+function recordsSubstitution(clause: string, r: number, rows: DefaultRow[]): boolean {
+  if (!/rationale/i.test(clause)) return false;
+  if (new RegExp(`(?<![\\w-])${r}(?![\\w-])`).test(clause)) return true;
+  if (r <= 10 && new RegExp(`\\b${NUMBER_WORDS[r - 1]}\\b`, "i").test(clause)) return true;
+  return rows.every((row) => wholeToken(clause, row.id) || (row.name !== undefined && wholeToken(clause, row.name)));
+}
+
+// One finding at meta.history when r rows carry the default and no clause records it.
+function substitutionLint(doc: FmeaDocument): Lint[] {
+  const rows = defaultRows(doc);
+  const r = rows.length;
+  if (r === 0 || historyClauses(doc).some((clause) => recordsSubstitution(clause, r, rows))) return [];
+  return [lint("conversion-substitution-unrecorded", "warning", ptr("meta", "history"),
+    `${r} row(s) carry the default rationale, and no meta.history clause names rationale with that count or with those rows' chain ids or element names. ` +
+    "Keep the default, and add that clause to meta.history, not to an assumption or a row's history.")];
+}
+
 function flowUsersLint(flow: Flow, index: number, chain: Chain): Lint[] {
   const review = flow.users?.review;
   if (review !== undefined && review.status !== "provisional") return [];
@@ -518,6 +561,14 @@ export const MACHINE_RULES: MachineRule[] = [
     severity: "warning",
     check(doc) {
       return doc.dependencies.flatMap((edge, i) => edgeReliabilityLints(doc, i, edge));
+    },
+  },
+  {
+    // A conversion's declared default is a substitution only when meta.history itself says so, by count or by row: the clause rubric c11 reads.
+    id: "conversion-substitution-unrecorded",
+    severity: "warning",
+    check(doc) {
+      return substitutionLint(doc);
     },
   },
 ];
