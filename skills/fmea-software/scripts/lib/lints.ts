@@ -1,4 +1,4 @@
-import type { Cause, Chain, CitedOccurrence, Codebase, DependencyEdge, Element, FmeaDocument, Flow, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
+import type { Cause, Chain, CitedOccurrence, Codebase, Control, DependencyEdge, Element, FmeaDocument, Flow, Lint, Rating, RatingEvidenceKind, Ratings, Factor, Severity } from "./types.ts";
 import { ptr } from "./pointer.ts";
 import type { PriorityTable } from "./table.ts";
 import { checkTableProperties } from "./table.ts";
@@ -208,17 +208,19 @@ function rationaleUnnamedLint(at: ChainFlows): Lint[] {
 }
 
 // The c1 lint's run-placeholder pattern and the words that name an edge's sla or limits, each a
-// whole word, case-insensitive.
-const PLACEHOLDER = /\b(?:not stated|none stated|not given|not provided|not documented|not recorded|not published|unknown|n\/a|tbd)\b/i;
+// whole word, case-insensitive; `none recorded` and `none published` joined the pattern at the
+// stage-1 gate (spec §11.5, ruling 5).
+const PLACEHOLDER = /\b(?:not stated|none stated|not given|not provided|not documented|not recorded|not published|none recorded|none published|unknown|n\/a|tbd)\b/i;
 const FIELD_WORD = /\b(?:limits?|ceiling|scaling|rate|sla|availability|latency)\b/i;
 const EDGE_FIELDS = ["sla", "limits"] as const;
 
-// A field is unstated when it is absent, empty, a text that names the inputs, or a run placeholder;
-// a stated absence in the inputs' own words, such as `no published request ceiling`, is stated.
+// A field is unstated when it is absent, empty, a text that names the inputs (the design or the
+// supplied inputs as well), or a run placeholder; a stated absence in the inputs' own words, such
+// as `no published request ceiling`, is stated.
 function unstatedField(value: string | undefined): boolean {
   if (value === undefined) return true;
   const text = value.trim();
-  return text === "" || /in the inputs/i.test(text) || PLACEHOLDER.test(text);
+  return text === "" || /in the (design |supplied )?inputs/i.test(text) || PLACEHOLDER.test(text);
 }
 
 // `token` in `text` as a whole token, case-insensitive: not after a word character, a dot or a
@@ -258,48 +260,106 @@ function edgeReliabilityLints(doc: FmeaDocument, index: number, edge: Dependency
 }
 
 // The c11 lint's default rationale, a conversion's declared stand-in for an empty Justification
-// cell, and the number word of each count from one to ten.
+// cell; the change text that marks a document as a conversion; and the number word of each count
+// from one to ten.
 const DEFAULT_RATIONALE = /^converted from .+; no rationale recorded$/;
+const CONVERSION = /converted from|column mapping|conversion/i;
 const NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
 interface DefaultRow { id: string; name: string | undefined }
 
-// Each chain with at least one rating that carries the default, with the name of the element its
-// function belongs to, since a chain has no name of its own; undefined when either does not resolve.
-function defaultRows(doc: FmeaDocument): DefaultRow[] {
+// A default a document carries: how many rows or controls carry it, and the chains they sit on.
+interface Substitution { count: number; rows: DefaultRow[] }
+
+// Each chain `keep` accepts, with the name of the element its function belongs to, since a chain
+// has no name of its own; undefined when either does not resolve.
+function chainRows(doc: FmeaDocument, keep: (chain: Chain) => boolean): DefaultRow[] {
   const index = indexDocument(doc);
   return doc.chains.flatMap((chain, i) => {
-    if (!FACTORS.some((f) => DEFAULT_RATIONALE.test(chain.ratings[f].rationale))) return [];
+    if (!keep(chain)) return [];
     const at = chainElement(doc, index, i);
     return [{ id: chain.id, name: at === undefined ? undefined : doc.elements[at].name }];
   });
 }
 
-// Every clause of every meta.history entry, the change text split on `.` and `;`.
-function historyClauses(doc: FmeaDocument): string[] {
-  return doc.meta.history.flatMap((entry) => entry.change.split(/[.;]/));
+// The default rationale, counted by row: each chain with at least one rating that carries it.
+function rationaleDefault(doc: FmeaDocument): Substitution | undefined {
+  const rows = chainRows(doc, (chain) => FACTORS.some((f) => DEFAULT_RATIONALE.test(chain.ratings[f].rationale)));
+  return rows.length === 0 ? undefined : { count: rows.length, rows };
 }
 
-// A clause records the substitution when it names rationale together with r as a standalone
-// integer, adjacent to no letter, digit, `-` or `_`, so neither a date nor `ch-1` counts; with r's
-// number word under the same neighbour rule; or with every default row's id or element name, each
-// a whole token.
-function recordsSubstitution(clause: string, r: number, rows: DefaultRow[]): boolean {
-  if (!/rationale/i.test(clause)) return false;
-  if (new RegExp(`(?<![\\w-])${r}(?![\\w-])`).test(clause)) return true;
+// A control default, counted by control: every control of every chain carries it and there is at
+// least one; its rows are the chains that have a control.
+function controlDefault(doc: FmeaDocument, carries: (control: Control) => boolean): Substitution | undefined {
+  const controls = doc.chains.flatMap((chain) => chain.controls);
+  if (controls.length === 0 || !controls.every(carries)) return undefined;
+  return { count: controls.length, rows: chainRows(doc, (chain) => chain.controls.length > 0) };
+}
+
+// An effect default, counted by row: every chain carries the same text at `level`, an empty and an
+// absent text counted as the same.
+function effectDefault(doc: FmeaDocument, level: "local" | "next_level"): Substitution | undefined {
+  if (new Set(doc.chains.map((chain) => chain.effects[level] ?? "")).size !== 1) return undefined;
+  return { count: doc.chains.length, rows: chainRows(doc, () => true) };
+}
+
+// The defaults the lint reads, in the order of its findings: the rationale in every document, the
+// other four only in a conversion of two chains or more. `names` is a clause that names the field,
+// case-insensitive: `rationale` anywhere; `status` as a whole word; `evidence.kind`, `evidence kind`
+// or `evidence_kind`; `local` as a whole word, which `effects.local` and `local effect` hold, or
+// `effects` together with `local`; `next_level`, `next level` or `next-level`, which
+// `effects.next_level` holds.
+interface DefaultField { field: string; unit: "row" | "control"; names: RegExp; conversionOnly: boolean; find: (doc: FmeaDocument) => Substitution | undefined }
+const DEFAULT_FIELDS: DefaultField[] = [
+  { field: "rationale", unit: "row", names: /rationale/i, conversionOnly: false, find: rationaleDefault },
+  { field: "status", unit: "control", names: /\bstatus\b/i, conversionOnly: true, find: (doc) => controlDefault(doc, (c) => c.status === "existing") },
+  { field: "evidence.kind", unit: "control", names: /evidence[._ ]kind/i, conversionOnly: true, find: (doc) => controlDefault(doc, (c) => c.evidence.kind === "none") },
+  { field: "effects.local", unit: "row", names: /\blocal\b|effects.*local|local.*effects/is, conversionOnly: true, find: (doc) => effectDefault(doc, "local") },
+  { field: "effects.next_level", unit: "row", names: /next[_ -]level/i, conversionOnly: true, find: (doc) => effectDefault(doc, "next_level") },
+];
+
+// A document is a conversion when a meta.history change says it was converted, names a column
+// mapping or a conversion; the lint reads the four other defaults of a conversion of two chains or
+// more, the rationale of any document.
+function readsConversionDefaults(doc: FmeaDocument): boolean {
+  return doc.chains.length >= 2 && doc.meta.history.some((entry) => CONVERSION.test(entry.change));
+}
+
+// Every clause of every meta.history entry: the change text split on `;` and on a full stop, a dot
+// that no word character follows, so a dotted name such as `controls[].evidence.kind` stays in one
+// clause, as wholeToken reads a dot that continues an id. Before the stage-1 gate every dot split.
+function historyClauses(doc: FmeaDocument): string[] {
+  return doc.meta.history.flatMap((entry) => entry.change.split(/;|\.(?!\w)/));
+}
+
+// A clause records a default when it names the field together with the count as a standalone
+// integer, adjacent to no letter, digit, `-` or `_`, so neither a date nor `ch-1` counts; with the
+// count's number word under the same neighbour rule; or with every affected row's chain id or
+// element name, each a whole token.
+function recordsSubstitution(clause: string, names: RegExp, { count, rows }: Substitution): boolean {
+  if (!names.test(clause)) return false;
+  if (new RegExp(`(?<![\\w-])${count}(?![\\w-])`).test(clause)) return true;
   // The integer's neighbour rule, so `one-to-one` is not the count one, as `row-1` is not 1.
-  if (r <= 10 && new RegExp(`(?<![\\w-])${NUMBER_WORDS[r - 1]}(?![\\w-])`, "i").test(clause)) return true;
+  if (count <= 10 && new RegExp(`(?<![\\w-])${NUMBER_WORDS[count - 1]}(?![\\w-])`, "i").test(clause)) return true;
   return rows.every((row) => wholeToken(clause, row.id) || (row.name !== undefined && wholeToken(clause, row.name)));
 }
 
-// One finding at meta.history when r rows carry the default and no clause records it.
+// The finding's message, `unit` being row or control; the rationale's reads as it shipped.
+function substitutionMessage(count: number, unit: string, field: string): string {
+  return `${count} ${unit}(s) carry the default ${field}, and no meta.history clause names ${field} with that count or with those rows' chain ids or element names. ` +
+    "Keep the default, and add that clause to meta.history, not to an assumption or a row's history.";
+}
+
+// One finding at meta.history per default the document carries and no clause records, in the
+// order of DEFAULT_FIELDS.
 function substitutionLint(doc: FmeaDocument): Lint[] {
-  const rows = defaultRows(doc);
-  const r = rows.length;
-  if (r === 0 || historyClauses(doc).some((clause) => recordsSubstitution(clause, r, rows))) return [];
-  return [lint("conversion-substitution-unrecorded", "warning", ptr("meta", "history"),
-    `${r} row(s) carry the default rationale, and no meta.history clause names rationale with that count or with those rows' chain ids or element names. ` +
-    "Keep the default, and add that clause to meta.history, not to an assumption or a row's history.")];
+  const clauses = historyClauses(doc);
+  const conversion = readsConversionDefaults(doc);
+  return DEFAULT_FIELDS.flatMap(({ field, unit, names, conversionOnly, find }) => {
+    const sub = conversionOnly && !conversion ? undefined : find(doc);
+    if (sub === undefined || clauses.some((clause) => recordsSubstitution(clause, names, sub))) return [];
+    return [lint("conversion-substitution-unrecorded", "warning", ptr("meta", "history"), substitutionMessage(sub.count, unit, field))];
+  });
 }
 
 function flowUsersLint(flow: Flow, index: number, chain: Chain): Lint[] {
@@ -560,7 +620,7 @@ export const MACHINE_RULES: MachineRule[] = [
     },
   },
   {
-    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1.
+    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1, and since the stage-1 gate the baseline's `none recorded`, `none published` and design-inputs placeholders as well (spec §11.5, ruling 5).
     id: "edge-reliability-unstated",
     severity: "warning",
     check(doc) {
@@ -568,7 +628,7 @@ export const MACHINE_RULES: MachineRule[] = [
     },
   },
   {
-    // A conversion's declared default is a substitution only when meta.history itself says so, by count or by row: the clause rubric c11 reads.
+    // A conversion's declared default is a substitution only when meta.history itself says so, by count or by row: the clause rubric c11 reads. The default rationale in any document; since the stage-1 gate, in a conversion of two chains or more, the controls' status and evidence kind and the local and next-level effects as well (spec §11.5, ruling 4).
     id: "conversion-substitution-unrecorded",
     severity: "warning",
     check(doc) {
