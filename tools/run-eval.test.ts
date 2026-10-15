@@ -13,7 +13,13 @@
 // FMEA_STUB_AUTOCOMPACT_STREAM is stderr) and records nothing for the probe.
 // FMEA_STUB_BAD_LINE=1 puts a line that is not JSON into the run's stream.
 // FMEA_STUB_RESULT replaces the JSON value of the result line's result, the
-// run's final message, which is "stub." by default.
+// run's final message, which is "stub." by default. FMEA_STUB_HANG, a file
+// path, makes the run's call (not the probe's) create that file and then wait
+// on a thirty-second sleep it becomes, so a case can signal the script while
+// its claude session runs; with FMEA_STUB_LINGER as well, the stub catches
+// SIGTERM, SIGINT and SIGHUP and, 0.3 s later, writes a file into its
+// CLAUDE_CONFIG_DIR, creates FMEA_STUB_HANG's path with .done appended and
+// exits 0, as a session that saves its state on the way out would.
 //
 // The fail-closed guard needs two cases of its own. The clean copy the first
 // test inspects is the very condition the guard checks, so a guard edited into a
@@ -40,7 +46,9 @@
 // The run publishes into a temporary directory rather than build/evals/ (the
 // script reads $FMEA_EVAL_PUBLISH_ROOT), and $TMPDIR is a temporary directory
 // too, so the scratch directories the script makes can be checked for after it
-// exits.
+// exits, a signal's exit included: the case that signals the script starts it
+// as the leader of its own process group, as tools/run-round.ts does, and
+// signals the group.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -58,7 +66,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const SCRIPT = join(import.meta.dirname, "run-eval.sh");
 const ROOT = resolve(import.meta.dirname, "..");
@@ -118,6 +126,12 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     "done",
     `: > '${treeFile}'`,
     `if [ -n "$plugin" ]; then (cd "$plugin" && find .) > '${treeFile}'; fi`,
+    'if [ -n "${FMEA_STUB_HANG:-}" ] && [ -n "${FMEA_STUB_LINGER:-}" ]; then',
+    '  sleep 30 & sleeper=$!',
+    '  trap \'kill "$sleeper" 2> /dev/null; sleep 0.3; mkdir -p "$CLAUDE_CONFIG_DIR"; echo "{}" > "$CLAUDE_CONFIG_DIR/state.json"; : > "$FMEA_STUB_HANG.done"; exit 0\' TERM INT HUP',
+    '  : > "$FMEA_STUB_HANG"; wait "$sleeper"',
+    'fi',
+    'if [ -n "${FMEA_STUB_HANG:-}" ]; then : > "$FMEA_STUB_HANG"; exec sleep 30; fi',
     'if [ "${FMEA_STUB_BAD_LINE:-}" = 1 ]; then printf \'%s\\n\' "not json"; fi',
     'printf \'{"type":"result","subtype":"success","is_error":false,"result":%s}\\n\' "${FMEA_STUB_RESULT:-\\"stub.\\"}"',
     "",
@@ -182,11 +196,13 @@ test("the run gets a filtered plugin copy outside the repository, and the trap c
     assert.deepEqual(invocations.calls, []);
     // The context record is published beside it; the stub's stream holds no init
     // line and no compaction.
-    const context = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "context.json"), "utf8")) as { init: { present: boolean }; compactions: number; final_message: unknown };
+    const context = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "context.json"), "utf8")) as { init: { present: boolean }; compactions: number; final_message: unknown; message_counts: unknown };
     assert.equal(context.init.present, false);
     assert.equal(context.compactions, 0);
     // The stub's final message, "stub.", is complete (prose design §8.1).
     assert.deepEqual(context.final_message, { complete: true, reason: null, length: 5 });
+    // The stub writes no analysis.json, so the counts the message states are not checked.
+    assert.deepEqual(context.message_counts, { checked: false, reason: "analysis.json missing", document: {}, stated: [] });
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
     const pluginDir = argv[argv.indexOf("--plugin-dir") + 1];
@@ -313,6 +329,38 @@ test("the summary line's final field reads final_message.complete from the conte
       assert.match(r.stdout, new RegExp(`^p1 medium run1: model=sonnet basis=default \\(anthropic\\) effort=high analysis=missing report=missing validate_exit=\\d+ invocations=present context=present final=${final}$`, "m"));
       const context = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "context.json"), "utf8")) as { final_message: unknown };
       assert.deepEqual(context.final_message, record, final);
+    } finally {
+      rmSync(s.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+/** Whether the check holds within twenty seconds, polled every fifty milliseconds. */
+async function until(check: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (!check() && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50));
+  return check();
+}
+
+test("SIGTERM, SIGINT or SIGHUP to the run's process group exits with 128 plus the signal's number, publishes nothing, and removes the three scratch directories once the session has ended, a session that writes on its way out included", { skip: SKIP }, async () => {
+  const scratch = (s: Sandbox) => readdirSync(s.tmp).filter((n) => n.startsWith("fmea-"));
+  const cases = [false, true].flatMap((linger) => ([["SIGTERM", 143], ["SIGINT", 130], ["SIGHUP", 129]] as const).map(([signal, status]) => ({ linger, signal, status })));
+  for (const { linger, signal, status } of cases) {
+    const s = sandbox();
+    try {
+      const started = join(s.dir, "started");
+      const env = { ...s.env, FMEA_STUB_HANG: started, ...(linger ? { FMEA_STUB_LINGER: "1" } : {}) };
+      const child = spawn("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env, detached: true, stdio: "ignore" });
+      const closed = new Promise<number | null>((done) => child.on("close", (code) => done(code)));
+      const label = linger ? `${signal}, a session that writes on its way out` : signal;
+      assert.ok(await until(() => existsSync(started)), `${label}: the run never reached its claude call`);
+      assert.deepEqual(scratch(s).map((n) => n.replace(/-[^-]+$/, "")).sort(), ["fmea-config-p1-medium-run1", "fmea-eval-p1-medium-run1", "fmea-plugin-p1-medium-run1"], label);
+      process.kill(-(child.pid ?? 0), signal);
+      assert.equal(await closed, status, label);
+      // A script that cleaned up at once, under the session, would find its config directory written again here.
+      if (linger) assert.ok(await until(() => existsSync(`${started}.done`)), `${label}: the session never finished writing`);
+      assert.deepEqual(scratch(s), [], `${label}: a scratch directory survived`);
+      assert.ok(!existsSync(join(s.publish, "p1")), `${label}: the stopped run was published`);
     } finally {
       rmSync(s.dir, { recursive: true, force: true });
     }

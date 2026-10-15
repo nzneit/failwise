@@ -219,9 +219,10 @@ test("contextFor assembles the file from the run directory: settings from the en
         { id: "conversion-substitution-unrecorded", fired: 0, final: false },
       ],
       final_message: { complete: null, reason: "transcript.json missing", length: null },
+      message_counts: { checked: false, reason: "analysis.json missing", document: {}, stated: [] },
     });
-    // The field the stage-1 gate added comes last, so a reader of the earlier fields is unaffected.
-    assert.equal(Object.keys(context).at(-1), "final_message");
+    // The fields the stage-1 gates added come last, in the order they were added, so a reader of the earlier fields is unaffected.
+    assert.deepEqual(Object.keys(context).slice(-2), ["final_message", "message_counts"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -232,16 +233,20 @@ function resultFile(result: unknown): string {
   return JSON.stringify({ type: "result", subtype: "success", is_error: false, stop_reason: "end_turn", result }, null, 2) + "\n";
 }
 
-/** The final_message contextFor records for a run directory holding the given transcript.json text, or none for null. */
-function finalMessageFor(transcriptJson: string | null): EvalContext["final_message"] {
-  const files: Record<string, string> = { "transcript.jsonl": initLine([], [], "/tmp/cfg/m/") + "\n", "autocompact.txt": `${WINDOW_LINE}\n` };
-  if (transcriptJson !== null) files["transcript.json"] = transcriptJson;
-  const dir = runDir(files);
+/** The record contextFor writes for a run directory holding a stream and a probe reply beside the given files; a null file is left out. */
+function recordFor(files: Record<string, string | null>): EvalContext {
+  const present = Object.entries(files).filter((e): e is [string, string] => e[1] !== null);
+  const dir = runDir({ "transcript.jsonl": initLine([], [], "/tmp/cfg/m/") + "\n", "autocompact.txt": `${WINDOW_LINE}\n`, ...Object.fromEntries(present) });
   try {
-    return contextFor(dir, { configDir: "/tmp/cfg", lintIds: [], env: {} }).final_message;
+    return contextFor(dir, { configDir: "/tmp/cfg", lintIds: [], env: {} });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** The final_message contextFor records for a run directory holding the given transcript.json text, or none for null. */
+function finalMessageFor(transcriptJson: string | null): EvalContext["final_message"] {
+  return recordFor({ "transcript.json": transcriptJson }).final_message;
 }
 
 test("final_message records a final message that ends mid-word as cut, naming its last character, as p5/high/run2 of the stage-1 round ended", () => {
@@ -297,6 +302,130 @@ test("final_message is null with the reason when transcript.json is missing, unr
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("final_message reads the last character by code point, so an ending outside the Basic Multilingual Plane is named whole, and counts a line as a fence only when it starts with three backticks, never a fence written mid-line or indented", () => {
+  const emoji = "Every rating this run wrote is provisional 🎉";
+  assert.deepEqual(finalMessageFor(resultFile(emoji)), { complete: false, reason: 'ends with "🎉"', length: emoji.length });
+  const afterEmoji = "Every rating this run wrote is provisional 🎉.";
+  assert.deepEqual(finalMessageFor(resultFile(afterEmoji)), { complete: true, reason: null, length: afterEmoji.length });
+  // Neither a fence written inside a line nor an indented one is a fence line, so this message opens no fence.
+  const inline = "Run ```node scripts/validate.ts analysis.json``` again, then:\n\n    ```bash\n    node scripts/render.ts analysis.json\n\nDone.";
+  assert.deepEqual(finalMessageFor(resultFile(inline)), { complete: true, reason: null, length: inline.length });
+  // An indented line of backticks does not close the fence the first line opens.
+  const indented = "```bash\nnode scripts/validate.ts analysis.json\n  ```\nDone.";
+  assert.deepEqual(finalMessageFor(resultFile(indented)), { complete: false, reason: "unclosed code fence", length: indented.length });
+});
+
+/** A priority as priority.ts writes it, with the given value. */
+function priorityOf(value: string): { value: string; table: string; rpn: number } {
+  return { value, table: "priority-fmea-software-v1", rpn: 100 };
+}
+
+/** analysis.json with one chain per entry: the entry's first value is the chain's priority, its second, when given, its post_priority. */
+function analysisFile(rows: string[][]): string {
+  const chains = rows.map(([before, after], i) => ({ id: `ch-${i + 1}`, priority: priorityOf(before), ...(after === undefined ? {} : { post_priority: priorityOf(after) }) }));
+  return JSON.stringify({ chains }, null, 2);
+}
+
+/** n chains with the same values. */
+function chains(n: number, ...values: string[]): string[][] {
+  return Array.from({ length: n }, () => values);
+}
+
+/** The message_counts contextFor records for a final message and a document of the given chains. */
+function countsFor(message: string, rows: string[][]): EvalContext["message_counts"] {
+  return recordFor({ "transcript.json": resultFile(message), "analysis.json": analysisFile(rows) }).message_counts;
+}
+
+/** A stated pair as message_counts records it. */
+function pair(count: number, value: string, matches: boolean): EvalContext["message_counts"]["stated"][number] {
+  return { count, value, matches };
+}
+
+// Excerpts of four final messages of round 1b (build/evals/prose-1b/, 2026-10-15), each with its count line and
+// the table or list lines around it, copied here so the tests never read the round.
+const P1_MEDIUM_RUN1 = `| ch-gateway-unavailable | payment-gateway / authorize | 9·8·7 | 504 | H — rests on provisional ratings |
+| ch-api-submit-timeout | checkout.api / submit | 3·3·4 (S=7) | 84 | M — provisional |
+
+The count by priority is **8 H and 6 M**, and both counts rest on provisional ratings. **8** was a typo above — to be exact: S·O·D for \`ch-api-submit-timeout\` is 7·3·4. Every priority in that table, and every RPN in it, rests on provisional ratings.`;
+const P1_HIGH_RUN2 = `| \`chk-gateway-availability\` — gateway misses its SLA / rps limit | 9/5/7 | 315 | **H** (rests on provisional ratings) |
+
+Counts by priority, all resting on provisional ratings: **5 H, 7 M, 0 L**. No priority resting on a provisional rating is final until that rating is re-scored.
+
+Every rating this run wrote is provisional — **36 of 36, all written by this run**.`;
+const P5_HIGH_RUN1 = `| chain-retry-storm | **H** — rests on provisional ratings | 400 | **H** — rests on provisional ratings (288) |
+| chain-stale-price | M — rests on provisional ratings | 315 | M — rests on provisional ratings (225) |
+
+That is 2 rows at H and 4 at M before action, and 1 H and 1 M after action — every one of those counts and values rests on provisional ratings.`;
+const P5_MEDIUM_RUN1 = `- By priority: 7 **H** (rests on provisional ratings) and 4 **M** (rests on provisional ratings).
+- Highest RPN is CH-09 at 567 (rests on provisional ratings); then CH-02 at 560, CH-05 at 450 and CH-01 at 441 (each rests on provisional ratings). RPN never ranks — the table's cell map does.
+- Ranked by the table: CH-09 H (provisional), CH-02 H (provisional), CH-05 H (provisional), CH-01 H (provisional), CH-06 H (provisional), CH-11 H (provisional), CH-10 H (provisional), then CH-07 M, CH-08 M, CH-03 M, CH-04 M (each provisional).`;
+
+test("message_counts compares each count by priority the final message states with the document's: p1/medium/run1's 8 H and 6 M against 9 H and 5 M do not match", () => {
+  assert.deepEqual(countsFor(P1_MEDIUM_RUN1, [...chains(9, "H"), ...chains(5, "M")]), {
+    checked: true,
+    reason: null,
+    document: { H: { before: 9, after: 0 }, M: { before: 5, after: 0 } },
+    stated: [pair(8, "H", false), pair(6, "M", false)],
+  });
+});
+
+test("message_counts searches the document's values only: p1/high/run2's 5 H, 7 M, 0 L states three pairs where L is a value, and two where no chain carries L", () => {
+  // One M chain is L after action, so L is a value whose count before action is 0.
+  assert.deepEqual(countsFor(P1_HIGH_RUN2, [...chains(5, "H"), ["M", "L"], ...chains(6, "M")]), {
+    checked: true,
+    reason: null,
+    document: { H: { before: 5, after: 0 }, M: { before: 7, after: 0 }, L: { before: 0, after: 1 } },
+    stated: [pair(5, "H", true), pair(7, "M", true), pair(0, "L", true)],
+  });
+  assert.deepEqual(countsFor(P1_HIGH_RUN2, [...chains(5, "H"), ...chains(7, "M")]).stated, [pair(5, "H", true), pair(7, "M", true)]);
+});
+
+test("message_counts matches a stated count against the document's count before action or after it, in message order: p5/high/run1's 2 H and 4 M before and 1 H and 1 M after", () => {
+  const rows = [["H"], ["H", "H"], ["M"], ["M", "M"], ["M"], ["M"]];
+  assert.deepEqual(countsFor(P5_HIGH_RUN1, rows), {
+    checked: true,
+    reason: null,
+    document: { H: { before: 2, after: 1 }, M: { before: 4, after: 1 } },
+    stated: [pair(2, "H", true), pair(4, "M", true), pair(1, "H", true), pair(1, "M", true)],
+  });
+  // With no H after action and two M, the two counts after action match neither of their value's counts.
+  const moved = [["H"], ["H"], ["M", "M"], ["M", "M"], ["M"], ["M"]];
+  assert.deepEqual(countsFor(P5_HIGH_RUN1, moved).stated, [pair(2, "H", true), pair(4, "M", true), pair(1, "H", false), pair(1, "M", false)]);
+});
+
+test("message_counts records no count stated when no pair matches the patterns: p5/medium/run1's CH-09 H, whose digits follow a hyphen, and its 7 **H**, whose markup parts the count from the value", () => {
+  const rows = [...chains(2, "H", "H"), ...chains(5, "H"), ["M", "M"], ...chains(3, "M")];
+  assert.deepEqual(countsFor(P5_MEDIUM_RUN1, rows), {
+    checked: false,
+    reason: "no count stated",
+    document: { H: { before: 7, after: 2 }, M: { before: 4, after: 1 } },
+    stated: [],
+  });
+});
+
+test("message_counts escapes a value's regular-expression characters, matches it as a whole token, and reads a value followed by a colon or an equals sign and the count", () => {
+  const rows = [...chains(3, "(H)"), ["B.C"]];
+  // Unescaped, (H) would match a bare H and B.C would match BxC; 3 (H)x is not the whole token.
+  assert.deepEqual(countsFor("B.C: 1 row, then 3 (H) rows; 4 BxC is no value, and neither is 3 (H)x or 4 H.", rows).stated, [pair(1, "B.C", true), pair(3, "(H)", true)]);
+  assert.deepEqual(countsFor("Counts: H=2, and later H : 3; the H-2 row and 2 HH are not counts.", chains(2, "H")).stated, [pair(2, "H", true), pair(3, "H", false)]);
+});
+
+test("message_counts is not checked when the document or the message cannot give the counts, and says why, keeping what it could read", () => {
+  const message = resultFile("8 H and 6 M.");
+  const unchecked = (reason: string, document: EvalContext["message_counts"]["document"] = {}) => ({ checked: false, reason, document, stated: [] });
+  assert.deepEqual(recordFor({ "transcript.json": message }).message_counts, unchecked("analysis.json missing"));
+  assert.deepEqual(recordFor({ "transcript.json": message, "analysis.json": "{not json" }).message_counts, unchecked("analysis.json unreadable"));
+  for (const doc of [{}, { chains: [] }, { chains: "x" }, { chains: [{ priority: { value: "" } }, { priority: {} }, { post_priority: { value: 3 } }, "x"] }]) {
+    assert.deepEqual(recordFor({ "transcript.json": message, "analysis.json": JSON.stringify(doc) }).message_counts, unchecked("no priority values in the document"), JSON.stringify(doc));
+  }
+  const document = { H: { before: 8, after: 0 } };
+  const analysis = analysisFile(chains(8, "H"));
+  assert.deepEqual(recordFor({ "analysis.json": analysis }).message_counts, unchecked("transcript.json missing", document));
+  assert.deepEqual(recordFor({ "analysis.json": analysis, "transcript.json": "{not json" }).message_counts, unchecked("transcript.json is not JSON", document));
+  assert.deepEqual(recordFor({ "analysis.json": analysis, "transcript.json": resultFile(null) }).message_counts, unchecked("transcript.json result is not a string", document));
+  assert.deepEqual(recordFor({ "analysis.json": analysis, "transcript.json": resultFile("") }).message_counts, unchecked("no count stated", document));
 });
 
 test("a missing invocations.json gives invocations missing, denied zeros and fired null; a missing or unparsable validate.json gives final null", () => {

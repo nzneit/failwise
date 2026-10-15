@@ -6,7 +6,8 @@
 // Four stubs stand in for what the launcher reaches:
 //
 // - the one-cell runner, through FMEA_RUN_EVAL: it records when each cell
-//   starts and ends (date +%s%N), its pid, the environment it was given, and
+//   starts and ends (date +%s%N), its pid, the environment it was given (three
+//   CLAUDE* variables among it, `unset` when absent), and
 //   prints the summary line tools/run-eval.sh prints. FMEA_STUB_FAIL,
 //   FMEA_STUB_MISSING, FMEA_STUB_INVALID and FMEA_STUB_CUT name the cells
 //   (p<p>:<cap>:<n>, comma-separated) that refuse, leave analysis.json missing,
@@ -24,14 +25,18 @@
 //   fail rather than read the real keyring;
 // - `claude`, first on PATH: it answers --version, and answers the smoke test
 //   with FMEA_STUB_SMOKE and FMEA_STUB_SMOKE_EXIT, recording the
-//   CLAUDE_CONFIG_DIR it was given; FMEA_STUB_SMOKE_HANG makes the smoke call
+//   CLAUDE_CONFIG_DIR it was given and the same three CLAUDE* variables as the
+//   runner; FMEA_STUB_SMOKE_HANG makes the smoke call
 //   wait on a thirty-second `sleep` whose pid it records;
 // - nvm, through NVM_DIR: an empty folder unless a case plants node versions.
 //
 // PATH is the stubs, the Node running this file, /usr/bin and /bin, the stub
 // `claude` first, so the real `claude` is never reached; the case that takes
 // the stub away puts links to node and bash alone on PATH. FMEA_ROUND_GRACE_MS
-// shortens the launcher's grace period where a case waits it out. Every launch passes --publish-root
+// shortens the launcher's grace period where a case waits it out. The whole round
+// the shared tests read is launched with CLAUDECODE, CLAUDE_CODE_SESSION_ID and
+// CLAUDE_EFFORT set, as a launch from inside a Claude Code session has them.
+// Every launch passes --publish-root
 // into a temporary folder and the stage 9z, so nothing is written under
 // build/evals.
 
@@ -58,6 +63,7 @@ echo "start $cell $(date +%s%N) $$" >> "$FMEA_STUB_DIR/events.txt"
 printf '%s\\n' "ANTHROPIC_BASE_URL=\${ANTHROPIC_BASE_URL:-}" "FMEA_EVAL_MODELS=\${FMEA_EVAL_MODELS:-}" "DISABLE_AUTOUPDATER=\${DISABLE_AUTOUPDATER:-}" \\
   "FMEA_EVAL_PUBLISH_ROOT=\${FMEA_EVAL_PUBLISH_ROOT:-}" "token=$([ "\${ANTHROPIC_AUTH_TOKEN:-}" = "$FMEA_STUB_KEY" ] && echo match || echo differs)" \\
   "path0=\${PATH%%:*}" "cwd=$(pwd)" "stdin=$(readlink /proc/$$/fd/0)" "own_group=$([ "$(ps -o pgid= -p $$ | tr -d ' ')" = "$$" ] && echo yes || echo no)" \\
+  "CLAUDECODE=\${CLAUDECODE-unset}" "CLAUDE_CODE_SESSION_ID=\${CLAUDE_CODE_SESSION_ID-unset}" "CLAUDE_EFFORT=\${CLAUDE_EFFORT-unset}" \\
   > "$FMEA_STUB_DIR/env-$cell.txt"
 echo "stub stderr for $cell" >&2
 if [ -n "\${FMEA_STUB_HANG:-}" ] && [ "$cell" != "p1:high:1" ]; then sleep 30 & echo "$!" > "$FMEA_STUB_DIR/sleep-$cell.txt"; wait "$!"; fi
@@ -88,6 +94,7 @@ exit "\${FMEA_STUB_KEYRING_EXIT:-0}"
 const CLAUDE_STUB = `#!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then echo "9.9.9 (Claude Code)"; exit 0; fi
 printf '%s\\n' "\${CLAUDE_CONFIG_DIR:-}" >> "$FMEA_STUB_DIR/smoke-config.txt"
+printf '%s\\n' "CLAUDECODE=\${CLAUDECODE-unset}" "CLAUDE_CODE_SESSION_ID=\${CLAUDE_CODE_SESSION_ID-unset}" "CLAUDE_EFFORT=\${CLAUDE_EFFORT-unset}" >> "$FMEA_STUB_DIR/smoke-env.txt"
 printf '%s\\n' "$*" >> "$FMEA_STUB_DIR/claude-calls.txt"
 if [ -n "\${FMEA_STUB_SMOKE_HANG:-}" ]; then sleep 30 & echo "$!" > "$FMEA_STUB_DIR/smoke-sleep.txt"; wait "$!"; fi
 printf '%s\\n' "\${FMEA_STUB_SMOKE-ok}"
@@ -172,7 +179,7 @@ function printedCells(stdout: string): string[] {
 }
 
 interface RoundFile {
-  method: string; concurrency: number; canary: string | null; started: string; ended: string; cli_version: string;
+  method: string; concurrency: number; canary: string | null; started: string; ended: string; cli_version: string; env_stripped?: string[];
   cells: { cell: string; started: string; ended: string; exit: number | null; summary: string | null; error?: string }[];
 }
 
@@ -237,11 +244,16 @@ function tracked(env: Record<string, string> = {}): Sandbox {
   return s;
 }
 
+/** Three of the variables a Claude Code session exports, which no child of the launcher may inherit. */
+const SESSION_VARIABLES = { CLAUDECODE: "1", CLAUDE_CODE_SESSION_ID: "x", CLAUDE_EFFORT: "high" };
+/** What the stubs record of them when the launcher strips them. */
+const SESSION_VARIABLES_UNSET = ["CLAUDECODE=unset", "CLAUDE_CODE_SESSION_ID=unset", "CLAUDE_EFFORT=unset"];
+
 let full: { s: Sandbox; r: SpawnSyncReturns<string> } | undefined;
-/** One whole round at --parallel 3, shared by the tests that read it. */
+/** One whole round at --parallel 3, launched with the session's variables set, shared by the tests that read it. */
 function fullRound(): { s: Sandbox; r: SpawnSyncReturns<string> } {
   if (full === undefined) {
-    const s = tracked();
+    const s = tracked(SESSION_VARIABLES);
     full = { s, r: launch(s, ["--parallel", "3"]) };
   }
   return full;
@@ -309,14 +321,24 @@ test("each cell runs with the preflight's environment, its own log, no stdin and
       `cwd=${ROOT}`,
       "stdin=/dev/null",
       "own_group=yes",
+      ...SESSION_VARIABLES_UNSET,
     ]);
   }
+});
+
+test("the cells and the smoke call do not inherit the launcher's CLAUDE* variables: step 1 says how many were stripped and round.json names them, sorted", { skip: SKIP }, () => {
+  const { s, r } = fullRound();
+  assert.match(r.stdout, /^env: 3 CLAUDE\* variables stripped$/m);
+  assert.ok(!r.stdout.includes("CLAUDE_CODE_SESSION_ID"), "the launcher printed a stripped variable's name");
+  assert.deepEqual(readFileSync(join(s.dir, "smoke-env.txt"), "utf8").split("\n").filter((l) => l !== ""), SESSION_VARIABLES_UNSET);
+  assert.ok(readFileSync(join(s.dir, "smoke-config.txt"), "utf8").trim().startsWith(s.tmp + "/"), "the smoke call lost its own CLAUDE_CONFIG_DIR");
+  assert.deepEqual(readRound(s).env_stripped, ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_EFFORT"]);
 });
 
 test("round.json records the method, the concurrency, the canary, the times, the CLI version and each cell", { skip: SKIP }, () => {
   const { s, r } = fullRound();
   const round = readRound(s);
-  assert.deepEqual(Object.keys(round), ["method", "concurrency", "canary", "started", "ended", "cli_version", "cells"]);
+  assert.deepEqual(Object.keys(round), ["method", "concurrency", "canary", "started", "ended", "cli_version", "env_stripped", "cells"]);
   assert.equal(round.method, "parallel");
   assert.equal(round.concurrency, 3);
   assert.equal(round.canary, "p1:high:1");
@@ -379,6 +401,9 @@ test("--cells runs exactly the named cells in roster order, the first of them as
   assert.deepEqual(new Set(startsOf(t)), new Set(["p1:high:2", "p6:medium:2"]));
   assert.match(u.stdout, /^round finished: \d+m \d\ds, concurrency 4, canary none; runs under /m);
   assert.equal(readRound(t).canary, null);
+  // A launch whose environment holds no CLAUDE* variable strips none and records an empty list.
+  assert.match(u.stdout, /^env: 0 CLAUDE\* variables stripped$/m);
+  assert.deepEqual(readRound(t).env_stripped, []);
 });
 
 test("a malformed --cells, a --parallel out of range, a bad stage and an unknown flag are refused before the keyring is read", { skip: SKIP }, () => {
@@ -518,6 +543,14 @@ test("a re-run of named cells into a round that has a round.json replaces those 
   assert.ok(rerun !== undefined && rerun.summary !== null && rerun.summary.startsWith("p5 high run2: model=deepseek-flash "), JSON.stringify(rerun));
   assert.ok(Date.parse(rerun.started) > Date.parse(original.ended));
   assert.deepEqual(round.cells.filter((c) => c.cell !== "p5:high:2"), original.cells.filter((c) => c.cell !== "p5:high:2"));
+
+  // A round that records the variables its launch stripped gains those this re-run strips; one written before the
+  // field gains none (above), its other cells having inherited them.
+  writeFileSync(join(s.root, "round.json"), JSON.stringify({ ...original, env_stripped: ["CLAUDE_EFFORT"] }, null, 2));
+  renameSync(join(s.root, "p5", "high", "run2"), join(s.dir, "p5-high-run2.first"));
+  const v = launch({ ...s, env: { ...s.env, CLAUDECODE: "1", CLAUDE_EFFORT: "high" } }, ["--no-canary", "--cells", "p5:high:2"]);
+  assert.equal(v.status, 0, v.stderr);
+  assert.deepEqual(readRound(s).env_stripped, ["CLAUDECODE", "CLAUDE_EFFORT"]);
 
   writeFileSync(join(s.root, "round.json"), "{ not a record");
   const u = launch(s, ["--no-canary", "--cells", "p5:high:1"]);

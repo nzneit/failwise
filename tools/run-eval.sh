@@ -227,7 +227,17 @@ fi
 # All three scratch directories are removed by the EXIT trap. The trap is
 # installed before the first mktemp, and cleanup skips a variable that is still
 # empty, so a later mktemp that fails under `set -e` takes the earlier
-# directories with it instead of leaking them.
+# directories with it instead of leaking them. SIGTERM, SIGINT and SIGHUP each
+# get a trap that exits with 128 plus the signal's number (143, 130, 129), and
+# that exit runs the EXIT trap (prose design 2026-10-14, §11.6, carried items).
+# Bash runs a signal's trap only once the foreground command has ended, so the
+# directories go after the claude session has ended, not under it. With the
+# EXIT trap alone, bash ran it at once on SIGTERM or SIGHUP and died of the
+# signal while the session ran on in the directories just removed, and on a
+# SIGINT that the session caught it went on with the run. tools/run-round.ts
+# stops a cell by sending SIGTERM to its process group, the session included,
+# and SIGKILL to what remains after its grace period; SIGKILL runs no trap. A
+# run stopped before its publish copy publishes nothing.
 WORK=""
 PLUGIN=""
 CONFIG=""
@@ -237,6 +247,9 @@ cleanup() {
   if [ -n "$CONFIG" ]; then rm -rf "$CONFIG"; fi
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/fmea-eval-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
 PLUGIN="$(mktemp -d "${TMPDIR:-/tmp}/fmea-plugin-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
 CONFIG="$(mktemp -d "${TMPDIR:-/tmp}/fmea-config-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"

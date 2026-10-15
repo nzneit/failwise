@@ -11,7 +11,8 @@
 // the judging copied from each run's context.json, and reads the rest of each
 // run's context.json itself; when a round.json written by tools/run-round.ts
 // lies beside the results file, one line under that table names the round's
-// method, concurrency, canary and elapsed time. Two optional sections come before the critic when
+// method, concurrency, canary and elapsed time, and how many CLAUDE* variables
+// the launcher kept from its children. Two optional sections come before the critic when
 // the results file carries their fields: the session checks (session_checks)
 // and the prompts not re-run (not_rerun).
 //
@@ -1050,12 +1051,16 @@ interface HarnessRun { r: RunResult; ctx: ContextRead }
  * the context gate closes on, a dash for a file written before it), the final
  * message's completeness (prose design §8.1, which the gate also closes on, a
  * dash for a file written before 2026-10-15) and the other cells are read from
- * the run's own context.json. Directly under the table, a round run by
- * tools/run-round.ts gets one line from its round.json: the method, the
- * concurrency, the canary and the elapsed time (prose design §11.5 ruling 10);
- * a round with no round.json gets none. The lines after it
- * name the CLI versions when the readable files carry more than one, each file
- * that could not be read, and each copy its file does not bear out.
+ * the run's own context.json, and so are the counts by priority the final
+ * message states against the document's (§8.1, §11.6 ruling 4: reported, never
+ * gated, a dash for a file written before them). Directly under the table, a
+ * round run by tools/run-round.ts gets one line from its round.json: the method,
+ * the concurrency, the canary and the elapsed time (prose design §11.5 ruling
+ * 10), and how many CLAUDE* variables the launcher stripped when the file
+ * records them (§11.6, carried items); a round with no round.json gets none.
+ * The lines after it name the CLI versions when the readable files carry more
+ * than one, each file that could not be read, and each copy its file does not
+ * bear out.
  */
 function harnessSection(results: EvalResults, roundFile?: string): string[] {
   if (!results.runs.some((r) => r.context !== undefined)) return [];
@@ -1066,8 +1071,8 @@ function harnessSection(results: EvalResults, roundFile?: string): string[] {
   const lines = [
     "## Harness",
     "",
-    `| Prompt | Model capability | Run | CLI | Window | Compactions | Peak context | Lines without usage | Final message | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
-    `|${"---|".repeat(12 + lintIds.length)}`,
+    `| Prompt | Model capability | Run | CLI | Window | Compactions | Peak context | Lines without usage | Final message | Counts | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
+    `|${"---|".repeat(13 + lintIds.length)}`,
   ];
   for (const { r, ctx } of rows) lines.push(harnessRow(r, ctx, lintIds));
   lines.push("");
@@ -1116,12 +1121,12 @@ function harnessRunLabel(r: RunResult): string {
   return `p${r.prompt} ${r.model_capability} run ${r.run}`;
 }
 
-/** One row of the Harness table: the CLI version, the three copied cells, the lines without usage, the final message, then the cells read from context.json, dashes when it could not be read. */
+/** One row of the Harness table: the CLI version, the three copied cells, the lines without usage, the final message, its counts, then the cells read from context.json, dashes when it could not be read. */
 function harnessRow(r: RunResult, ctx: ContextRead, lintIds: string[]): string {
   const read = typeof ctx === "string"
     ? Array<string>(3 + lintIds.length).fill("—")
     : [cell(isolationText(ctx)), String(ctx.init.skills_unnamespaced.length), deniedText(ctx), ...lintIds.map((id) => lintCell(ctx.lints.find((l) => l.id === id)))];
-  return `| ${[String(r.prompt), r.model_capability, String(r.run), cell(cliVersionOf(ctx) ?? "—"), ...copiedCells(r.context), withoutUsageCell(ctx), finalMessageCell(ctx), ...read].join(" | ")} |`;
+  return `| ${[String(r.prompt), r.model_capability, String(r.run), cell(cliVersionOf(ctx) ?? "—"), ...copiedCells(r.context), withoutUsageCell(ctx), finalMessageCell(ctx), countsCell(ctx), ...read].join(" | ")} |`;
 }
 
 /** The count of top-level assistant lines without usage a run's context.json records, or a dash when the file could not be read or holds no integer count. */
@@ -1131,14 +1136,50 @@ function withoutUsageCell(ctx: ContextRead): string {
 
 /**
  * Whether a run's final message is complete, as its context.json records it (prose design §8.1): `complete`,
- * `cut (<reason>)`, or a dash when the file could not be read, was written before the field, or could not check the
- * message, whose reason the gate's unverified unit carries.
+ * `cut (<reason>)`, `cut (no reason recorded)` when the file gives none, or a dash when the file could not be read, was
+ * written before the field, or could not check the message, whose reason the gate's unverified unit carries.
  */
 function finalMessageCell(ctx: ContextRead): string {
   const final: unknown = typeof ctx === "string" ? undefined : ctx.final_message;
   if (!isObject(final)) return "—";
   if (final.complete === true) return "complete";
-  return final.complete === false ? cell(`cut (${String(final.reason)})`) : "—";
+  const reason = typeof final.reason === "string" ? final.reason : "no reason recorded";
+  return final.complete === false ? cell(`cut (${reason})`) : "—";
+}
+
+type MessageCounts = EvalContext["message_counts"];
+
+/** Whether a context.json's message_counts has the parts the Counts cell reads. */
+function isMessageCounts(v: unknown): v is MessageCounts {
+  return isObject(v) && typeof v.checked === "boolean" && isObject(v.document) && Array.isArray(v.stated);
+}
+
+/**
+ * The counts by priority a run's final message states, against the document's, as its context.json records them
+ * (prose design §8.1, §11.6 ruling 4): `match (<n>)` when every one of the n pairs matches; `mismatch: ` and each pair
+ * that does not, with the document's count of the value before action and, when the document has chains at it after
+ * action, that count too; `none stated` when the message states no pair; `— (<reason>)` when the counts could not be
+ * checked; and a dash when the file could not be read or was written before the field.
+ */
+function countsCell(ctx: ContextRead): string {
+  const counts: unknown = typeof ctx === "string" ? undefined : ctx.message_counts;
+  if (!isMessageCounts(counts)) return "—";
+  if (counts.checked) return cell(statedText(counts));
+  if (counts.reason === "no count stated") return "none stated";
+  return typeof counts.reason === "string" ? cell(`— (${counts.reason})`) : "—";
+}
+
+/** A checked record's verdict: every pair matches, or the list of those that do not. */
+function statedText(counts: MessageCounts): string {
+  const wrong = counts.stated.filter((p) => p.matches !== true);
+  if (wrong.length === 0) return `match (${counts.stated.length})`;
+  return `mismatch: ${wrong.map((p) => `${p.count} ${p.value} (${documentText(counts.document[p.value])})`).join(", ")}`;
+}
+
+/** The document's counts of one value, `document <before>` and `, after <after>` when chains are at it after action. */
+function documentText(row: { before: number; after: number } | undefined): string {
+  if (row === undefined) return "document 0";
+  return row.after > 0 ? `document ${row.before}, after ${row.after}` : `document ${row.before}`;
 }
 
 /** The CLI version a run's context.json records, or null when the file could not be read or records none. */

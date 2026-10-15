@@ -173,10 +173,13 @@ entry of service `goose` whose secret is JSON with the field `DEEPSEEK_API_KEY`,
 gateway first. It runs the first cell alone as a canary, then the other fifteen at most
 `--parallel <n>` at once (4 by default, more than 8 only with `--force-parallel`). Each cell's
 output is appended to its log in `logs/` in that folder, so a re-run keeps the earlier attempt's
-log. The launcher prints the summary lines in roster order, writes `round.json`, and names the
-`--cells` command, with `--no-canary`, for any cell that needs a re-run. `eval-report.ts` prints a
-`Round method` line under the Harness table from the `round.json` beside the `--results` file
-only, so generate the round's note with `--results build/evals/prose-<stage>/results.json`.
+log. The cells and the smoke call do not inherit the launching session's `CLAUDE*` variables: the
+launcher drops every variable whose name starts with `CLAUDE` from their environment and lists the
+dropped names in `round.json` as `env_stripped`. The launcher prints the summary lines in roster
+order, writes `round.json`, and names the `--cells` command, with `--no-canary`, for any cell that
+needs a re-run. `eval-report.ts` prints a `Round method` line under the Harness table from the
+`round.json` beside the `--results` file only, so generate the round's note with
+`--results build/evals/prose-<stage>/results.json`.
 
 Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
 `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
@@ -207,4 +210,7 @@ a compaction, with no top-level assistant line, or with a top-level assistant li
 usage figures, is unverified and gets no judge. The context agent runs at the `medium` model
 capability, so `args.models`, when given, must name `medium` in both `tools/workflows/evals.js`
 and `tools/workflows/rejudge.js`. The report's Harness table shows each run's CLI version, and a
-line under the table names the versions when a round ran on more than one.
+line under the table names the versions when a round ran on more than one. From round 1c,
+`context.json` also records `message_counts`, each count by priority that the run's final message
+states beside the document's counts before and after action, and the Harness table's Counts column
+shows whether they match; a wrong count is reported and never makes a run unverified.

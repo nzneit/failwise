@@ -20,7 +20,12 @@
 // 1. Preflight, as the sequential script does. The DeepSeek key is read from
 //    the login keyring (`secret-tool search --all service goose`, the JSON
 //    field DEEPSEEK_API_KEY) and is never printed or written; with no key the
-//    launch is refused. The environment gets ANTHROPIC_BASE_URL,
+//    launch is refused. The children's environment is the launcher's own less
+//    every variable whose name starts with CLAUDE, so a launch from inside a
+//    Claude Code session hands its cells and its smoke call none of the
+//    session's CLAUDECODE, CLAUDE_CODE_* or CLAUDE_EFFORT (§11.6, carried
+//    items; the sequential rounds inherited them); one line says how many were
+//    dropped, and round.json names them. It gets ANTHROPIC_BASE_URL,
 //    ANTHROPIC_AUTH_TOKEN, FMEA_EVAL_MODELS and DISABLE_AUTOUPDATER=1, and nvm's
 //    newest node goes first on PATH ($NVM_DIR, or ~/.nvm). node and claude must
 //    be on PATH; their paths and the CLI version are printed. One cheap call
@@ -48,7 +53,9 @@
 // 5. The record: <root>/round.json (tools/lib/round-record.ts), which
 //    tools/eval-report.ts reads for its Harness section. A --cells launch into a
 //    round that has one replaces those cells' entries and keeps the round's own
-//    fields.
+//    fields, adding the names it stripped to a round's env_stripped; a round
+//    recorded without that field keeps none, its other cells having inherited
+//    the variables.
 // 6. Signals: on SIGINT, SIGTERM or SIGHUP, from the smoke call on, every
 //    process group the launch started gets SIGTERM. The launcher then waits
 //    until every group is gone, the claude sessions under a runner included,
@@ -71,7 +78,7 @@ import { basename, delimiter, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { isEntry } from "./lib/entry.ts";
 import { compareVersions, parseVersion } from "./lib/host.ts";
-import { cellWords, elapsedText, readRoundRecord, type RoundCell, type RoundRecord } from "./lib/round-record.ts";
+import { cellWords, elapsedText, readRoundRecord, strippedText, type RoundCell, type RoundRecord } from "./lib/round-record.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const MODEL = "deepseek-flash";
@@ -311,19 +318,29 @@ function firstLine(command: string, args: string[], env: Record<string, string>)
   return `${r.stdout ?? ""}${r.stderr ?? ""}`.split("\n")[0].trim();
 }
 
-/** The environment of step 1: the launcher's own, the gateway and the model table, the updater off, nvm's newest node first on PATH. */
-function roundEnv(key: string, publishRoot: string): Record<string, string> {
+/**
+ * The environment of step 1 and the names it dropped, sorted: the launcher's own less every variable whose name starts
+ * with CLAUDE, then the gateway and the model table, the updater off, nvm's newest node first on PATH.
+ */
+function roundEnv(key: string, publishRoot: string): { env: Record<string, string>; stripped: string[] } {
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env)) if (value !== undefined) env[name] = value;
+  const stripped: string[] = [];
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name.startsWith("CLAUDE")) stripped.push(name);
+    else if (value !== undefined) env[name] = value;
+  }
   const nvmBin = newestNvmBin(env.NVM_DIR ?? join(homedir(), ".nvm"));
   return {
-    ...env,
-    PATH: nvmBin === null ? env.PATH ?? "" : `${nvmBin}${delimiter}${env.PATH ?? ""}`,
-    ANTHROPIC_BASE_URL: GATEWAY,
-    ANTHROPIC_AUTH_TOKEN: key,
-    FMEA_EVAL_MODELS: `high=${MODEL},medium=${MODEL}`,
-    DISABLE_AUTOUPDATER: "1",
-    FMEA_EVAL_PUBLISH_ROOT: publishRoot,
+    env: {
+      ...env,
+      PATH: nvmBin === null ? env.PATH ?? "" : `${nvmBin}${delimiter}${env.PATH ?? ""}`,
+      ANTHROPIC_BASE_URL: GATEWAY,
+      ANTHROPIC_AUTH_TOKEN: key,
+      FMEA_EVAL_MODELS: `high=${MODEL},medium=${MODEL}`,
+      DISABLE_AUTOUPDATER: "1",
+      FMEA_EVAL_PUBLISH_ROOT: publishRoot,
+    },
+    stripped: stripped.sort(),
   };
 }
 
@@ -458,14 +475,15 @@ async function smokeTest(watch: Watch, claude: string, env: Record<string, strin
   return refuse("refusing: the gateway did not answer with 'ok'; fix the key or the endpoint before running the round");
 }
 
-/** What the preflight hands the round: the children's environment, the key for redaction, the CLI version and the watch. */
-interface Preflight { env: Record<string, string>; key: string; cliVersion: string; watch: Watch }
+/** What the preflight hands the round: the children's environment and the names it dropped, the key for redaction, the CLI version and the watch. */
+interface Preflight { env: Record<string, string>; stripped: string[]; key: string; cliVersion: string; watch: Watch }
 
 /** Step 1, or the exit status after printing why the launch stops. */
 async function preflight(opts: Options): Promise<Preflight | number> {
   const key = readKey(process.env);
   if (key === "") return refuse("NO KEY: refusing");
-  const env = roundEnv(key, opts.publishRoot);
+  const { env, stripped } = roundEnv(key, opts.publishRoot);
+  say(`env: ${strippedText(stripped.length)}`);
   const node = onPath("node", env.PATH);
   if (node === null) return refuse("refusing: node is not on PATH");
   const claude = onPath("claude", env.PATH);
@@ -480,7 +498,7 @@ async function preflight(opts: Options): Promise<Preflight | number> {
     await watch.drained;
     say("round interrupted during the smoke call; no cell was started");
   }
-  return smoke === 0 ? { env, key, cliVersion: version.split(" ")[0], watch } : smoke;
+  return smoke === 0 ? { env, stripped, key, cliVersion: version.split(" ")[0], watch } : smoke;
 }
 
 /** The state the cells share: what they run with, where they log, and the watch. */
@@ -579,15 +597,25 @@ async function pool<T, R>(items: T[], limit: number, work: (item: T) => Promise<
   return results.filter((r): r is R => r !== undefined);
 }
 
-/** round.json: this launch's record, or, for a --cells launch into a round that has one, that record with these cells' entries replaced. */
+/**
+ * round.json: this launch's record, or, for a --cells launch into a round that has one, that record with these cells'
+ * entries replaced and the names this launch stripped added to its env_stripped, when it has one.
+ */
 function writeRecord(round: Round, started: Date, ended: Date, runs: CellRun[]): void {
-  const { opts } = round;
+  const { opts, pre } = round;
   const cells = runs.map((r) => r.record);
   const prior = opts.cellsGiven ? readRoundRecord(roundFile(opts)) : "missing";
   const record: RoundRecord = typeof prior === "string"
-    ? { method: "parallel", concurrency: opts.parallel, canary: opts.canary ? cellId(opts.cells[0]) : null, started: started.toISOString(), ended: ended.toISOString(), cli_version: round.pre.cliVersion, cells }
-    : { ...prior, cells: mergedCells(prior.cells, cells) };
+    ? { method: "parallel", concurrency: opts.parallel, canary: opts.canary ? cellId(opts.cells[0]) : null, started: started.toISOString(), ended: ended.toISOString(), cli_version: pre.cliVersion, env_stripped: pre.stripped, cells }
+    : mergedRecord(prior, pre.stripped, cells);
   writeFileSync(roundFile(opts), `${JSON.stringify(record, null, 2)}\n`);
+}
+
+/** A round's record with these cells' entries replaced and, when it names the variables its launch stripped, this launch's added. */
+function mergedRecord(prior: RoundRecord, stripped: string[], cells: RoundCell[]): RoundRecord {
+  const merged: RoundRecord = { ...prior, cells: mergedCells(prior.cells, cells) };
+  if (prior.env_stripped !== undefined) merged.env_stripped = [...new Set([...prior.env_stripped, ...stripped])].sort();
+  return merged;
 }
 
 function mergedCells(prior: RoundCell[], fresh: RoundCell[]): RoundCell[] {

@@ -2,7 +2,10 @@
 // round.json in the round's folder, beside the run folders and the results file,
 // and tools/eval-report.ts prints one line from it under the Harness table
 // (prose design 2026-10-14, §11.5 ruling 10). A round run by the sequential
-// script has no round.json, and the report then prints no such line.
+// script has no round.json, and the report then prints no such line. From round
+// 1c (§11.6, carried items) the record also names the CLAUDE* variables the
+// launcher kept from its children; a round.json written before then lacks the
+// field and still reads.
 
 import { readFileSync } from "node:fs";
 import { isObject } from "./is-object.ts";
@@ -15,7 +18,11 @@ import { isObject } from "./is-object.ts";
  */
 export interface RoundCell { cell: string; started: string; ended: string; exit: number | null; summary: string | null; error?: string }
 
-/** round.json: the method, the cells run at once, the canary cell or null, the round's times, the CLI version and each cell. */
+/**
+ * round.json: the method, the cells run at once, the canary cell or null, the round's times, the CLI version, the
+ * names of the inherited CLAUDE* variables the launcher dropped from its children, sorted (absent from a round.json
+ * written before 2026-10-15's round 1c), and each cell.
+ */
 export interface RoundRecord {
   method: "parallel";
   concurrency: number;
@@ -23,6 +30,7 @@ export interface RoundRecord {
   started: string;
   ended: string;
   cli_version: string;
+  env_stripped?: string[];
   cells: RoundCell[];
 }
 
@@ -59,10 +67,15 @@ function isRoundCell(v: unknown): v is RoundCell {
     isNullable(v.exit, "number") && isNullable(v.summary, "string") && (v.error === undefined || typeof v.error === "string");
 }
 
+/** env_stripped as a round.json may hold it: a list of names, or absent from a file written before the field. */
+function isStrippedNames(v: unknown): boolean {
+  return v === undefined || (Array.isArray(v) && v.every((name) => typeof name === "string"));
+}
+
 function isRoundRecord(v: unknown): v is RoundRecord {
   return isObject(v) && v.method === "parallel" && Number.isInteger(v.concurrency) && isNullable(v.canary, "string") &&
     isTime(v.started) && isTime(v.ended) && typeof v.cli_version === "string" &&
-    Array.isArray(v.cells) && v.cells.every(isRoundCell);
+    isStrippedNames(v.env_stripped) && Array.isArray(v.cells) && v.cells.every(isRoundCell);
 }
 
 /** A duration as `21m 04s`, or `1h 02m 05s` from an hour, rounded to the second. */
@@ -84,15 +97,22 @@ export function cellWords(id: string): string {
   return m === null ? id : `p${m[1]} ${m[2]} run${m[3]}`;
 }
 
+/** `<n> CLAUDE* variables stripped`, singular for one: the launch-time line and the report's clause. */
+export function strippedText(n: number): string {
+  return `${n} CLAUDE* ${n === 1 ? "variable" : "variables"} stripped`;
+}
+
 /**
  * The line the report prints under the Harness table: the method, the
- * concurrency, the canary and the round's elapsed time; a line naming the file
- * when it could not be read; null when the round has no round.json. `label` is
- * how the line names an unreadable file.
+ * concurrency, the canary and the round's elapsed time, then how many CLAUDE*
+ * variables the launcher stripped when the record names them; a line naming
+ * the file when it could not be read; null when the round has no round.json.
+ * `label` is how the line names an unreadable file.
  */
 export function roundMethodLine(read: RoundRead, label: string): string | null {
   if (read === "missing") return null;
   if (read === "unreadable") return `Round method: round.json unreadable at ${label}`;
   const canary = read.canary === null ? "no canary" : `canary ${cellWords(read.canary)}`;
-  return `Round method: ${read.method}, concurrency ${read.concurrency}, ${canary}, ${elapsedText(Date.parse(read.ended) - Date.parse(read.started))}`;
+  const stripped = read.env_stripped === undefined ? "" : `, ${strippedText(read.env_stripped.length)}`;
+  return `Round method: ${read.method}, concurrency ${read.concurrency}, ${canary}, ${elapsedText(Date.parse(read.ended) - Date.parse(read.started))}${stripped}`;
 }

@@ -41,6 +41,20 @@
 // null with the reason and never refuses the record. The judging gate holds a
 // run unverified unless complete is true, an absent field included.
 //
+// After it comes message_counts (prose design §8.1, amended 2026-10-15 at the
+// second stage-1 gate, §11.6 ruling 4): the pairs of a count and a priority
+// value that the same final message states, each compared with the document's
+// counts. The document is the run's analysis.json; for each distinct priority
+// value its chains carry, before or after action, it counts the chains at that
+// value before action (priority) and after (post_priority). The message is
+// searched for each value as a whole token, a count before it (`8 H`, `2 rows
+// at H`) or after a colon or an equals sign (`H: 8`), and a pair matches when
+// its count is the value's count before or after action. Only the document's
+// values are searched, so a count of a value no chain carries is not read. The
+// check is reported, in the Harness table of tools/eval-report.ts, and makes no
+// run unverified: no judging gate reads it, and a wrong count does not move
+// rubric c6.
+//
 // A line that is not JSON refuses the whole stream, and so do a missing
 // transcript, a missing autocompact.txt and a probe reply with no window line: a
 // run whose context cannot be read is unverified at judging, never scored.
@@ -85,6 +99,19 @@ export interface EvalContext {
    * transcript.json cannot give the message, and `reason` then says why.
    */
   final_message: { complete: boolean | null; reason: string | null; length: number | null };
+  /**
+   * The counts by priority the final message states, against the document's (§8.1, §11.6 ruling 4). `document` maps
+   * each priority value of analysis.json's chains to the number of chains at it before and after action; `stated` lists
+   * each pair of a count and a value the message states, in message order. `checked` is false, with `reason` saying
+   * why, when the document or the message could not be read, the document holds no priority value, or the message
+   * states no pair; `document` and `stated` then hold what could be read.
+   */
+  message_counts: {
+    checked: boolean;
+    reason: string | null;
+    document: Record<string, { before: number; after: number }>;
+    stated: { count: number; value: string; matches: boolean }[];
+  };
 }
 
 export interface TranscriptFacts {
@@ -243,10 +270,22 @@ function readRequired(path: string): string {
 
 /** An optional file's JSON value, or undefined when it is missing or does not parse. */
 function readOptionalJson(path: string): unknown {
+  const read = readJson(path);
+  return "value" in read ? read.value : undefined;
+}
+
+/** A JSON file's value, or why it gives none: `missing` (no such file), `unreadable` (any other read error) or `not JSON`. */
+function readJson(path: string): { value: unknown } | { problem: "missing" | "unreadable" | "not JSON" } {
+  let text: string;
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    return { problem: fieldOf(err, "code") === "ENOENT" ? "missing" : "unreadable" };
+  }
+  try {
+    return { value: JSON.parse(text) };
   } catch {
-    return undefined;
+    return { problem: "not JSON" };
   }
 }
 
@@ -331,22 +370,86 @@ function unchecked(reason: string): FinalMessage {
   return { complete: null, reason, length: null };
 }
 
-/** The completeness of the result string transcript.json holds; complete null with the reason when the file cannot give one. */
-function finalMessageIn(path: string): FinalMessage {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (err) {
-    return unchecked(fieldOf(err, "code") === "ENOENT" ? "transcript.json missing" : "transcript.json unreadable");
+/** The run's final message: the result string transcript.json holds, or why the file cannot give one. */
+type ResultRead = { text: string } | { reason: string };
+
+/** The result string of transcript.json, or the reason it cannot be read, in the words final_message records. */
+function resultIn(path: string): ResultRead {
+  const read = readJson(path);
+  if ("problem" in read) return { reason: read.problem === "not JSON" ? "transcript.json is not JSON" : `transcript.json ${read.problem}` };
+  const result = fieldOf(read.value, "result");
+  return typeof result === "string" ? { text: result } : { reason: "transcript.json result is not a string" };
+}
+
+/** The final message's completeness; complete null with the reason when transcript.json cannot give the message. */
+function finalMessageIn(result: ResultRead): FinalMessage {
+  return "text" in result ? finalMessageOf(result.text) : unchecked(result.reason);
+}
+
+type MessageCounts = EvalContext["message_counts"];
+type DocumentCounts = MessageCounts["document"];
+
+/** Each priority value analysis.json's chains carry, with the number of chains at it before and after action, or why the file gives none. */
+function documentCountsIn(path: string): DocumentCounts | string {
+  const read = readJson(path);
+  if ("problem" in read) return read.problem === "missing" ? "analysis.json missing" : "analysis.json unreadable";
+  const counts = new Map<string, { before: number; after: number }>();
+  const tally = (value: unknown, when: "before" | "after"): void => {
+    if (typeof value !== "string" || value.trim() === "") return;
+    const entry = counts.get(value) ?? { before: 0, after: 0 };
+    entry[when]++;
+    counts.set(value, entry);
+  };
+  const chains = fieldOf(read.value, "chains");
+  for (const chain of Array.isArray(chains) ? chains : []) {
+    tally(fieldOf(fieldOf(chain, "priority"), "value"), "before");
+    tally(fieldOf(fieldOf(chain, "post_priority"), "value"), "after");
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return unchecked("transcript.json is not JSON");
-  }
-  const result = fieldOf(value, "result");
-  return typeof result === "string" ? finalMessageOf(result) : unchecked("transcript.json result is not a string");
+  return Object.fromEntries(counts);
+}
+
+/** A pattern body matched as a whole token: no word character or hyphen just before it or just after it. */
+function wholeToken(body: string): string {
+  return `(?<![\\w-])${body}(?![\\w-])`;
+}
+
+/**
+ * The two patterns a priority value is searched with (§11.6 ruling 4), each capturing the count: a count before the
+ * value, as in `8 H`, `2 rows at H` or `4 rated priority M`, and the value before a colon or an equals sign and the
+ * count, as in `H: 8`.
+ */
+function countPatterns(value: string): RegExp[] {
+  const v = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [
+    new RegExp(wholeToken(`(\\d+)\\s*(?:rows?\\s+)?(?:at\\s+|rated\\s+|in\\s+)?(?:priority\\s+)?${v}`), "g"),
+    new RegExp(wholeToken(`${v}\\s*[:=]\\s*(\\d+)`), "g"),
+  ];
+}
+
+/** Every pair of a count and a document value the message states, in message order, each matching when its count is the value's before or after action. */
+function statedCounts(text: string, document: DocumentCounts): MessageCounts["stated"] {
+  const found = Object.entries(document).flatMap(([value, counts]) =>
+    countPatterns(value).flatMap((re) =>
+      [...text.matchAll(re)].map((m) => {
+        const count = Number(m[1]);
+        return { at: m.index, pair: { count, value, matches: count === counts.before || count === counts.after } };
+      })));
+  return found.sort((a, b) => a.at - b.at).map((f) => f.pair);
+}
+
+/** The counts not checked, with why, and the document's counts when they could be read. */
+function uncounted(reason: string, document: DocumentCounts = {}): MessageCounts {
+  return { checked: false, reason, document, stated: [] };
+}
+
+/** The counts by priority the final message states, each compared with the document's; the document's problem comes before the message's. */
+function messageCountsOf(result: ResultRead, analysisPath: string): MessageCounts {
+  const document = documentCountsIn(analysisPath);
+  if (typeof document === "string") return uncounted(document);
+  if (Object.keys(document).length === 0) return uncounted("no priority values in the document");
+  if ("reason" in result) return uncounted(result.reason, document);
+  const stated = statedCounts(result.text, document);
+  return stated.length === 0 ? uncounted("no count stated", document) : { checked: true, reason: null, document, stated };
 }
 
 /** The run's context record, or an Error naming the file that cannot be read. Never writes. */
@@ -355,6 +458,7 @@ export function contextFor(runDir: string, options: { configDir: string; lintIds
   const text = readRequired(transcript);
   const windowLine = windowLineOf(join(runDir, "autocompact.txt"));
   const calls = callsOf(join(runDir, "invocations.json"));
+  const result = resultIn(join(runDir, "transcript.json"));
   let facts: TranscriptFacts;
   try {
     facts = extractContext(text, { configDir: options.configDir, lintIds: options.lintIds, validateCallIds: validateCallIdsOf(calls ?? []) });
@@ -378,7 +482,8 @@ export function contextFor(runDir: string, options: { configDir: string; lintIds
     invocations: calls === null ? "missing" : "present",
     denied: deniedOf(calls ?? []),
     lints: lintsOf(options.lintIds, facts.lint_fired, calls, finalLintsOf(join(runDir, "validate.json"))),
-    final_message: finalMessageIn(join(runDir, "transcript.json")),
+    final_message: finalMessageIn(result),
+    message_counts: messageCountsOf(result, join(runDir, "analysis.json")),
   };
 }
 

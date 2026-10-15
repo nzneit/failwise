@@ -335,17 +335,23 @@ function contextFile(overrides: Partial<EvalContext> = {}): EvalContext {
       { id: "conversion-substitution-unrecorded", fired: 0, final: false },
     ],
     final_message: { complete: true, reason: null, length: 4579 },
+    message_counts: {
+      checked: true,
+      reason: null,
+      document: { H: { before: 9, after: 0 }, M: { before: 5, after: 0 } },
+      stated: [{ count: 9, value: "H", matches: true }, { count: 5, value: "M", matches: true }],
+    },
     ...overrides,
   };
 }
 
-test("a run that carries context prints the Harness table with its window, compactions and peak, reads the CLI version, the lines without usage, the final message, denials and lint counts from its context.json, and marks the gaps and the CLI versions when they differ", () => {
+test("a run that carries context prints the Harness table with its window, compactions and peak, reads the CLI version, the lines without usage, the final message, the counts it states, denials and lint counts from its context.json, and marks the gaps and the CLI versions when they differ", () => {
   const r = sampleResults();
   // Four absolute temp run directories: A holds a full context.json; B one that
   // compacted twice (the copy below says once) under another window line than
   // its copy's, with no init line, so no CLI version, no invocations.json and no
-  // validate.json, and written before the count of lines without usage and the
-  // final message's completeness; C none,
+  // validate.json, and written before the count of lines without usage, the
+  // final message's completeness and its counts; C none,
   // while its copied context is non-null; D a full one like A, while its run
   // entry has no context key.
   const root = mkdtempSync(join(tmpdir(), "eval-report-harness-"));
@@ -356,6 +362,7 @@ test("a run that carries context prints the Harness table with its window, compa
     cli_version: null,
     assistant_lines_without_usage: undefined,
     final_message: undefined,
+    message_counts: undefined,
     compactions: 2,
     peak_context_tokens: 170039,
     init: { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false },
@@ -371,14 +378,14 @@ test("a run that carries context prints the Harness table with its window, compa
     r.runs[3] = { ...r.runs[3], dir: D };
     const md = renderReport(r);
     assert.match(md, /^## Harness$/m);
-    assert.match(md, /\| Prompt \| Model capability \| Run \| CLI \| Window \| Compactions \| Peak context \| Lines without usage \| Final message \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|\n\|(---\|){14}\n/);
-    assert.match(md, /\| 1 \| high \| 1 \| 2\.1\.299 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| 0 \| complete \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
-    assert.match(md, /\| 1 \| high \| 2 \| — \| 200k tokens \| 1 \| 170,039 \| — \| — \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
+    assert.match(md, /\| Prompt \| Model capability \| Run \| CLI \| Window \| Compactions \| Peak context \| Lines without usage \| Final message \| Counts \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|\n\|(---\|){15}\n/);
+    assert.match(md, /\| 1 \| high \| 1 \| 2\.1\.299 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| 0 \| complete \| match \(2\) \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
+    assert.match(md, /\| 1 \| high \| 2 \| — \| 200k tokens \| 1 \| 170,039 \| — \| — \| — \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
     assert.match(md, /^- p1 high run 2: results\.json context disagrees with context\.json \(window: x: 200k tokens vs Auto-compact window for deepseek-flash: 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\); compactions: 1 vs 2\)$/m);
-    assert.match(md, /\| 1 \| medium \| 1 \| — \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \| — \| — \|/);
+    assert.match(md, /\| 1 \| medium \| 1 \| — \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \| — \| — \| — \|/);
     assert.match(md, /^- p1 medium run 1: context\.json unreadable at [^/].*$/m);   // a repository-relative path, never /home
     assert.match(md, /^- p1 medium run 1: results\.json context disagrees with context\.json \(file missing\)$/m);
-    assert.match(md, /\| 1 \| medium \| 2 \| 2\.1\.299 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| 0 \| complete \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
+    assert.match(md, /\| 1 \| medium \| 2 \| 2\.1\.299 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| 0 \| complete \| match \(2\) \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
     assert.ok(!md.includes("p1 medium run 2: results.json context disagrees"), "a run with no context key is never a disagreement");
     assert.ok(!md.includes("CLI versions differ"), "the readable files carry one CLI version");
 
@@ -390,10 +397,10 @@ test("a run that carries context prints the Harness table with its window, compa
   }
 });
 
-test("the Harness table's Final message column reads complete, cut with the reason, or a dash for a context.json written before the field and for one that could not check the message", () => {
+test("the Harness table's Final message column reads complete, cut with the reason or with none recorded, or a dash for a context.json written before the field and for one that could not check the message", () => {
   const r = sampleResults();
   const root = mkdtempSync(join(tmpdir(), "eval-report-final-"));
-  // In table order: complete, cut, written before the field, not checked.
+  // In table order: complete, cut, written before the field, not checked; then cut with no reason, in the first run's place.
   const finals: (EvalContext["final_message"] | undefined)[] = [
     { complete: true, reason: null, length: 4579 },
     { complete: false, reason: 'ends with "h"', length: 2433 },
@@ -408,9 +415,38 @@ test("the Harness table's Final message column reads complete, cut with the reas
       return { ...run, dir, context: { window: "x: 786.4k tokens", compactions: 0, peak_context_tokens: 238429 } };
     });
     const md = renderReport(r);
-    const row = (capability: string, run: number, final: string) => `| 1 | ${capability} | ${run} | 2.1.296 | 786.4k tokens | 0 | 238,429 | 0 | ${final} | yes | 1 | 0 / 1 | 2 / yes | 0 / no |`;
+    const row = (capability: string, run: number, final: string) => `| 1 | ${capability} | ${run} | 2.1.296 | 786.4k tokens | 0 | 238,429 | 0 | ${final} | match (2) | yes | 1 | 0 / 1 | 2 / yes | 0 / no |`;
     for (const want of [row("high", 1, "complete"), row("high", 2, 'cut (ends with "h")'), row("medium", 1, "—"), row("medium", 2, "—")]) {
       assert.ok(md.includes(`\n${want}\n`), `no row ${want} in\n${md}`);
+    }
+    writeFileSync(join(root, "run0", "context.json"), JSON.stringify(contextFile({ final_message: { complete: false, reason: null, length: 12 } }), null, 2));
+    const unreasoned = row("high", 1, "cut (no reason recorded)");
+    assert.ok(renderReport(r).includes(`\n${unreasoned}\n`), `no row ${unreasoned}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the Harness table's Counts column reads match with the number of pairs stated, each pair that does not match with the document's counts, none stated, a dash for a context.json written before the field, and a dash with the reason when the counts could not be checked", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-counts-"));
+  try {
+    const r = withHarness(root);
+    const before = { H: { before: 9, after: 0 }, M: { before: 5, after: 0 } };
+    const after = { H: { before: 9, after: 0 }, M: { before: 5, after: 2 } };
+    const stated = (...pairs: [number, string, boolean][]) => pairs.map(([count, value, matches]) => ({ count, value, matches }));
+    const cases: [EvalContext["message_counts"] | undefined, string][] = [
+      [{ checked: true, reason: null, document: after, stated: stated([9, "H", true], [2, "M", true]) }, "match (2)"],
+      [{ checked: true, reason: null, document: before, stated: stated([8, "H", false], [6, "M", false]) }, "mismatch: 8 H (document 9), 6 M (document 5)"],
+      [{ checked: true, reason: null, document: after, stated: stated([8, "H", false], [5, "M", true], [6, "M", false]) }, "mismatch: 8 H (document 9), 6 M (document 5, after 2)"],
+      [{ checked: false, reason: "no count stated", document: before, stated: [] }, "none stated"],
+      [undefined, "—"],
+      [{ checked: false, reason: "analysis.json missing", document: {}, stated: [] }, "— (analysis.json missing)"],
+      [{ checked: false, reason: "transcript.json missing", document: before, stated: [] }, "— (transcript.json missing)"],
+    ];
+    for (const [counts, want] of cases) {
+      writeFileSync(join(root, "run0", "context.json"), JSON.stringify(contextFile({ message_counts: counts }), null, 2));
+      const row = `| 1 | high | 1 | 2.1.296 | 786.4k tokens | 0 | 238,429 | 0 | complete | ${want} | yes | 1 | 0 / 1 | 2 / yes | 0 / no |`;
+      assert.ok(renderReport(r).includes(`\n${row}\n`), `no row ${row}`);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -465,6 +501,32 @@ test("a round.json gives one Round method line directly under the Harness table,
     for (const text of ["{", JSON.stringify({ method: "parallel" }), roundFile({ ended: "yesterday" })]) {
       writeFileSync(file, text);
       assert.match(renderReport(r, options), /^Round method: round\.json unreadable at [^/][^\n]*round\.json$/m, text);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a round.json's env_stripped ends the Round method line with how many CLAUDE* variables the launcher stripped; a round.json written before the field reads without it", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-round-env-"));
+  try {
+    const r = withHarness(root);
+    const file = join(root, "round.json");
+    const options = { ...V1_OPTIONS, roundFile: file };
+    const cases: [unknown, string][] = [
+      [["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_EFFORT"], ", 3 CLAUDE* variables stripped"],
+      [["CLAUDE_EFFORT"], ", 1 CLAUDE* variable stripped"],
+      [[], ", 0 CLAUDE* variables stripped"],
+    ];
+    for (const [stripped, clause] of cases) {
+      writeFileSync(file, roundFile({ env_stripped: stripped }));
+      assert.match(renderReport(r, options), new RegExp(`^Round method: parallel, concurrency 4, canary p1 high run1, 21m 04s${clause.replace("*", "\\*")}$`, "m"), clause);
+    }
+    writeFileSync(file, roundFile());
+    assert.match(renderReport(r, options), /^Round method: parallel, concurrency 4, canary p1 high run1, 21m 04s$/m);
+    for (const stripped of ["CLAUDECODE", [1], null]) {
+      writeFileSync(file, roundFile({ env_stripped: stripped }));
+      assert.match(renderReport(r, options), /^Round method: round\.json unreadable at /m, JSON.stringify(stripped));
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
