@@ -536,7 +536,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
 }
 
 // The prose design's §6.4: after a successful render, one stdout line when n > 0 of the m ratings are
-// provisional, and nothing when n is 0. The model reads it within a few turns of the final message,
+// provisional, and nothing when n is 0. The session reads it within a few turns of the final message,
 // where the hand-over is written, so the line carries the hand-over rule; the report is unchanged.
 function provisionalLine(n: number, m: number): string {
   return `provisional: ${n} of ${m} ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n`;
