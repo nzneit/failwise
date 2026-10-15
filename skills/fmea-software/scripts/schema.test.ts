@@ -429,7 +429,7 @@ test("the sla, limits, rationale and history.change descriptions carry the stage
     assert.ok(!text(props("dependencyEdge")[field]).includes("Nothing computes on it."), field);
   }
   assert.ok(text(props("rating").rationale).endsWith("each such row included; an open assumption does not record it."));
-  assert.ok(text(props("historyEntry").change).includes("every field it substituted with its count, empty cells and element-level defaults included"));
+  assert.ok(text(props("historyEntry").change).includes("every field it substituted with its count. Empty cells and element-level, function-level, control and effect defaults"));
 });
 
 // `minimalDoc()` plus a tracker target and one action carrying a link, in the shapes of the
