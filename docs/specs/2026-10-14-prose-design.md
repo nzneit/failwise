@@ -44,7 +44,7 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D1 | Route: rule placement, scope wording and three machine checks, then the readability pass. The user chose this over prose-only on 2026-10-14. | §6, §7 |
 | D2 | Branch `prose` stacked on `flow-model`, in its own worktree; it rebases when `flow-model` merges. | header |
 | D3 | Three eval rounds, one per stage, on DeepSeek Flash at both capabilities, 16 runs each, prompt 5 included. | §8 |
-| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. (amended 2026-10-15: and the c1 reading on a control's evidence, which adds no criterion, §11.5 ruling 2) (amended 2026-10-15 at the second stage-1 gate: and the c1 reading on an action's dates and a control's origin, the c6 reading on a count by priority, and the c11 reading on two more declared defaults with its clause extended to a ground rule and the final message, none adding a criterion, §11.6) | §5.2, §4, §11.4, §11.5, §11.6 |
+| D4 | Rubric 4 is frozen for all three rounds after the one amendment stage 0 makes (the `not_applicable` flows state the user ruled on 2026-10-13) and the stage-0 gate's two dated readings of c2 and c11, which add no criterion (§11.4). `rubric.md` is otherwise out of scope: it is the instrument. (amended 2026-10-15: and the c1 reading on a control's evidence, which adds no criterion, §11.5 ruling 2) (amended 2026-10-15 at the second stage-1 gate: and the c1 reading on an action's dates and a control's origin, the c6 reading on a count by priority, and the c11 reading on two more declared defaults with its clause extended to a ground rule and the final message, none adding a criterion, §11.6) (amended 2026-10-15 at the third stage-1 gate: and the c1 readings on `test_result` with a ref that restates an inventory line and on the capacity sentence's open-assumption default, and the c11 reading on the converter's typing as one default, none adding a criterion, §11.7) | §5.2, §4, §11.4, §11.5, §11.6, §11.7 |
 | D5 | The descriptive sections of the references and all frozen text (§4.3) are out of stage 2; the prose checker's ratchet holds them from getting worse. | §7.3 |
 | D6 | The two new lints are warnings, not blockers, so a valid document still renders, the quality score is untouched and the c1 reading of rubric 4 is unchanged. | §6.4 |
 | D7 | The prose checker is a ratchet against a baseline file, not a set of hard caps, and fails closed. | §7.6 |
@@ -613,6 +613,47 @@ being a gate, stay with part C.
 
 Round 1c follows the epilogue's revision, with the result gate run once; its note is committed as the round of
 record after the user reads it.
+
+### 11.7 Rulings at the third stage-1 gate (2026-10-15)
+
+Round 1c, `build/evals/prose-1c/`, the stage-1 round of record, ran through `tools/run-round.ts` at
+concurrency 4 with every inherited `CLAUDE*` variable stripped, and was judged under rubric 4 with no
+unverified unit. It passes §8.3 as amended: c1 scores 2 on all sixteen runs, c5 on the twelve runs of prompts
+1, 5 and 7 and c11 on the four prompt-6 runs, so every pair passes the first clause, and the five pairs that
+failed at baseline, c1 on (1, medium), (5, high) and (5, medium) and c11 on (6, high) and (6, medium), pass;
+four pairs fail a criterion they passed at baseline, c6 on (1, high) and (7, high) and c3 on (5, high) and
+(5, medium), with no mechanism in the shipped text or checks, and are logged as variance under the second
+clause; neither stage-1 warning reaches a final document. The Fable result gate ruled pass (plan B's sixth
+Fable call) and named three scores of 2 as borderline. The user ruled on 2026-10-15 that each stands, with no
+re-judge; the readings are two dated paragraphs in rubric 4, one in c1 and one in c11, which add no criterion,
+and the skill text round 1c measured is unchanged.
+
+1. Where the control inventory lists a control with no evidence, `test_result` on it with a `ref` that restates its inventory line is not an invented input under c1's control-evidence paragraph, the ref being one the inputs give; an incident or action item cited for `observed_incident` stays under the origin reading of ruling 2 of §11.6. The kind label is the matter of the control-inventory sentence of `scales-software.md`, which no criterion reads. p1/medium/run1's 2 stands (rubric c1's paragraph of the third stage-1 gate).
+2. The typing the converter does from the item text is one declared default covering `kind` and `boundary`; a `meta.history` clause in the phrase the conversion rule prescribes, with its count of elements and each element's kind and not its boundary, names the default, the fixture's per-element form being the form and not the requirement, and the reading narrows nothing in rubric c11's earlier 2026-10-15 paragraph, which takes the count or every element the default affects. p6/high/run1's 2 stands (rubric c11's paragraph of the third stage-1 gate).
+3. The open-assumption default of the scales' capacity sentence, applied on an unstated normal load, is a rating default and not a c1 gap, since no item of the design-inputs checklist asks for the normal load. p1/medium/run2's 2 stands (rubric c1's paragraph of the third stage-1 gate).
+
+Follow-ups after part C, none made at stage 1: three wording changes, each adding a rule that part C's
+rule-preservation critics are briefed to reject; the enforcement of a seed sentence the skill already carries;
+and fixes to the harness, `tools/eval-context.ts`, which no critic reads. The wording changes: a sentence in
+the design-run text restating the control-inventory sentence of `scales-software.md`, that an inventory
+control with no evidence stated takes `estimate` with the inventory as ref; the Convert item asking for each
+element's kind and boundary named in `meta.history`; the capacity sentence's open-assumption default recording
+the unstated load as an open assumption owned by `user`. The enforcement: `SKILL.md`'s seed sentence that a
+control the inventory does not list carries `evidence.kind` `none`, which p5/medium/run1 of round 1c did not
+follow (it gave the nine controls its carried-over action items created, ten control entries in all,
+`estimate` with the origin incident as ref) with no rubric consequence, c1's control-evidence paragraph
+reading only `test_result` and `observed_incident`; the clause of the control-inventory sentence of
+`scales-software.md` that `none` is written only when the inputs state the evidence is absent or an incident
+record shows the control did not catch the mode, which the run quoted, reads against the seed sentence. The
+harness fixes: the count check comparing a stated count with the after-action count only when some chain
+carries `post_priority`, a chain without one counting at its `priority` after action (round 1c's documents
+carry none, so a stated zero matched by absence), searching every value of the vocabulary of the priority
+table the document records in `meta.scales.priority_table` and not only the values its chains carry, and
+reading counts in words; and `firedCount`, through the calls `validateCallIdsOf` hands it, reading only
+`validate.ts` runs whose target is the run's own document (round 1c's one firing of
+`conversion-substitution-unrecorded`, on p6/medium/run1, ran on a scratch copy the run altered to see the lint
+fire). The round-1c note, `docs/specs/2026-10-14-prose-eval-results-1c.md`, carries a §8.3 reading section
+with these rulings and is committed as the round of record after the user reads it.
 
 ## 12. Acceptance criteria
 
