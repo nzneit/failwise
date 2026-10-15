@@ -36,7 +36,7 @@ The weighting is the skill's own and rests on no record. [skill-authored]
 |---|---|---|---|---|---|
 | `priority-value-mismatch` | A rated row's `priority.value` equals the value the loaded table's cell map yields for its `ratings`, so the value is drawn from that table's declared `vocabulary`; an absent or empty value fails, and under the shipped table, whose vocabulary is H, M and L, so does a not-applicable value. | blocker | C062, C122 | validator | [adapted-from:C062] [adapted-from:C122] |
 | `schema` | `actions[].status` validates against the five-value post-errata vocabulary and rejects the pre-errata value Discarded. | blocker | C063 | validator | [paraphrased:C063] |
-| `schema` | A step 6 column set carries no filter-code field; every object rejects properties the schema does not declare, so an imported sheet carrying one fails. | blocker | C063 | validator | [paraphrased:C063] |
+| `schema` | A step 6 column set carries no filter-code field; every object rejects properties the schema does not declare, so a document carrying one fails. | blocker | C063 | validator | [paraphrased:C063] |
 | `j1739-designation` | A bibliography entry for SAE J1739 carries the designation J1739_202605 with status Stabilized dated 2026-05-08 and names J1739_202101 of 2021-01-13 as the content revision; the bare form J1739:2021 is rejected as a current-edition citation, as is any claim of a 2026 technical revision. | blocker | C081, C084 | reviewer | [paraphrased:C081] [paraphrased:C084] |
 | `mil-std-1629a-cancellation` | A bibliography entry for MIL-STD-1629A records the cancellation notice of 4 August 1998 and names no successor standard; text asserting a named replacement is unsupported. | blocker | C041, C043 | reviewer | [paraphrased:C041] [paraphrased:C043] |
 | `ieee-1633-dating` | A bibliography entry for IEEE 1633 carries the designation year 2016 and the publication date 2017-01-18 as distinct fields, and records that a revision project approved on 2022-11-10 is in progress. | warning | C096 | reviewer | [paraphrased:C096] |
@@ -200,7 +200,7 @@ Record C089's baseline has an input-handling half the three rows above do not ca
 On the `anchor-edition-markers` row above: the pre-2019 fourth-edition marker phrases stay in the evidence base and are not reproduced in this file. [skill-authored]
 
 The framework study's evidence is confined to automotive mechanical parts analysed from consumer reviews rather than engineering data, so it is not evidence that generation works for software. [paraphrased:C074]
-The case study's scale is radiotherapy and medical-physics FMEA, and the benchmark paper's nine pilot scenarios are safety-critical rather than software-specific. [paraphrased:C069] [paraphrased:C111]
+The case study's scale is radiotherapy and medical-physics FMEA, and the benchmark paper's nine pilot scenarios are safety-critical rather than software-specific. [paraphrased:C069] [paraphrased:C111] [paraphrased:C112]
 All three primary studies are therefore off-domain: they justify guardrails and evals, never a quantitative claim about software. [skill-authored]
 
 ## Invariants, lints and reviewer rules outside the seven lists
