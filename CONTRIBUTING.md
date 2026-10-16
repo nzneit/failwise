@@ -36,6 +36,10 @@ into it and do not resolve here: finding ids of the form `F-WSn-NN`, in the desi
 the schema, and "plan reference §X" in code comments. A record id `Cnnn` does resolve, through
 the register.
 
+## Writing the skill's prose
+
+`SKILL.md` and the reference files are written to `docs/style.md`: two kinds of text, the shape of a procedure, the caps, one word for one thing, the tag rules, the text no one changes, and the prose checker that `tools/check.ts` runs.
+
 ## Opening a pull request
 
 Open the body of a pull request with a line that links its diff in Revision City, a third-party
