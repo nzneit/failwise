@@ -2,17 +2,23 @@
 // references/*.md it counts, per heading, the untagged items, the sentences over 25 words and the
 // filler words, on one basis for every file. The baseline is a ratchet, not a cap: a count may fall
 // and may never rise, and a commit that lowers a count lowers the baseline in the same commit.
+// The checker fails closed: input it cannot read or judge is never a pass.
 //
 //   node tools/check-prose.ts                    # measure and compare with dev/prose-baseline.json
 //   node tools/check-prose.ts --write-baseline   # write the measured counts as the baseline
 //   bun tools/check-prose.ts                     # a shell where only Bun is on PATH
 //
 // It measures the current directory, so run it from the repository root; a run from anywhere else
-// ends in `error IO_READ:` lines. It prints the counts per heading and per file on every run.
-// Exit status 0 when the counts hold, 1 on a count above its baseline, a write that would raise a
-// count, or a bad argument, and 3 on any unreadable input: a missing or non-JSON baseline, a file
-// that cannot be read, or a file that measures 0 items. The coded lines are PROSE, USAGE and IO_READ.
-// The baseline is { "<repo-relative path>": { "untagged": n, "long": n, "filler": n } }, keys sorted.
+// ends in `error IO_READ:` lines. After the arguments parse, it prints the counts per heading and
+// per file for every file it read, on every run.
+// Exit status 0 when the counts hold. Exit status 1 on a count above its baseline, a write that
+// would raise a count, a file in scope that the baseline lacks, a baseline entry outside the
+// scope, or a bad argument. Exit status 3 on a missing or unreadable baseline, a baseline that is
+// not a JSON object, an unreadable file, a file that measures nothing, a references folder that
+// cannot be listed, or a baseline write that fails. The coded lines are PROSE, USAGE, IO_READ
+// and IO_WRITE.
+// The baseline is { "<repo-relative path>": { "filler": n, "long": n, "untagged": n } }, with the
+// keys sorted at both levels.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,6 +49,7 @@ export const FILLER = ["basically", "essentially", "simply", "actually", "in ord
 export const BASELINE_PATH = "dev/prose-baseline.json";
 
 const SKILL_DIR = "skills/fmea-software";
+const REFERENCES_PREFIX = `${SKILL_DIR}/references/`;
 const USAGE = "usage: node tools/check-prose.ts [--write-baseline]";
 const COUNT_NAMES = ["untagged", "long", "filler"] as const;
 const TAG = "\\[(?:skill-authored|(?:paraphrased|adapted-from|cites|sourced):C\\d+)\\]";
@@ -205,47 +212,47 @@ export function measureText(path: string, text: string): FileMeasure {
 }
 
 function isCounts(value: unknown): value is Counts {
-  const entry = value as Record<string, unknown> | null;
-  return typeof entry === "object" && entry !== null && COUNT_NAMES.every((name) => Number.isInteger(entry[name]));
+  return isObject(value) && COUNT_NAMES.every((name) => Number.isInteger(value[name]));
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function compareToBaseline(measured: FileMeasure[], baseline: unknown): string[] {
-  if (!isObject(baseline)) return [`error PROSE: ${BASELINE_PATH} is not a JSON object`];
-  const errors: string[] = [];
-  for (const file of measured) {
-    const entry = baseline[file.path];
-    if (!isCounts(entry)) {
-      errors.push(`error PROSE: ${BASELINE_PATH} lacks ${file.path}`);
-      continue;
-    }
-    for (const name of COUNT_NAMES) {
-      if (file.total[name] > entry[name]) {
-        errors.push(`error PROSE: ${file.path}: ${name} is ${file.total[name]}, above its baseline ${entry[name]}`);
-      }
-    }
-  }
-  const inScope = new Set(measured.map((file) => file.path));
-  for (const key of Object.keys(baseline).sort()) {
-    if (!inScope.has(key)) errors.push(`error PROSE: ${BASELINE_PATH} names ${key}, which is not in scope`);
-  }
-  return errors;
+const NOT_OBJECT = `error IO_READ: ${BASELINE_PATH} is not a JSON object`;
+
+interface Rise {
+  path: string;
+  name: (typeof COUNT_NAMES)[number];
+  measured: number;
+  baseline: number;
 }
 
-/** The lines for a write that would raise a count above an existing entry. */
-function risingCounts(measured: FileMeasure[], baseline: Record<string, unknown>): string[] {
-  const errors: string[] = [];
+/** Each count that is above its baseline entry; a file without a whole entry has none. */
+function countsAbove(measured: FileMeasure[], baseline: Record<string, unknown>): Rise[] {
+  const rises: Rise[] = [];
   for (const file of measured) {
     const entry = baseline[file.path];
     if (!isCounts(entry)) continue;
     for (const name of COUNT_NAMES) {
-      if (file.total[name] > entry[name]) {
-        errors.push(`error PROSE: ${file.path}: ${name} would rise from ${entry[name]} to ${file.total[name]}`);
-      }
+      if (file.total[name] > entry[name]) rises.push({ path: file.path, name, measured: file.total[name], baseline: entry[name] });
     }
+  }
+  return rises;
+}
+
+export function compareToBaseline(measured: FileMeasure[], baseline: unknown): string[] {
+  if (!isObject(baseline)) return [NOT_OBJECT];
+  const errors: string[] = [];
+  for (const file of measured) {
+    if (!isCounts(baseline[file.path])) errors.push(`error PROSE: ${BASELINE_PATH} lacks ${file.path}`);
+  }
+  for (const rise of countsAbove(measured, baseline)) {
+    errors.push(`error PROSE: ${rise.path}: ${rise.name} is ${rise.measured}, above its baseline ${rise.baseline}`);
+  }
+  const inScope = new Set(measured.map((file) => file.path));
+  for (const key of Object.keys(baseline).sort()) {
+    if (!inScope.has(key)) errors.push(`error PROSE: ${BASELINE_PATH} names ${key}, which is not in scope`);
   }
   return errors;
 }
@@ -278,7 +285,8 @@ function readBaseline(root: string, host: ProseHost, allowMissing: boolean): { v
   const path = join(root, BASELINE_PATH);
   if (allowMissing && !host.exists(path)) return {};
   try {
-    return { value: JSON.parse(host.readFile(path)) };
+    const value: unknown = JSON.parse(host.readFile(path));
+    return isObject(value) ? { value } : { error: NOT_OBJECT };
   } catch (error) {
     return { error: `error IO_READ: ${BASELINE_PATH}: ${message(error)}` };
   }
@@ -306,28 +314,34 @@ function measureAll(
   return { measured, failed, errors };
 }
 
-function withoutKeys(baseline: unknown, keys: string[]): unknown {
-  if (!isObject(baseline)) return baseline;
-  return Object.fromEntries(Object.entries(baseline).filter(([key]) => !keys.includes(key)));
+function withoutKeys(baseline: Record<string, unknown>, drop: (key: string) => boolean): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(baseline).filter(([key]) => !drop(key)));
 }
 
-/** The PROSE lines of a run whose inputs were all read: a comparison, or a write that refuses to raise a count. */
+/** The PROSE and IO_WRITE lines of a run whose inputs were all read: a comparison, or a write that refuses to raise a count. */
 function judge(
   root: string,
   baseline: { value?: unknown },
-  run: { measured: FileMeasure[]; failed: string[] },
+  run: { measured: FileMeasure[]; failed: string[]; unlisted: boolean },
   writeMode: boolean,
   write: (line: string) => void,
 ): string[] {
-  if (!writeMode) return compareToBaseline(run.measured, withoutKeys(baseline.value, run.failed));
-  const existing = baseline.value;
-  if (existing !== undefined && !isObject(existing)) return [`error PROSE: ${BASELINE_PATH} is not a JSON object`];
-  const rising = risingCounts(run.measured, existing ?? {});
-  if (rising.length === 0) {
-    writeBaseline(root, run.measured);
-    write(`wrote ${BASELINE_PATH}`);
+  const existing = isObject(baseline.value) ? baseline.value : {};
+  if (!writeMode) {
+    const drop = (key: string): boolean => run.failed.includes(key) || (run.unlisted && key.startsWith(REFERENCES_PREFIX));
+    return compareToBaseline(run.measured, withoutKeys(existing, drop));
   }
-  return rising;
+  const rising = countsAbove(run.measured, existing).map(
+    (rise) => `error PROSE: ${rise.path}: ${rise.name} would rise from ${rise.baseline} to ${rise.measured}`,
+  );
+  if (rising.length > 0) return rising;
+  try {
+    writeBaseline(root, run.measured);
+  } catch (error) {
+    return [`error IO_WRITE: ${BASELINE_PATH}: ${message(error)}`];
+  }
+  write(`wrote ${BASELINE_PATH}`);
+  return [];
 }
 
 export function checkProse(
@@ -342,13 +356,15 @@ export function checkProse(
     lines.push(line);
     writeError(line);
   };
-  let files: string[] = [];
+  let files: string[] = [`${SKILL_DIR}/SKILL.md`];
+  let unlisted = false;
   try {
     files = proseFiles(root, host);
   } catch (error) {
+    unlisted = true;
     fail(`error IO_READ: ${SKILL_DIR}/references: ${message(error)}`);
   }
-  const run = measureAll(root, host, files);
+  const run = { ...measureAll(root, host, files), unlisted };
   const baseline = readBaseline(root, host, options.writeBaseline);
   for (const file of run.measured) printCounts(file, write);
   for (const line of run.errors) fail(line);
@@ -357,7 +373,7 @@ export function checkProse(
   if (!(unreadable && options.writeBaseline) && !baseline.error) {
     for (const line of judge(root, baseline, run, options.writeBaseline, write)) fail(line);
   }
-  if (lines.some((line) => line.startsWith("error IO_READ:"))) return 3;
+  if (lines.some((line) => /^error IO_(?:READ|WRITE):/.test(line))) return 3;
   return lines.length > 0 ? 1 : 0;
 }
 

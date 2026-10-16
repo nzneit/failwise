@@ -14,7 +14,9 @@ import {
   MIN_WORDS,
   measureText,
   proseFiles,
+  type Counts,
   type FileMeasure,
+  type HeadingCounts,
   type ProseHost,
 } from "./check-prose.ts";
 
@@ -31,7 +33,7 @@ function sentence(n: number): string {
   return ["Alpha", ...Array.from({ length: n - 2 }, () => "beta"), "omega."].join(" ");
 }
 
-function total(path: string, text: string): FileMeasure["total"] {
+function total(path: string, text: string): Counts {
   return measureText(path, text).total;
 }
 
@@ -61,8 +63,10 @@ test("measureText: a list item is one item, tagged when it carries a tag anywher
   const linked = measureText(SKILL, link);
   assert.equal(linked.total.untagged, 0);
   assert.equal(linked.items, 1);
-  const longSecond = `- ${sentence(5)} [skill-authored] [design-failure-catalog](references/design-failure-catalog.md) ${"w ".repeat(24)}end. [skill-authored]`;
-  assert.equal(total(SKILL, longSecond).long, 1);
+  const twoLong = `- ${sentence(26)} [skill-authored] [design-failure-catalog](x.md) ${"w ".repeat(24)}end. [skill-authored]`;
+  const split = total(SKILL, twoLong);
+  assert.equal(split.untagged, 0);
+  assert.equal(split.long, 2);
   assert.deepEqual(total(SKILL, `1. ${sentence(5)}`), { untagged: 1, long: 0, filler: 0 });
   assert.equal(total(SKILL, `- Run it in order to learn. [skill-authored]`).filler, 1);
 });
@@ -73,10 +77,11 @@ test("measureText: a table row is one item read from its Provenance cell, and it
     "| --- | :-: | --- |",
     `| a | ${sentence(30)} | [skill-authored] |`,
     "| b | Short note here | |",
+    "| c | A tag in the middle [skill-authored] | |",
   ].join("\n");
   const measured = measureText(SKILL, table);
-  assert.equal(measured.items, 2);
-  assert.deepEqual(measured.total, { untagged: 1, long: 1, filler: 0 });
+  assert.equal(measured.items, 3);
+  assert.deepEqual(measured.total, { untagged: 2, long: 1, filler: 0 });
 });
 
 test("measureText: frontmatter, fences, headings, blank lines and HTML comments are not measured, and a # inside a fence is not a heading", () => {
@@ -125,7 +130,9 @@ test("measureText: the vocabulary region of structure-elements.md and the source
   const register = ["## Before", `${sentence(5)} [skill-authored]`, "## The source register", `- ${sentence(5)}`, "| a | b |", "| - | - |", "| c | |", "## IEC 60812:2018", sentence(8)].join("\n");
   const exempt = measureText(PROVENANCE, register);
   assert.equal(exempt.total.untagged, 1);
-  assert.equal(exempt.headings.at(-1)?.counts.untagged, 1);
+  const last: HeadingCounts | undefined = exempt.headings.at(-1);
+  assert.equal(last?.heading, "IEC 60812:2018");
+  assert.equal(last?.counts.untagged, 1);
   assert.equal(total(REF, register).untagged, 3);
 });
 
@@ -137,7 +144,7 @@ test("measureText: a sentence of fewer than three words is not an item, a code s
   assert.equal(total(SKILL, `${withSpan} [skill-authored]`).long, 1);
   const exactly = `Alpha ${Array.from({ length: LONG_WORDS - 2 }, () => "word").join(" ")} \`five words in one span\`.`;
   assert.equal(total(SKILL, `${exactly} [skill-authored]`).long, 0);
-  const label = `[three word label](a.md) ${Array.from({ length: LONG_WORDS - 4 }, () => "word").join(" ")}.`;
+  const label = `[three word label](a.md "a title") ${Array.from({ length: LONG_WORDS - 4 }, () => "word").join(" ")}.`;
   assert.equal(total(SKILL, `Alpha ${label}`).long, 0);
   assert.equal(total(SKILL, `Alpha ${label} extra`).long, 1);
 });
@@ -153,7 +160,7 @@ test("compareToBaseline: equal counts pass; a count above its baseline, a missin
   assert.deepEqual(compareToBaseline(measured, { [SKILL]: { untagged: 2, long: 1, filler: 0 }, "gone.md": { untagged: 0, long: 0, filler: 0 } }), [
     "error PROSE: dev/prose-baseline.json names gone.md, which is not in scope",
   ]);
-  assert.deepEqual(compareToBaseline(measured, []), ["error PROSE: dev/prose-baseline.json is not a JSON object"]);
+  assert.deepEqual(compareToBaseline(measured, []), ["error IO_READ: dev/prose-baseline.json is not a JSON object"]);
 });
 
 /** A host with no machine behind it: `files` maps a repository-relative path to its text, or to the
@@ -224,7 +231,8 @@ test("checkProse fails closed: a missing or non-JSON baseline, an unreadable fil
     }),
   );
   assert.equal(both.status, 3);
-  assert.match(both.errors.join("\n"), /^error PROSE: skills\/fmea-software\/SKILL\.md: untagged is 1, above its baseline 1$|^error IO_READ: /m);
+  assert.match(both.errors.join("\n"), /^error PROSE: skills\/fmea-software\/SKILL\.md: long is 1, above its baseline 0$/m);
+  assert.match(both.errors.join("\n"), /^error IO_READ: /m);
 
   const mixed = runCheck(
     fakeProseHost({
@@ -268,12 +276,11 @@ test("checkProse --write-baseline writes the measured counts with sorted keys an
     assert.ok(lines.includes("wrote dev/prose-baseline.json"));
     const path = join(root, BASELINE_PATH);
     const written = readFileSync(path, "utf8");
-    assert.deepEqual(JSON.parse(written), {
-      [SKILL]: { untagged: 0, long: 0, filler: 0 },
-      [REF]: { untagged: 1, long: 0, filler: 0 },
-    });
-    assert.deepEqual(Object.keys(JSON.parse(written)), [SKILL, REF]);
-    assert.ok(written.endsWith("}\n"));
+    const expected = {
+      [SKILL]: { filler: 0, long: 0, untagged: 0 },
+      [REF]: { filler: 0, long: 0, untagged: 1 },
+    };
+    assert.equal(written, JSON.stringify(expected, null, 2) + "\n");
     assert.equal(run(false), 0);
     assert.deepEqual(errors, []);
 
@@ -281,6 +288,45 @@ test("checkProse --write-baseline writes the measured counts with sorted keys an
     assert.equal(run(true), 1);
     assert.match(errors.join("\n"), /^error PROSE: skills\/fmea-software\/SKILL\.md: long would rise from 0 to 1$/m);
     assert.equal(readFileSync(path, "utf8"), written);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("checkProse: a references folder that cannot be listed still measures SKILL.md, compares it alone and exits 3", () => {
+  const host = fakeProseHost({ [SKILL]: GOOD_TEXT, [BASELINE_PATH]: GOOD_BASELINE });
+  host.listDir = () => {
+    throw new Error("EACCES");
+  };
+  const result = runCheck(host);
+  assert.equal(result.status, 3);
+  assert.match(result.lines.join("\n"), /^## skills\/fmea-software\/SKILL\.md$/m);
+  assert.equal(result.errors.filter((line) => line.startsWith("error IO_READ:")).length, 1);
+  assert.doesNotMatch(result.errors.join("\n"), /error PROSE:/);
+  assert.equal(runCheck(host, true).status, 3);
+});
+
+test("checkProse: a baseline that is JSON but not an object is an IO_READ line, exit 3, in both modes", () => {
+  const files = { [SKILL]: GOOD_TEXT, [REF]: GOOD_TEXT, [BASELINE_PATH]: "null" };
+  for (const writeBaseline of [false, true]) {
+    const result = runCheck(fakeProseHost(files), writeBaseline);
+    assert.equal(result.status, 3);
+    assert.deepEqual(result.errors, ["error IO_READ: dev/prose-baseline.json is not a JSON object"]);
+    assert.equal(result.lines.some((line) => line.startsWith("wrote")), false);
+  }
+});
+
+test("checkProse: a failed baseline write is one IO_WRITE line, exit 3, and no file", () => {
+  const root = tempRoot(`# Top\n${sentence(6)} [skill-authored]\n`, `# Ref\n${sentence(7)}\n`);
+  rmSync(join(root, "dev"), { recursive: true });
+  try {
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const status = checkProse(root, defaultProseHost(), { writeBaseline: true }, (line) => lines.push(line), (line) => errors.push(line));
+    assert.equal(status, 3);
+    assert.match(errors.join("\n"), /^error IO_WRITE: dev\/prose-baseline\.json: /m);
+    assert.equal(lines.some((line) => line.startsWith("wrote")), false);
+    assert.equal(existsSync(join(root, BASELINE_PATH)), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
