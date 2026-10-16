@@ -1,24 +1,29 @@
-// Measures the skill's prose and ratchets it against a baseline (spec §7.6). For SKILL.md and each
-// references/*.md it counts, per heading, the untagged items, the sentences over 25 words and the
-// filler words, on one basis for every file. The baseline is a ratchet, not a cap: a count may fall
-// and may never rise, and a commit that lowers a count lowers the baseline in the same commit.
+// Measures the skill's prose and ratchets it against a baseline (spec §7.6).
+// It reads SKILL.md and each references/*.md.
+// It counts, per heading, the untagged items, the sentences over 25 words and the filler words.
+// Every file is measured on one basis.
+// The baseline is a ratchet, not a cap: a count may fall and may never rise.
+// A commit that lowers a count lowers the baseline in the same commit.
 // The checker fails closed: input it cannot read or judge is never a pass.
 //
 //   node tools/check-prose.ts                    # measure and compare with dev/prose-baseline.json
 //   node tools/check-prose.ts --write-baseline   # write the measured counts as the baseline
 //   bun tools/check-prose.ts                     # a shell where only Bun is on PATH
 //
-// It measures the current directory, so run it from the repository root; a run from anywhere else
-// ends in `error IO_READ:` lines. After the arguments parse, it prints the counts per heading and
-// per file for every file it read, on every run.
-// Exit status 0 when the counts hold. Exit status 1 on a count above its baseline, a write that
-// would raise a count, a file in scope that the baseline lacks, a baseline entry outside the
-// scope, or a bad argument. Exit status 3 on a missing or unreadable baseline, a baseline that is
-// not a JSON object, an unreadable file, a file that measures nothing, a references folder that
-// cannot be listed, or a baseline write that fails. The coded lines are PROSE, USAGE, IO_READ
-// and IO_WRITE.
-// The baseline is { "<repo-relative path>": { "filler": n, "long": n, "untagged": n } }, with the
-// keys sorted at both levels.
+// It measures the current directory, so run it from the repository root.
+// A run from anywhere else ends in `error IO_READ:` lines.
+// After the arguments parse, it prints the counts per heading and per file for every file it read.
+// It prints them on every run.
+// Exit status 0 when the counts hold.
+// Exit status 1 on a count above its baseline or a write that would raise a count.
+// It also exits 1 on a file in scope that the baseline lacks, or a baseline entry outside the scope.
+// It also exits 1 on a bad argument.
+// Exit status 3 on a missing or unreadable baseline, or a baseline that is not a JSON object.
+// It also exits 3 on an unreadable file, or a file that measures nothing.
+// It also exits 3 on a references folder that cannot be listed, or a baseline write that fails.
+// The coded lines are PROSE, USAGE, IO_READ and IO_WRITE.
+// The baseline is { "<repo-relative path>": { "filler": n, "long": n, "untagged": n } }.
+// The keys are sorted at both levels.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
