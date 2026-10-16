@@ -31,7 +31,7 @@ Items 1 to 4 and 14 are the structure inputs and are wanted before step 2; items
 - The analysis assumes user and system flows have already been identified and prioritised by criticality, and plans the components each critical flow needs against them. [paraphrased:C014]
 - One flow is a user-valued journey named once, not a per-step slice of that journey. [skill-authored]
 - A flow with no external user is not a defect: it is internal or machine-only. [skill-authored]
-- `users.population` names it (`internal only: the reconciliation operators`). [skill-authored]
+- `users.population` names that population (`internal only: the reconciliation operators`). [skill-authored]
 - The structural test reads the internal-only class for it. [skill-authored]
 - A population is a label and never a quantity. [skill-authored]
 - The count stays in the incident record. [skill-authored]
@@ -42,10 +42,9 @@ Items 1 to 4 and 14 are the structure inputs and are wanted before step 2; items
 - In that case, set `steps_partial: true`. [skill-authored]
 - `value_priority` is the flow's value-priority tier: a three-level label the run records on each flow and reads for sort and filter only. [paraphrased:C201] [skill-authored]
 - Each criterion is a test a second rater can apply to one flow without reading the first rater's answer. [skill-authored]
-- **High** — losing this flow stops the business serving its external users at all. No path inside the flow delivers the outcome. No existing evidenced control or stated procedure restores it inside the flow's own budget. [skill-authored]
-- **Medium** — losing this flow degrades it while a stated alternative path still delivers the outcome. Restoring the flow needs a person. [skill-authored]
-- **Low** — losing this flow is absorbed. It reaches no external user, or an existing evidenced control keeps the outcome delivered. [skill-authored]
-
+  - **High** — losing this flow stops the business serving its external users at all. No path inside the flow delivers the outcome. No existing evidenced control or stated procedure restores it inside the flow's own budget. [skill-authored]
+  - **Medium** — losing this flow degrades it while a stated alternative path still delivers the outcome. Restoring the flow needs a person. [skill-authored]
+  - **Low** — losing this flow is absorbed. It reaches no external user, or an existing evidenced control keeps the outcome delivered. [skill-authored]
 - The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. [skill-authored]
 - The three criteria measure business impact and not safety, because `Severity` is a technical consequence class. [skill-authored]
 - Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [paraphrased:C014] [skill-authored]
@@ -110,8 +109,8 @@ Reproduced from NASA-GB-8719.13, a work of the United States Government; public 
 - The exception is an answer the document cannot validate without, or a removal the update rules put to the person. [skill-authored]
 - The migration, conversion and update rules name each such answer and removal. [skill-authored]
 - The run does not proceed without that answer or removal. [skill-authored]
-- It writes nothing. [skill-authored]
-- It ends with the question. [skill-authored]
+- In that case, the run writes nothing. [skill-authored]
+- In that case, it ends with the question. [skill-authored]
 
 ## Contracts and data flows
 
