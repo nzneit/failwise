@@ -62,9 +62,14 @@ node tools/check.ts
 The first runs both test suites under `node --test`: every `*.test.ts` file under
 `skills/fmea-software/scripts/` and under `tools/`, subfolders included and `node_modules` left out.
 It fails when a suite has no test file, or when a folder of a suite cannot be listed; that suite
-then runs nothing. The second runs the static checks: the type check (`tsc`), the linter (`oxlint`)
-and the dead-code, duplication and complexity analysis (`fallow`), which the CI workflow also runs
-on every pull request. Both need Node.js 24.2 or later on PATH (`bun tools/run-tests.ts` and
+then runs nothing. The second runs the static checks: the type check (`tsc`), the linter (`oxlint`),
+the dead-code, duplication and complexity analysis (`fallow`) and the prose ratchet
+(`tools/check-prose.ts`), which compares the counts of `SKILL.md` and the references with
+`dev/prose-baseline.json` and fails when one rises. The CI workflow also runs them on every pull
+request. A commit that improves the prose lowers the baseline in the same commit with
+`node tools/check-prose.ts --write-baseline`, run from the repository root; the test suite refuses a
+baseline above the measured counts and the writer refuses a count that would rise, so the baseline
+moves only down. Both need Node.js 24.2 or later on PATH (`bun tools/run-tests.ts` and
 `bun tools/check.ts` also work and find Node through nvm). The commands are the same in bash and
 fish. If you call `node --test` directly, use the recursive glob form, such as
 `node --test "tools/**/*.test.ts"`; `node --test <directory>` is not the same on Node 24.

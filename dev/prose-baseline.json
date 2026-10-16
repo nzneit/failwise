@@ -1,0 +1,57 @@
+{
+  "skills/fmea-software/SKILL.md": {
+    "filler": 2,
+    "long": 113,
+    "untagged": 0
+  },
+  "skills/fmea-software/references/design-failure-catalog.md": {
+    "filler": 1,
+    "long": 82,
+    "untagged": 0
+  },
+  "skills/fmea-software/references/design-inputs.md": {
+    "filler": 1,
+    "long": 24,
+    "untagged": 3
+  },
+  "skills/fmea-software/references/method-selection.md": {
+    "filler": 0,
+    "long": 31,
+    "untagged": 2
+  },
+  "skills/fmea-software/references/methodology.md": {
+    "filler": 2,
+    "long": 57,
+    "untagged": 0
+  },
+  "skills/fmea-software/references/process-stub.md": {
+    "filler": 0,
+    "long": 36,
+    "untagged": 1
+  },
+  "skills/fmea-software/references/provenance.md": {
+    "filler": 0,
+    "long": 29,
+    "untagged": 0
+  },
+  "skills/fmea-software/references/quality-and-lint.md": {
+    "filler": 1,
+    "long": 144,
+    "untagged": 0
+  },
+  "skills/fmea-software/references/scales-software.md": {
+    "filler": 1,
+    "long": 110,
+    "untagged": 1
+  },
+  "skills/fmea-software/references/structure-elements.md": {
+    "filler": 0,
+    "long": 45,
+    "untagged": 0
+  },
+  "skills/fmea-software/references/work-tracking.md": {
+    "filler": 0,
+    "long": 39,
+    "untagged": 2
+  }
+}

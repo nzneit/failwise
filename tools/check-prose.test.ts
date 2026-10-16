@@ -359,7 +359,6 @@ test("the CLI prints every count and exits 1 above the baseline, 0 at it", () =>
 
 test(
   "the real baseline is never above the real counts",
-  { skip: existsSync(join(ROOT, BASELINE_PATH)) ? false : "dev/prose-baseline.json not written yet (plan C2)" },
   () => {
     const host = defaultProseHost();
     const baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_PATH), "utf8")) as Record<string, Record<string, number>>;
