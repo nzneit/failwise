@@ -1,9 +1,15 @@
 # Provenance: tags, permissions and the source register
 
-Every sourced statement in a reference file cites a record id; every unsourced statement is tagged `skill-authored`. [skill-authored]
-An untagged sentence is a defect, and so is a tag the cited record's source status does not permit. [skill-authored]
-This file is the rule the rest of the build is checked against: the tag vocabulary, the permission table keyed on source status, and the register that gives each of the 59 sources, in 64 rows, its status. [skill-authored]
-Records are cited, never findings: a record id `C###` is verified evidence, a finding id `F-WSn-NN` is the research report's synthesis and is not a citable unit. [skill-authored]
+- Every sourced statement in a reference file cites a record id. [skill-authored]
+- Every unsourced statement is tagged `skill-authored`. [skill-authored]
+- An untagged sentence is a defect. [skill-authored]
+- A tag the cited record's source status does not permit is also a defect. [skill-authored]
+- This file is the rule the rest of the build is checked against. [skill-authored]
+- It holds the tag vocabulary, the permission table keyed on source status, and the register. [skill-authored]
+- The register gives each of the 59 sources, in 64 rows, its status. [skill-authored]
+- Records are cited, never findings. [skill-authored]
+- A record id `C###` is verified evidence. [skill-authored]
+- A finding id `F-WSn-NN` is the research report's synthesis and is not a citable unit. [skill-authored]
 
 ## Tag vocabulary
 
@@ -22,8 +28,10 @@ The analysis JSON carries the same grammar: a chain's catalog reference stores t
 
 A tag sits in square brackets at the end of the sentence, bullet or table cell it covers. [skill-authored]
 A statement resting on several records carries several brackets, one per record. [skill-authored]
-A table row's tag sits in its last column, headed `Provenance`; every table in every reference file carries that column, with one exemption named below. [skill-authored]
-Every sentence of prose belongs to exactly one tagged statement; a sentence with no tag is reported by the checker as untagged. [skill-authored]
+A table row's tag sits in its last column, headed `Provenance`. [skill-authored]
+Every table in every reference file carries that column, with one exemption named below. [skill-authored]
+Every sentence of prose belongs to exactly one tagged statement. [skill-authored]
+The checker reports a sentence with no tag as untagged. [skill-authored]
 
 ## Tag-permission rule
 
@@ -31,26 +39,35 @@ Each source has one status, and that status decides which tags a statement citin
 
 | Source status | Permitted tags | Barred tags | Condition on use | Provenance |
 |---|---|---|---|---|
-| reproduce | `sourced:` `paraphrased:` `adapted-from:` `cites:` | none | Anything tagged `sourced:`, `paraphrased:` or `adapted-from:` carries the attribution elements the license requires, held in the citing file's attribution block or in the source's entry in the skill's `licenses/NOTICES.md`, and changed text also indicates the changes. | [skill-authored] |
-| paraphrase-only | `paraphrased:` `adapted-from:` `cites:` | `sourced:` | No passage of the source's prose is reproduced; its names, titles, terms of art and short lists of labels may be carried word for word, with citation. | [skill-authored] |
-| cite-only | `cites:` | `sourced:` `paraphrased:` `adapted-from:` | Name the record for the concept; take no passage of the source's prose and no arrangement of it, beyond the names, titles, terms of art and short lists of labels the rule below allows word for word with the citation. | [skill-authored] |
+| reproduce | `sourced:` `paraphrased:` `adapted-from:` `cites:` | none | Anything tagged `sourced:`, `paraphrased:` or `adapted-from:` carries the attribution elements the license requires. Those elements are held in the citing file's attribution block or in the source's entry in the skill's `licenses/NOTICES.md`. Changed text also indicates the changes. | [skill-authored] |
+| paraphrase-only | `paraphrased:` `adapted-from:` `cites:` | `sourced:` | No passage of the source's prose is reproduced. Its names, titles, terms of art and short lists of labels may be carried word for word, with citation. | [skill-authored] |
+| cite-only | `cites:` | `sourced:` `paraphrased:` `adapted-from:` | Name the record for the concept. Take no passage of the source's prose and no arrangement of it. The exceptions are the names, titles, terms of art and short lists of labels. The rule below allows them word for word with the citation. | [skill-authored] |
 | public domain | `sourced:` `paraphrased:` `adapted-from:` `cites:` | none | Anything reproduced carries the government-work note, which names the document and the basis of its public-domain status. | [skill-authored] |
 | unknown | `cites:` `adapted-from:` | `sourced:` `paraphrased:` | Facts and category labels only, with attribution; the register marks the source unchecked. | [skill-authored] |
 
-Reading a status: in the 26 bibliography rows, the register's License status cell holds the research report's own words, and the Treatment cell holds the operative treatment those words resolve to in v1; the 18 element-kinds rows take their status from the records of their range, as the element-kinds design §6.2 and Appendix A record. [skill-authored]
-Where the two differ, the Treatment cell governs, and the Permitted tags cell is derived from it, not from the License status wording. [skill-authored]
-Each bracket is checked against the status of its own record's source; a statement resting on several records carries one bracket per record, each within what that record's source permits. [skill-authored]
-A statement whose source status is `unknown` names the source in the sentence itself, because attribution is the condition on which the fact is usable at all. [skill-authored]
-A source's names, titles, terms of art and short lists of labels may appear word for word under any status, with the citation the statement already carries, and they do not make a statement `sourced:`. [skill-authored]
-A clause or sentence of a source's prose is wording, and the rule above applies to it in full. [skill-authored]
-Generic industry terms, such as Failure Mode and Effects Analysis, belong to no source and need no citation. [skill-authored]
-The source register may quote a source's copyright or license notice, because there the notice states that source's license. [skill-authored]
+- Reading a status: in the 26 bibliography rows, the register's License status cell holds the research report's own words. [skill-authored]
+- In those rows, the Treatment cell holds the operative treatment those words resolve to in v1. [skill-authored]
+- The 18 element-kinds rows take their status from the records of their range, as the element-kinds design §6.2 and Appendix A record. [skill-authored]
+- Where the two differ, the Treatment cell governs. [skill-authored]
+- The Permitted tags cell is derived from it, not from the License status wording. [skill-authored]
+- Each bracket is checked against the status of its own record's source. [skill-authored]
+- A statement resting on several records carries one bracket per record, each within what that record's source permits. [skill-authored]
+- A statement whose source status is `unknown` names the source in the sentence itself. [skill-authored]
+- That is because attribution is the condition on which the fact is usable at all. [skill-authored]
+- A source's names, titles, terms of art and short lists of labels may appear word for word under any status. [skill-authored]
+- They appear with the citation the statement already carries. [skill-authored]
+- They do not make a statement `sourced:`. [skill-authored]
+- A clause or sentence of a source's prose is wording, and the rule above applies to it in full. [skill-authored]
+- Generic industry terms, such as Failure Mode and Effects Analysis, belong to no source and need no citation. [skill-authored]
+- The source register may quote a source's copyright or license notice, because there the notice states that source's license. [skill-authored]
 
 ## Refuted records
 
 Every record carries a verification of confirmed or refuted. [skill-authored]
-A refuted record may be named only as a claim that failed verification, never as a fact about the world; citing one as fact is the defect kind `refuted-cited-as-fact`. [skill-authored]
-The tag on such a statement is still `cites:`, and the sentence says the record was refuted. [skill-authored]
+A refuted record may be named only as a claim that failed verification, never as a fact about the world. [skill-authored]
+Citing one as fact is the defect kind `refuted-cited-as-fact`. [skill-authored]
+The tag on such a statement is still `cites:`. [skill-authored]
+The sentence says the record was refuted. [skill-authored]
 
 ## The source register
 
@@ -169,13 +186,22 @@ No Google SRE Book text is reproduced, paraphrased or adapted anywhere in this p
 
 ## Sources with no license status in evidence
 
-Yuan et al. and Gunawi et al. carry no license status in evidence, so both are marked unchecked in the register. [cites:C026] [cites:C058]
-Seven sources of the element-kinds research are marked unchecked in the register for the same reason: the STUK report by Haapanen and Helminen, the sre.google-hosted PDF of The Calculus of Service Availability by Treynor et al., the AWS Well-Architected REL05-BP01 page, the MSDN Magazine article on the STRIDE approach, Osterman's STRIDE-per-Element post, Common Criteria Part 1 and the arXiv survey by Chockalingam et al. [skill-authored]
-Their findings and category labels are usable as facts, with the source named in the sentence; no text of theirs is reproduced. [skill-authored]
-The ISO/IEC/IEEE 15288 definition that the NIST CSRC Glossary quotes for system element is unchecked the same way, although the glossary page itself is public domain. [skill-authored]
-The user's ruling of 2026-10-07 withholds `sourced:` on records C131 to C160 in this version, even where a row's licence permits it, so the register keeps stating the licence and the ruling is enforced as a ruling. [skill-authored]
-arc42 and the OWASP Threat Modeling Cheat Sheet are licensed CC BY-SA 4.0, and by the user's ruling of 2026-10-07 both are cite-only, with no direct quotation on the public side, until a reading of ShareAlike is recorded. [skill-authored]
-If a license is later established for any unchecked source, its register row changes: a `cites:` tag already in use stays valid, because `cites:` is permitted under every status; an `adapted-from:` tag stays valid unless the status resolves to cite-only, in which case the statement is retagged or removed. [skill-authored]
+- Yuan et al. and Gunawi et al. carry no license status in evidence, so both are marked unchecked in the register. [cites:C026] [cites:C058]
+- Seven sources of the element-kinds research are marked unchecked in the register for the same reason. [skill-authored]
+- Two are the STUK report by Haapanen and Helminen, and the sre.google-hosted PDF of The Calculus of Service Availability by Treynor et al. [skill-authored]
+- Three are the AWS Well-Architected REL05-BP01 page, the MSDN Magazine article on the STRIDE approach and Osterman's STRIDE-per-Element post. [skill-authored]
+- The other two are Common Criteria Part 1 and the arXiv survey by Chockalingam et al. [skill-authored]
+- The findings and category labels of these sources are usable as facts, with the source named in the sentence. [skill-authored]
+- No text of these sources is reproduced. [skill-authored]
+- The NIST CSRC Glossary quotes the ISO/IEC/IEEE 15288 definition for system element. [cites:C160]
+- That definition is unchecked the same way, although the glossary page itself is public domain. [skill-authored]
+- The user's ruling of 2026-10-07 withholds `sourced:` on records C131 to C160 in this version, even where a row's licence permits it. [skill-authored]
+- The register therefore keeps stating the licence, and the ruling is enforced as a ruling. [skill-authored]
+- arc42 and the OWASP Threat Modeling Cheat Sheet are licensed CC BY-SA 4.0. [skill-authored]
+- By the user's ruling of 2026-10-07, both are cite-only, with no direct quotation on the public side, until a reading of ShareAlike is recorded. [skill-authored]
+- If a license is later established for any unchecked source, its register row changes. [skill-authored]
+- In that case, a `cites:` tag already in use stays valid, because `cites:` is permitted under every status. [skill-authored]
+- An `adapted-from:` tag stays valid unless the status resolves to cite-only, in which case the statement is retagged or removed. [skill-authored]
 
 ## Why record ids and not clause numbers
 
