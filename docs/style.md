@@ -87,7 +87,7 @@ A test, a licence, a script or the private audit depends on the exact form of th
 | Rule 7, the first column-0 line starting `7. `, with its `validate.ts` and `render.ts` spans | `work-tracking.md:26` | `tools/skill-commands.test.ts:149` |
 
 The test pins above are among the 61 pinned literals of the scan, listed under "Pinned literals" in the untracked `build/prose/brief.md`. The other pins hold `evals/prompts.json` (`prompts.test.ts`, `tools/run-eval.test.ts`), `evals/rubric.md` and the two judge workflows, `tools/workflows/evals.js` and `tools/workflows/rejudge.js` (`tools/eval-report.test.ts`), which stage 2 leaves alone. Of §4.3's literals that change by design, the lint-count sentence and the two fixtures' `computed` blocks changed in stage 1. Stage 2 shortens the frontmatter `description` of `SKILL.md` to 1,024 characters or fewer.
-Two files carry twin text on purpose, and no test compares the twins. You may shorten the `SKILL.md` copy by the twin rule above; never touch the reference's copy.
+Two files carry twin text on purpose, and no test compares the twins. You may shorten the `SKILL.md` copy by the twin rule above; never touch the words of the reference's copy, whose line form follows its section (ruled at the prose acceptance, 2026-10-16).
 
 | `SKILL.md` | Its text | The reference's copy |
 |---|---|---|

@@ -1,7 +1,7 @@
 {
   "skills/fmea-software/SKILL.md": {
     "filler": 0,
-    "long": 6,
+    "long": 5,
     "untagged": 0
   },
   "skills/fmea-software/references/design-failure-catalog.md": {
@@ -41,7 +41,7 @@
   },
   "skills/fmea-software/references/scales-software.md": {
     "filler": 1,
-    "long": 67,
+    "long": 66,
     "untagged": 1
   },
   "skills/fmea-software/references/structure-elements.md": {
