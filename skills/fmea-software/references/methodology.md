@@ -135,16 +135,22 @@ Deployed tooling adds a further data point, on the value set rather than on the 
 
 ### Why severity-first
 
-Ruling D2: three ratings on 1 to 10 with software anchors the skill authors, a rationale and an evidence kind on every rating, a severity-first priority table the skill owns, and RPN computed for reference only. [skill-authored]
-The reason severity leads is the one the prior-art skill gives for Action Priority: a product of three factors lets a high-severity row be outranked by low occurrence and low detection, whereas a severity-first table keeps such a row from being ignored. [paraphrased:C086]
-What NASA and the book-era Neufelder method carry is two factors apiece, with detection never multiplied into the priority. [paraphrased:C109] [paraphrased:C118]
-Putting severity first is this skill's own ruling and is inherited from neither of them. [skill-authored]
-Detection stays as a third factor even though NASA's SFMEA has none, because this skill keys Detection on the controls a row actually carries. [paraphrased:C129] [skill-authored]
-That keying is the skill's own: no standard in the corpus, IEC included, binds a control class to a rating column. [cites:C055] [skill-authored]
-Priority is written as a value plus the id of the table it came from, never as a closed enum, because deployed tooling declares its vocabulary per catalog. [paraphrased:C122]
-The shipped vocabulary is H, M, L in that order, which coincides with the handbook's post-errata value set without carrying a single one of its cells. [paraphrased:C062] [skill-authored]
-The table's bands, cell map and properties make no claim to be any standard's and are tested as properties, not as a reproduction; a licensed table supplied at run time replaces it without changing any rule here. [skill-authored]
-RPN is stored for reference and never ranks anything, so a row's place in the report is decided by its priority from the table, then by severity, and never by RPN. [skill-authored]
+- Ruling D2 sets three ratings on 1 to 10 with software anchors the skill authors. [skill-authored]
+- It puts a rationale and an evidence kind on every rating. [skill-authored]
+- It sets a severity-first priority table the skill owns. [skill-authored]
+- It keeps RPN, computed for reference only. [skill-authored]
+- The reason severity leads is the one the prior-art skill gives for Action Priority: a product of three factors lets a high-severity row be outranked by low occurrence and low detection, whereas a severity-first table keeps such a row from being ignored. [paraphrased:C086]
+- What NASA and the book-era Neufelder method carry is two factors apiece, with detection never multiplied into the priority. [paraphrased:C109] [paraphrased:C118]
+- Putting severity first is this skill's own ruling and is inherited from neither of them. [skill-authored]
+- Detection stays as a third factor even though NASA's SFMEA has none, because this skill keys Detection on the controls a row actually carries. [paraphrased:C129] [skill-authored]
+- That keying is the skill's own: no standard in the corpus, IEC included, binds a control class to a rating column. [cites:C055] [skill-authored]
+- Priority is written as a value plus the id of the table it came from, never as a closed enum, because deployed tooling declares its vocabulary per catalog. [paraphrased:C122]
+- The shipped vocabulary is H, M, L in that order, which coincides with the handbook's post-errata value set without carrying a single one of its cells. [paraphrased:C062] [skill-authored]
+- The table's bands, cell map and properties make no claim to be any standard's. [skill-authored]
+- The skill's tests treat them as properties, not as a reproduction. [skill-authored]
+- A licensed table supplied at run time replaces the shipped table without changing any rule here. [skill-authored]
+- RPN is stored for reference and never ranks anything. [skill-authored]
+- So the report orders the rows by their priority from the table, then by severity, and never by RPN. [skill-authored]
 
 ## What this file never carries
 
