@@ -262,6 +262,11 @@ action's dates and on a control's status and evidence that plan B's epilogue add
 `SKILL.md`, `### Seed from postmortems`, join the stage-1 text, so the round-1c reading attributes a change on
 prompt 5 to them together with §6.1, §6.2 and §6.4; every other sentence of the seed section, §6.1's pointer to
 step 7's list apart, stays outside.)
+(amended 2026-10-15 at plan C's task C0, §11.5 ruling 7: the two sentences that follow the WS3 table in
+`quality-and-lint.md` join the stage-1 text; they leave to the machine lint `edge-reliability-unstated` an edge whose
+`sla` or `limits` is absent, empty or a placeholder and that no open `user` assumption records, and keep the rest of
+the judgement under the reviewer row `design-inputs-declared`, so the defect is reported once; they are part C's one
+ruled change to skill text outside §7.1 and §7.2.)
 
 ### 6.4 The machine checks
 

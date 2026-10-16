@@ -104,6 +104,9 @@ No cell value of any standard's table appears in that file or in this one: the s
 | `no-sre-derivative-no-release-it-text` | Text derived from the Google SRE Book is never shipped as an adapted derivative and text from Release It! is never reproduced at all, so a catalog entry citing either is independently written. | blocker | C040, C048, C050 | reviewer | [cites:C040] [cites:C048] [cites:C050] |
 | `no-blurb-as-business-anchor` | The publisher's claim that most of a project's life-cycle cost falls in production is uncited blurb and may not anchor business impact. | warning | C050 | reviewer | [paraphrased:C050] |
 
+The machine lint `edge-reliability-unstated` alone reports an edge whose `sla` or `limits` is absent, empty or a placeholder and that no open `user` assumption records. [skill-authored]
+The reviewer row `design-inputs-declared` keeps the rest of that judgement, so the defect is reported once. [skill-authored]
+
 The metastable and cascading conventions are the ones `design-failure-catalog.md` writes its rows under, and they are reviewer rules because the split between a sustaining mechanism and an initiating event is a reading of the system, not a property of the JSON. [skill-authored]
 On a cascading chain the `trigger` field therefore repeats the cause it was filled from, and a reviewer who finds the two disagreeing has found a misclassified row. [skill-authored]
 
