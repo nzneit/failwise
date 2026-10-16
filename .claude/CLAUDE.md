@@ -17,9 +17,9 @@ of a suite cannot be listed, and that suite then runs nothing. The second runs t
 the type check (`tsc`), the linter (`oxlint`) and the dead-code, duplication and complexity analysis
 (`fallow`), then the prose ratchet (`tools/check-prose.ts`, which measures `SKILL.md` and the
 references against `dev/prose-baseline.json` and fails when a count rises); it exits 1 on any
-finding, and on a missing tool. Both are the same command in bash and
-fish. Node 24.2 or later must be on PATH (`source ~/.nvm/nvm.sh` in bash, `nvm use 24` in fish);
-`bun tools/run-tests.ts` and `bun tools/check.ts` also work and find Node 24.2 or later through nvm.
+finding, and on a missing tool. Both are the same command in bash and fish. Node 24.2 or later
+must be on PATH (`source ~/.nvm/nvm.sh` in bash, `nvm use 24` in fish); `bun tools/run-tests.ts`
+and `bun tools/check.ts` also work and find Node 24.2 or later through nvm.
 
 The checkers are development tools declared in `dev/package.json`. Install them once with
 `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. Never add a

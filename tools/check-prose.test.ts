@@ -357,17 +357,14 @@ test("the CLI prints every count and exits 1 above the baseline, 0 at it", () =>
   }
 });
 
-test(
-  "the real baseline is never above the real counts",
-  () => {
-    const host = defaultProseHost();
-    const baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_PATH), "utf8")) as Record<string, Record<string, number>>;
-    for (const path of proseFiles(ROOT, host)) {
-      const measured = measureText(path, readFileSync(join(ROOT, path), "utf8")).total;
-      assert.ok(baseline[path], `${path} has no baseline entry`);
-      for (const name of ["untagged", "long", "filler"] as const) {
-        assert.ok(baseline[path][name] <= measured[name], `${path} ${name}: baseline ${baseline[path][name]} above measured ${measured[name]}`);
-      }
+test("the real baseline is never above the real counts", () => {
+  const host = defaultProseHost();
+  const baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_PATH), "utf8")) as Record<string, Record<string, number>>;
+  for (const path of proseFiles(ROOT, host)) {
+    const measured = measureText(path, readFileSync(join(ROOT, path), "utf8")).total;
+    assert.ok(baseline[path], `${path} has no baseline entry`);
+    for (const name of ["untagged", "long", "filler"] as const) {
+      assert.ok(baseline[path][name] <= measured[name], `${path} ${name}: baseline ${baseline[path][name]} above measured ${measured[name]}`);
     }
-  },
-);
+  }
+});

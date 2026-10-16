@@ -8,15 +8,21 @@
 // 3. analysis: fallow list --files --format json, then a bare fallow
 // 4. prose:    tools/check-prose.ts
 //
-// Each of the first three is the Node script under dev/node_modules/.bin, started from the repository
-// root with the Node 24.2 or later that tools/lib/host.ts finds, so the gate never reaches the network
-// and does not depend on which `node` is first on PATH, or on there being one. The fourth is a
-// repository script, not a dev/node_modules tool, started the same way from the root. The verdict is each
-// tool's exit status and nothing else; `fallow list` only proves that fallow analysed TypeScript
-// under each of skills/, tools/ and dev/browser/, since fallow exits 0 when it analyses nothing.
-// Every step runs even after a failure. Exit status 0 when all four pass, 1 otherwise, with three
-// coded lines of its own: NODE (no Node 24.2 or later found), TOOLING (a tool absent, unstartable,
-// or a `fallow list` that failed) and EMPTY (no TypeScript file analysed under a folder).
+// Each of the first three is the Node script under dev/node_modules/.bin.
+// It starts from the repository root with the Node 24.2 or later that tools/lib/host.ts finds.
+// So the gate never reaches the network and does not depend on which `node` is first on PATH,
+// or on there being one.
+// The fourth is a repository script, not a dev/node_modules tool, started the same way from the
+// root.
+// The verdict is each step's exit status and nothing else.
+// `fallow list` only proves that fallow analysed TypeScript under each of skills/, tools/ and
+// dev/browser/, since fallow exits 0 when it analyses nothing.
+// Every step runs even after a failure.
+// Exit status 0 when all four pass, 1 otherwise.
+// It has three coded lines of its own: NODE (no Node 24.2 or later found), TOOLING and EMPTY.
+// TOOLING means a tool absent, a tool or the prose script unstartable, or a `fallow list` that
+// failed.
+// EMPTY means no TypeScript file analysed under a folder.
 
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { isEntry } from "./lib/entry.ts";

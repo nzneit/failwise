@@ -115,6 +115,12 @@ test("the prose step failing does not stop the others' report, and the run exits
   assert.deepEqual(result.errors, []);
 });
 
+test("the prose script ending without an exit status: TOOLING, exit 1", () => {
+  const result = run(fakeHost({ statuses: { "check-prose": null } }));
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, ["error TOOLING: tools/check-prose.ts could not be started or ended without an exit status"]);
+});
+
 test("the prose step is started as a repository script through the resolved Node from the root, not from dev/node_modules/.bin", () => {
   const calls: Call[] = [];
   run(fakeHost({ calls }));

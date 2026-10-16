@@ -70,13 +70,14 @@ then runs nothing. The second runs the static checks: the type check (`tsc`), th
 the dead-code, duplication and complexity analysis (`fallow`) and the prose ratchet
 (`tools/check-prose.ts`), which compares the counts of `SKILL.md` and the references with
 `dev/prose-baseline.json` and fails when one rises. The CI workflow also runs them on every pull
-request. A commit that improves the prose lowers the baseline in the same commit with
-`node tools/check-prose.ts --write-baseline`, run from the repository root; the test suite refuses a
-baseline above the measured counts and the writer refuses a count that would rise, so the baseline
-moves only down. Both need Node.js 24.2 or later on PATH (`bun tools/run-tests.ts` and
+request. Both need Node.js 24.2 or later on PATH (`bun tools/run-tests.ts` and
 `bun tools/check.ts` also work and find Node through nvm). The commands are the same in bash and
 fish. If you call `node --test` directly, use the recursive glob form, such as
 `node --test "tools/**/*.test.ts"`; `node --test <directory>` is not the same on Node 24.
+A commit that improves the prose lowers the baseline in the same commit with
+`node tools/check-prose.ts --write-baseline`, run from the repository root; the test suite refuses a
+baseline above the measured counts and the writer refuses a count that would rise, so the baseline
+moves only down.
 
 The checkers are development tools declared in `dev/package.json`. Install them once with
 `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. Do not add
