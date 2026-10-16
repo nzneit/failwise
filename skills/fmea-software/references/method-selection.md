@@ -45,7 +45,7 @@ A seeded chain is rated by the anchors in `scales-software.md`, on the same evid
 ### What a postmortem hands over
 
 - The Howie report is the *how we got here* account, a narrative that tells the human and organizational side of an incident alongside what failed technically. [paraphrased:C078]
-- The guide calls root-cause analysis a legacy term that carries negative baggage. [paraphrased:C078]
+- It calls root-cause analysis a legacy term that carries negative baggage. [paraphrased:C078]
 - The only causal term it uses for its own practice is contributing factors, always in the plural. [paraphrased:C078]
 - So a seeded chain writes those contributing factors into `causes[]`, one entry each. [skill-authored]
 - The skill does not use root-cause wording when it reports back to a team that works this way. [skill-authored]
@@ -78,7 +78,8 @@ An action authored during the analysis is never given an incident identifier it 
 
 ### What incident data may rate, and what may not
 
-- Incident counts over a stated window are admissible Occurrence evidence, and the window goes into the rating's rationale. [skill-authored]
+- Incident counts over a stated window are admissible Occurrence evidence. [skill-authored]
+- The window goes into the rating's rationale. [skill-authored]
 - Averaged incident metrics are not: duration data is right-skewed, with the bulk of incidents resolved within about two hours. [paraphrased:C001]
 - So a mean-based figure such as MTTR misdescribes the spread it is drawn from and cannot carry a reliability judgement. [paraphrased:C001]
 - Asked what should take MTTR's place, the VOID replies that a lone average was never fit to stand for how reliable a system of people and software is, and it points instead to four kinds of input: the coordination an incident demanded, such as the people and teams drawn in, the tools and chat channels used, and any other incident running at the same time; how widely the write-ups and review meetings that follow incidents are read, attended and linked to; close calls; and service-level objectives read alongside what customers report. [paraphrased:C005]
@@ -133,5 +134,5 @@ Only an adversarial cause writes a handoff. [skill-authored]
 It does not remove the row. [skill-authored]
 The chain keeps its effects, controls, ratings and priority, and its actions are owed like any other row's. [skill-authored]
 It does not model the threat, name an attacker, or rank an attack path. [skill-authored]
-Threat modeling itself is out of scope for v1. [skill-authored]
+That is because threat modeling itself is out of scope for v1. [skill-authored]
 It rests on no record: D6 is the skill's own decision, and no record this file cites defines a security boundary for a software FMEA. [skill-authored]
