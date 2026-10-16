@@ -268,10 +268,15 @@ The stale reason set v2 is `element-changed`, `function-changed`, `flow-changed`
 
 ## The skill applies these to itself
 
-No unsourced structure: every element names a non-catalog source, reported as `element-source-non-catalog`. [skill-authored]
-No rating without a rationale and an evidence kind, both reported as `schema`; the rationale requirement is the skill's own, rests on no record, and is never cited to the case study. [skill-authored]
-The evidence-kind requirement rests on the finding that a published AI-FMEA framework generated S, O and D values with no quantitative validation of them. [paraphrased:C071]
-No AI-suggested rating is treated as final until a named human re-scores it: `rating-provisional` flags the state, `rating-review-by-date` requires the name and the date, and `re-rank-not-rescale` holds the gate to a per-rating re-scoring rather than a rescaling. [skill-authored]
-Priority comes only from the script: `priority-value-mismatch`, `priority-rpn-mismatch`, `priority-table-mismatch` and `priority-row-table-mismatch` recompute the block and refuse a hand-authored one. [skill-authored]
-The evals generate the same analysis twice at a fixed model version and diff it, under `two-run-diff`. [skill-authored]
-No catalog row is applied without pruning to what the system contains, under `catalog-pruning-recorded` and `catalog-row-tied-to-element`. [skill-authored]
+- No unsourced structure: every element names a non-catalog source, reported as `element-source-non-catalog`. [skill-authored]
+- No rating without a rationale, reported as `schema`. [skill-authored]
+- No rating without an evidence kind, reported as `schema`. [paraphrased:C071]
+- The rationale requirement is the skill's own, rests on no record, and is never cited to the case study. [skill-authored]
+- The evidence-kind requirement rests on the finding that a published AI-FMEA framework generated S, O and D values with no quantitative validation of them. [paraphrased:C071]
+- No AI-suggested rating is treated as final until a named human re-scores it. [paraphrased:C071] [paraphrased:C067]
+- `rating-provisional` flags the state. [skill-authored]
+- `rating-review-by-date` requires the name and the date. [skill-authored]
+- `re-rank-not-rescale` holds the gate to a per-rating re-scoring rather than a rescaling. [paraphrased:C067]
+- Priority comes only from the script: `priority-value-mismatch`, `priority-rpn-mismatch`, `priority-table-mismatch` and `priority-row-table-mismatch` recompute the block and refuse a hand-authored one. [skill-authored]
+- The evals generate the same analysis twice at a fixed model version and diff it, under `two-run-diff`. [paraphrased:C111] [paraphrased:C112] [paraphrased:C114]
+- No catalog row is applied without pruning to what the system contains, under `catalog-pruning-recorded` and `catalog-row-tied-to-element`. [paraphrased:C103]
