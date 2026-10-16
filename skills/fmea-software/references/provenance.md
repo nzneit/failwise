@@ -55,7 +55,7 @@ Each source has one status, and that status decides which tags a statement citin
 - A statement whose source status is `unknown` names the source in the sentence itself. [skill-authored]
 - That is because attribution is the condition on which the fact is usable at all. [skill-authored]
 - A source's names, titles, terms of art and short lists of labels may appear word for word under any status. [skill-authored]
-- They appear with the citation the statement already carries. [skill-authored]
+- They keep the citation the statement already carries. [skill-authored]
 - They do not make a statement `sourced:`. [skill-authored]
 - A clause or sentence of a source's prose is wording, and the rule above applies to it in full. [skill-authored]
 - Generic industry terms, such as Failure Mode and Effects Analysis, belong to no source and need no citation. [skill-authored]
@@ -201,7 +201,8 @@ No Google SRE Book text is reproduced, paraphrased or adapted anywhere in this p
 - By the user's ruling of 2026-10-07, both are cite-only, with no direct quotation on the public side, until a reading of ShareAlike is recorded. [skill-authored]
 - If a license is later established for any unchecked source, its register row changes. [skill-authored]
 - In that case, a `cites:` tag already in use stays valid, because `cites:` is permitted under every status. [skill-authored]
-- An `adapted-from:` tag stays valid unless the status resolves to cite-only, in which case the statement is retagged or removed. [skill-authored]
+- In that case, an `adapted-from:` tag stays valid unless the status resolves to cite-only. [skill-authored]
+- On cite-only, the statement is retagged or removed. [skill-authored]
 
 ## Why record ids and not clause numbers
 

@@ -176,7 +176,7 @@ The basis the rows for this kind will rest on is NASA-GB-8719.13's data fault ta
 - The chapter is CC BY-NC-ND 4.0, so the rows that name it carry `cites:` and take no wording, selection or arrangement from it. [cites:C040]
 - No text from Yuan et al. or Gunawi et al. [cites:C026] [cites:C057]
 - Neither has a license status in evidence, so their findings and category labels are used as facts with the source named in the row. [cites:C026] [cites:C057]
-- Nothing of theirs is reproduced. [cites:C026] [cites:C057]
+- And nothing of theirs is reproduced. [cites:C026] [cites:C057]
 - No severity or business-impact anchor from Release It! [paraphrased:C050]
 - The publisher's page claims, with nothing cited behind it, that four fifths of what a project costs over its life falls in production. [paraphrased:C050]
 - So that figure is not used. [paraphrased:C050]
