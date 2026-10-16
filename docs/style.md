@@ -1,7 +1,6 @@
 # How the skill's prose is written
 
-This page is the style rule for `skills/fmea-software/SKILL.md` and the files in `skills/fmea-software/references/`. It states the rules of §4.3 and §7 of `docs/specs/2026-10-14-prose-design.md`, with the amendments of its §11.
-Line numbers are those of commit a90b912; once a rewrite moves a line, find the item by its quoted text. A bare file name is a reference file, and a test file without `tools/` is in `skills/fmea-software/scripts/`. Other paths start at `skills/fmea-software/`, except those under `tools/`, `dev/`, `docs/` and `build/`.
+This page is the style rule for `skills/fmea-software/SKILL.md` and the files in `skills/fmea-software/references/`. It states the rules of §4.3 and §7 of `docs/specs/2026-10-14-prose-design.md`, with the amendments of its §11. Line numbers are those of commit a90b912; once a rewrite moves a line, find the item by its quoted text. A bare file name is a reference file, and a test file without `tools/` is in `skills/fmea-software/scripts/`. Other paths start at `skills/fmea-software/`, except those under `tools/`, `dev/`, `docs/` and `build/`.
 
 Rewrite only `SKILL.md` and the procedural sections of the references that §7.2 of the spec names. Leave the descriptive sections and `evals/rubric.md` alone. Lose, add or change no rule, and move none from its stage-1 position. Only a ruled item is exempt, such as the singular "that substitution is counted" at `SKILL.md:109` (§11.5 ruling 4). The three wording changes of §11.7 each add a rule, so they wait until after part C.
 
@@ -10,6 +9,7 @@ Rewrite only `SKILL.md` and the procedural sections of the references that §7.2
 An instruction tells the model what to do. A description tells a person what is so. Tell them apart by the verb and the reader:
 - An instruction's verb is a command, such as "Write", "Ask" or "Never write". Its reader is the model that runs the skill.
 - A description's verb states a fact, such as "is", "carries" or "counts". Its reader is a person, such as a reviewer.
+- A sentence the model must act on, such as "Those words are a value, not a gap", is an instruction whatever its verb. A sentence that only states a fact, a reason or a definition is a description, even though the model reads it.
 
 ## The shape of a procedure
 
@@ -17,9 +17,10 @@ Give each step of the spine in `SKILL.md`, and each of its other modes, this sha
 1. Open with one lead sentence that states what the step produces.
 2. List the rules in the order the model acts, one rule per bullet, each starting with its command verb.
 3. Put each rule before its reason, and each warning before the step it guards.
-4. End the step with its "Before you write" or "Before you send" list from stage 1.
+4. End the step with its "Before you write" or "Before you send" list from stage 1, where the step has one.
 
-- Keep each sentence stage 1 placed where it stands relative to the output it guards. The edge rule stays in the edge bullet, and the hand-over rule first in the hand-over list. Keep the numbering other files cite: steps 1 to 7, the migration headings, and every heading a test or a script message names.
+- Keep each sentence stage 1 placed where it stands relative to the output it guards. The edge rule stays in the edge bullet, and the hand-over rule first in the hand-over list.
+- Keep the numbering other files cite: steps 1 to 7, the migration headings, and every heading a test or a script message names.
 - Keep the first fenced block under `## Scripts` byte for byte; the prose after it may become a table. Make `## Reference files` a table.
 - Move a reason that is not a rule, with its tags, to the reference that owns its topic, and leave a one-line pointer. Two such reasons are the IEC 60812 clause-order citation and the LLM-rating study in step 5. A moved sentence meets the cap in its new home, by a clause-boundary split where it is sourced.
 - Where `SKILL.md` repeats a reference near-verbatim, keep a short imperative and a pointer in `SKILL.md`. The reference keeps the full text.
@@ -29,15 +30,15 @@ Give each step of the spine in `SKILL.md`, and each of its other modes, this sha
 
 Count words as the checker does: tags removed, a code span one word, a link its label, parentheticals kept. Table cells are measured; headings, frontmatter, fenced blocks and sentences under three words are not.
 - Keep an instruction sentence to 20 words, and a description sentence to 25. Keep a procedural paragraph to six sentences; make a longer one a list.
-- Split a sentence over its cap at a clause boundary. Write in the active voice, one rule per sentence.
+- Split a sentence over its cap at a clause boundary, outside the text no one changes. Write in the active voice, one rule per sentence.
 - Keep every stated uncertainty, every caveat that is content and every "may" that grants permission. Such caveats include "stays provisional until", "no standard in the corpus binds" and a licence condition.
 - Add no filler word: basically, essentially, simply, actually, in order to. A modal is never filler.
-- The checker counts sentences over 25 words, untagged items and filler words. It cannot tell an instruction from a description.
+- The checker counts sentences over 25 words in every file; the critic also holds an instruction to 20, in `SKILL.md` and the references alike. The checker also counts untagged items and filler words, and cannot tell an instruction from a description.
 - The critic checks the 20-word cap on instructions, the six-sentence cap on paragraphs and the tags. It lists every rule before and after the draft, and flags a rule lost, added, moved from its stage-1 position or changed.
 
 ## One word for one thing
 
-- Prefer the schema's word: call a thing what `schemas/fmea.schema.json` calls it. Give no word a new sense. Never unify a word the skill uses in several senses, such as record, state, flag, control, review, check, end, change, open or status.
+- Prefer the schema's word: call a thing what `schemas/fmea.schema.json` calls it. Give no word a new sense. Never unify a word the skill uses in several senses, such as record, state, flag, control, review, check, end, change, open or status. The other sixteen are under "One-meaning conflicts" in the "Vocabulary" section of `build/prose/brief.md`.
 - Substitute only in skill-authored sentences, and only as this table allows.
 
 | Apply | Do not apply |
@@ -85,7 +86,7 @@ A test, a licence, a script or the private audit depends on the exact form of th
 | The DF4 disclaimer row, the row headed "A flow's value-priority tier" | `methodology.md:111` | `quality-and-lint.test.ts:76` |
 | Rule 7, the first column-0 line starting `7. `, with its `validate.ts` and `render.ts` spans | `work-tracking.md:26` | `tools/skill-commands.test.ts:149` |
 
-The test pins above are among the 61 pinned literals of the scan, listed under "Pinned literals" in the untracked `build/prose/brief.md`. The other pins hold `evals/prompts.json` (`prompts.test.ts`, `tools/run-eval.test.ts`) and `evals/rubric.md` (`tools/eval-report.test.ts`), which stage 2 leaves alone. One literal changes by design: stage 2 shortens the frontmatter `description` of `SKILL.md` to 1,024 characters or fewer.
+The test pins above are among the 61 pinned literals of the scan, listed under "Pinned literals" in the untracked `build/prose/brief.md`. The other pins hold `evals/prompts.json` (`prompts.test.ts`, `tools/run-eval.test.ts`), `evals/rubric.md` and the two judge workflows, `tools/workflows/evals.js` and `tools/workflows/rejudge.js` (`tools/eval-report.test.ts`), which stage 2 leaves alone. Of §4.3's literals that change by design, the lint-count sentence and the two fixtures' `computed` blocks changed in stage 1. Stage 2 shortens the frontmatter `description` of `SKILL.md` to 1,024 characters or fewer.
 Two files carry twin text on purpose, and no test compares the twins. You may shorten the `SKILL.md` copy by the twin rule above; never touch the reference's copy.
 
 | `SKILL.md` | Its text | The reference's copy |
@@ -110,10 +111,9 @@ A sourced sentence carries `sourced:`, `paraphrased:`, `adapted-from:` or `cites
 
 ## The checker
 
-Run `node tools/check-prose.ts` from the repository root. It is the same command in bash and fish, and `bun tools/check-prose.ts` also works.
+Run `node tools/check-prose.ts` from the repository root. It is the same command in bash and fish, and `bun tools/check-prose.ts` also works. `tools/check.ts` runs it as its fourth step, after `tsc`, `oxlint` and `fallow`.
 - It reads `SKILL.md` and every `references/*.md`; `evals/rubric.md` and this page are outside it. It counts untagged items, sentences over 25 words and filler words, per heading and per file.
 - An item is a sentence outside a table, a bullet, or a table row. A row is untagged when its last cell holds no tag. The register in `provenance.md` and the generated region in `structure-elements.md` are exempt.
 - It compares each count with `dev/prose-baseline.json`, first written on the stage-1 text. A count may fall and may never rise. Lower the baseline in the commit that lowers a count, with `node tools/check-prose.ts --write-baseline`. That write refuses a rise. The test suite refuses a baseline entry above its measured count, so a fall cannot go unrecorded.
-- It fails closed: input it cannot read or judge is never a pass. A missing or unreadable baseline fails it, and so does an unreadable file. So does a file that measures nothing, a file in scope that the baseline lacks, or a baseline entry outside the scope.
-- It prints every count on every run. It exits 0 when the counts hold, and 1 on a rise, a scope mismatch or a bad argument. It exits 3 when it cannot read the baseline or a file, a file measures nothing, or the baseline write fails.
-- `tools/check.ts` runs it as its fourth step, after `tsc`, `oxlint` and `fallow`.
+- It prints every count on every run, and it fails closed: input it cannot read or judge is never a pass. It exits 0 when the counts hold, and 1 on a rise, a bad argument or a scope mismatch. A scope mismatch is a file in scope that the baseline lacks, or a baseline entry outside the scope.
+- It exits 3 on a missing or unreadable baseline, or one that is not a JSON object. It also exits 3 on an unreadable file, a file that measures nothing, a references folder it cannot list, or a failed baseline write.
