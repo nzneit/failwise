@@ -6,11 +6,14 @@ Load it when a user asks for a process, delivery, pipeline or operations FMEA. [
 
 ## The answer to a PFMEA request
 
-Classical PFMEA analyses a manufacturing and assembly process, so its software-delivery reading is an adaptation and not a transfer. [paraphrased:C082]
-v1 therefore answers a PFMEA request instead of running one. [skill-authored]
-What is sourced is below: DORA's five delivery metrics, Google's Production Readiness Review named as a control-plan analog, Howie's incident-selection heuristics as revisit triggers, the limits on incident data as rating evidence, and the rule for actions carried over from a postmortem. [skill-authored]
-What is missing is the four items in the next section, and none of them can be assembled from the evidence base. [skill-authored]
-The offer that goes with the answer: run the design spine over the delivery pipeline's own components as elements — a build service, an artifact store, a deployment controller, a release gate are elements like any other — which analyses the pipeline without needing a canonical step list. [skill-authored]
+- Classical PFMEA analyses a manufacturing and assembly process, so its software-delivery reading is an adaptation and not a transfer. [paraphrased:C082]
+- v1 therefore answers a PFMEA request instead of running one. [skill-authored]
+- What is sourced is below: DORA's five delivery metrics, Google's Production Readiness Review named as a control-plan analog, and Howie's incident-selection heuristics as revisit triggers. [skill-authored]
+- Also sourced are the limits on incident data as rating evidence, and the rule for actions carried over from a postmortem. [skill-authored]
+- What is missing is the four items in the next section, and none of them can be assembled from the evidence base. [skill-authored]
+- The offer that goes with the answer: run the design spine over the delivery pipeline's own components as elements. [skill-authored]
+- A build service, an artifact store, a deployment controller and a release gate are elements like any other. [skill-authored]
+- That run analyses the pipeline without needing a canonical step list. [skill-authored]
 
 ## What a PFMEA branch needs that is not here
 
@@ -91,21 +94,33 @@ The skill's use: an incident matching any row is a reason to revisit an analysis
 
 ## Incident data that is not rating evidence
 
-Incident duration is positively skewed rather than normally distributed, with most incidents resolved inside a couple of hours, so a mean such as MTTR does not represent the data and is unreliable as a measure of reliability. [paraphrased:C001]
-Recorded severity has the same defect and is subjective besides, because a level is often assigned to draw attention to an incident rather than to record what it cost. [paraphrased:C003]
-In place of one averaged number the VOID points to four kinds of input: the coordination an incident demanded, meaning the people, teams, tools and channels drawn in; how widely the write-ups and review meetings that follow incidents are read, attended and linked to; close calls; and service-level objectives read alongside what customers report. [paraphrased:C005]
-Howie argues the same point from the other side, that the industry has over-indexed on error-reduction metrics such as mean time to respond at the expense of the insight each incident could yield — a stated position rather than an empirical result. [paraphrased:C079]
-The rule that follows: a rating whose `evidence_kind` is `observed_incident` means an incident count over a stated window named in `evidence_ref`, and neither an averaged duration metric nor a recorded severity label satisfies it. [skill-authored]
-An incident count is one evidence source that a rationale must accompany, never a score on its own. [skill-authored]
+- Incident duration is positively skewed rather than normally distributed, with most incidents resolved inside a couple of hours. [paraphrased:C001]
+- So a mean such as MTTR does not represent the data and is unreliable as a measure of reliability. [paraphrased:C001]
+- Recorded severity has the same defect and is subjective besides, because a level is often assigned to draw attention to an incident rather than to record what it cost. [paraphrased:C003]
+- In place of one averaged number the VOID points to four kinds of input: the coordination an incident demanded, meaning the people, teams, tools and channels drawn in; how widely the write-ups and review meetings that follow incidents are read, attended and linked to; close calls; and service-level objectives read alongside what customers report. [paraphrased:C005]
+- Howie argues the same point from the other side, that the industry has over-indexed on error-reduction metrics such as mean time to respond at the expense of the insight each incident could yield — a stated position rather than an empirical result. [paraphrased:C079]
+- A rating whose `evidence_kind` is `observed_incident` means an incident count over a stated window named in `evidence_ref`. [skill-authored]
+- Neither an averaged duration metric nor a recorded severity label satisfies it. [skill-authored]
+- An incident count is one evidence source that a rationale must accompany, never a score on its own. [skill-authored]
 
 ## Actions carried over from a postmortem
 
-Howie fences learning off from action generation: the learning review is explicitly not about corrective actions, items generated inside such a review tend to be rushed and poorly thought through, and an implemented action item can itself become a contributing factor in a later incident. [paraphrased:C076]
-A postmortem is therefore an input to an analysis and not a competing output: its contributing factors are candidate causes, the measures it records are candidate controls, and its action items are candidate actions. [skill-authored]
-Expect narrative, unstructured text with plural contributing factors and no S, O or D fields, so extracting failure modes, causes and controls from it is the skill's work and not the postmortem's. [paraphrased:C078]
-The guide moves away from both a single root cause and a linear detect-diagnose-repair sequence, and it counts root-cause analysis among the industry's legacy terms. [paraphrased:C078]
-The skill therefore avoids root-cause wording when it interfaces with a team that works this way, and a single chain row can hold several causes in `causes[]`. [skill-authored]
-An action carried over from a postmortem keeps the identifier of the incident it came from. [cites:C076] The skill stores it in the action's `source_incident` field, and the lint `seeded-action-without-incident` reports an action that carries none on a chain seeded from an incident. [skill-authored]
+- Howie fences learning off from action generation. [paraphrased:C076]
+- The learning review is explicitly not about corrective actions. [paraphrased:C076]
+- Items generated inside such a review tend to be rushed and poorly thought through. [paraphrased:C076]
+- And an implemented action item can itself become a contributing factor in a later incident. [paraphrased:C076]
+- A postmortem is therefore an input to an analysis and not a competing output. [skill-authored]
+- Its contributing factors are candidate causes. [skill-authored]
+- The measures it records are candidate controls. [skill-authored]
+- Its action items are candidate actions. [skill-authored]
+- Expect narrative, unstructured text with plural contributing factors and no S, O or D fields. [paraphrased:C078]
+- So extracting failure modes, causes and controls from it is the skill's work and not the postmortem's. [paraphrased:C078]
+- The guide moves away from both a single root cause and a linear detect-diagnose-repair sequence, and it counts root-cause analysis among the industry's legacy terms. [paraphrased:C078]
+- The skill therefore avoids root-cause wording when it interfaces with a team that works this way. [skill-authored]
+- A single chain row can hold several causes in `causes[]`. [skill-authored]
+- An action carried over from a postmortem keeps the identifier of the incident it came from. [cites:C076]
+- The skill stores it in the action's `source_incident` field. [skill-authored]
+- The lint `seeded-action-without-incident` reports an action that carries none on a chain seeded from an incident. [skill-authored]
 
 ## The scope note: SAE J1739
 
