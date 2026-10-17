@@ -583,3 +583,20 @@ From `session-facts.md`:
 - `cat-dependency-01`'s cause column;
 - stability as a script step in `evals.js`;
 - the re-run of p7 medium run 1 after the config-dir fix.
+
+## After the round of record (2026-10-16)
+
+The Flows section's record form landed after the round of record: branch `flows-section`, five commits
+(`dc7f0fc`, `fc2072d`, `6bce375`, `d6ae7cd` and `d3a7fc1`) on `23eb1c4`, merged into `flow-model` as
+`598567e` on 2026-10-16. The twelve runs rendered the earlier table form from `6090b70`, and no run was
+re-run for the record form, so criterion 4 was judged on the table form and the record form is not
+assessed by this round. `SECTION_PARTS` in `dev/browser/matrix.ts` now includes `flows`, so a comparison
+photographs the section whenever both sides of it have the section; against `main`, which has none, it
+is a part added and is judged from `shots.ts`. That answers, for later rounds, the harness finding at
+lines 71, 159, 295 and 494 above. The merge's own comparison, `compare.ts --base HEAD` on the staged merge
+against `62ccd8c`, viewed 21 changed views of 132, all in `flows`, `row-ch-5`, `row-ch-9` and
+`group-checkout`: the row and group parts change only at the "breaks:" line of ch-5 and ch-9, which now
+links each flow to its record, and they do not change in print, where a link carries no underline and
+its parent's colour. The branch is to be pushed and a pull request opened under the user's
+authorization; once that is done, it supersedes the sentences "the 27 commits after `1856a45` are not
+pushed" and "This note opens no pull request" under "Decisions for the user".
