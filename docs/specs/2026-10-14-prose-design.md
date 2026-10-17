@@ -150,7 +150,7 @@ Text no stage changes, because a test, a licence, a script or the private audit 
 - the generated region of `references/structure-elements.md` between the `vocabulary:start` and `vocabulary:end` markers, which changes only through its JSON;
 - the first fenced block under `## Scripts` in `SKILL.md`, which `tools/skill-commands.test.ts` reads line by line and requires each command to open with `node ${CLAUDE_SKILL_DIR}/scripts/` at column 0;
 - the other pinned literals the scan found, 61 in tests under `scripts/` and `tools/` (`build/prose/brief.md`, "Pinned literals"), among them: the `### Migrate a v1 document` and `### Migrate a v2 document` headings and the stale-reason precedence line in `SKILL.md`; the validator-id and lint-id sentences and the reviewer rows matched by line prefix in `references/quality-and-lint.md`; `scales version: 2`, the two scale headings and the range sentence in `references/scales-software.md`; the DF4 disclaimer row in `references/methodology.md`; rule 7 of `references/work-tracking.md`, which a test finds as the first column-0 line starting `7. `;
-- twin text that two files carry identically on purpose: `SKILL.md:36`, `:62-63`, `:110`, `:117-119` and `:129` against `references/structure-elements.md`, and `SKILL.md:35` against `references/design-inputs.md` and `references/quality-and-lint.md:67`. No test compares the twins; stage 2 may shorten the `SKILL.md` copy by the rule of §7.1 and never the reference's copy.
+- twin text that two files carry identically on purpose: `SKILL.md:36`, `:62-63`, `:110`, `:117-119` and `:129` against `references/structure-elements.md`, and `SKILL.md:35` against `references/design-inputs.md` and `references/quality-and-lint.md:67`. No test compares the twins; stage 2 may shorten the `SKILL.md` copy by the rule of §7.1 and never the words of the reference's copy, whose line form follows its section (ruling 6 of 2026-10-16, §11.8).
 
 Literals that change by design, with their tests: the sentence at `references/quality-and-lint.md:25`, "The
 machine lints the scripts implement are nineteen:", becomes twenty-one, with the two new ids appended to
@@ -332,7 +332,7 @@ table with their severity and `[skill-authored]`.
 - A sentence stage 1 placed keeps its position relative to the output it guards: the edge rule stays in the edge bullet, the hand-over rule first in the hand-over list, each list last in its step. The rule-preservation critic of §9 checks this.
 - The other modes, seed, convert, update and the two migrations, take the same shape. In the Scripts section the first fenced block stays byte for byte (§4.3); only the prose after it may become a table. The Reference files section becomes a table.
 - A reason that is not a rule, such as the IEC 60812 clause-order citation and the LLM-rating study in step 5, moves to the reference file that owns its topic with its tags, and `SKILL.md` keeps a one-line pointer. A moved sentence meets the cap in its new home, by a clause-boundary split where it is sourced. `SKILL.md` is the one file every run loads whole, 46k characters at the skill load in the 0.7.0 round, and this is what shortens it.
-- Where `SKILL.md` repeats a reference near-verbatim (§4.3), the reference keeps the full text and `SKILL.md` keeps the short imperative with a pointer. The twin in the reference is not touched.
+- Where `SKILL.md` repeats a reference near-verbatim (§4.3), the reference keeps the full text and `SKILL.md` keeps the short imperative with a pointer. The twin's words in the reference are not touched; its line form follows its section (ruling 6 of 2026-10-16, §11.8).
 - Numbering other files cite stays: steps 1 to 7, the migrations' headings, and every heading a test or a script message names.
 
 ### 7.2 The sentence pass on the procedural sections of the references
@@ -659,6 +659,25 @@ reading counts in words; and `firedCount`, through the calls `validateCallIdsOf`
 `conversion-substitution-unrecorded`, on p6/medium/run1, ran on a scratch copy the run altered to see the lint
 fire). The round-1c note, `docs/specs/2026-10-14-prose-eval-results-1c.md`, carries a §8.3 reading section
 with these rulings and is committed as the round of record after the user reads it.
+
+### 11.8 Rulings at the acceptance (2026-10-16)
+
+Task C8 closed plan C with two stage-2 rounds, prose-2 and its repeat on the same text, prose-2b. The second
+round failed §8.4's first bullet again, the second strict failure under the bullet's dated note, and the Fable
+final acceptance, plan C's one Fable call, ruled `escalate` with twelve findings. The user then ruled nine items,
+one at a time, each with its options and what each costs if wrong. The acceptance note,
+`docs/specs/2026-10-14-prose-acceptance.md`, holds the record under "Rulings at acceptance (2026-10-16)"; the
+text commit 0a6ffe4 applied rulings 2, 4 and 6.
+
+1. Stage 2 is accepted on the rounds as read, by the user's override of §8.4's first bullet, which stays literally unmet: the two c1 drops, round 2's (5, high) and round 2b's (1, high), are run variance, and the (5, medium) stability failure is the count predicate's weakness. More runs per cell for later DeepSeek rounds go to the follow-ups of ruling 7.
+2. The 36-word `[skill-authored]` Update sentence of `SKILL.md`, over the cap with no freezing clause, is split at its "in which case" boundary into two `[skill-authored]` bullets with every word kept, and the baseline's `SKILL.md` long count goes from 6 to 5 (0a6ffe4).
+3. D15's lenient reading stands, and p7/high/run2 of round 2b keeps c5 2 and c6 2. The attribution hole is closed by a rule after part C: a carried-forward rating keeps its rating object as stored, its carry-forward reason goes in `meta.history` or the final message, and `update-check.ts` flags a changed rationale under a kept human stamp.
+4. R29 is confirmed with the retags on its ground, and R38 takes its recorded alternative, `[skill-authored]` alone on both review-gate bullets (0a6ffe4). R37's deterministic-modifier part, `[skill-authored]` with R29 confirmed, is split at its "or when" boundary with every word kept, the `scales-software.md` long count going from 67 to 66 (0a6ffe4); the five split parts that keep a sourced tag their own words do not carry go to a scoped Recheck after part C.
+5. The `update-check.ts` row's content correction stands, and the C0 rule's widening is confirmed in its narrow wording: a statement about a script's observable behaviour that the script's code contradicts may be corrected inside a rewritten section, when verified against the code, logged and named in the commit body.
+6. The list markers on the twin lines of `references/structure-elements.md` are the section's form. The twin rule says the words of the reference's copy are never touched and its line form follows its section, in `docs/style.md:90` (0a6ffe4) and in §4.3 here.
+7. Every follow-up is recorded in the acceptance note in a recommended order, and none is opened on this branch: first the harness and the gate, then the text rules batched into one round, then §8.5's Claude-model round as that plan's measuring round. The sheet parser of §11.4 decision 10 is closed, not carried.
+8. When `flow-model` lands on `main` by squash merge, `main` is merged into `prose`, with no rebase. The user pushes `prose` once the C8 commits are in and opens the pull request after `main` is merged in.
+9. The `flows-section` branch lands on `flow-model` first, merged by the user with the checks run by hand, and reaches `prose` through ruling 8's merge, after the C8 commits; merging it into `prose` directly is the fallback.
 
 ## 12. Acceptance criteria
 
