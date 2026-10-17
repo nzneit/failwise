@@ -82,7 +82,7 @@ All at `97261fc` on 2026-10-14, under node v24.17.0, as the evidence report of t
 | 4 | The render | Met; three visual checks unverified |
 | 5 | c16 and the flows stability predicate | Not met: met at high, not met at medium; the p6 flows predicate unverified |
 | 6 | C201 and the provisional denominator | Met; the denominator stays provisional in every scored p1 and p7 run |
-| 7 | DF3's readings and the multi-flow assumptions | Unverified; the golden fixture carries no coupling assumption |
+| 7 | DF3's readings and the multi-flow assumptions | Unverified on the write-order half; the coupling assumption added in `c1520fe` (ruled 2026-10-16) |
 | 8 | `SKILL.md`, the vocabulary label, the pins | Met |
 
 **1. Met, except the lint-code sentence, which is unverified.** The schema (commit `66dad68`) reads
@@ -209,7 +209,9 @@ provider function or element across steps". In the golden fixture ch-9 names `fl
 holds three entries with no coupling assumption among them; the comparison's assumptions part shows
 only the disjointness entry as new. By the rule's text the fixture is short of that assumption. This is
 a finding of this note's reading, and no check made it. Plan A's A16 Step 8 judge was to read this
-criterion, and no file read for this note records its verdict.
+criterion, and no file read for this note records its verdict. On 2026-10-16 the user ruled that the fixture
+gains the assumption, and `c1520fe` adds it, owned by `user` and open; the coupling half is met on the fixture,
+and the write-order half stays unverified.
 
 **8. Met.** Commit `7550283` (the flow model in the spine and the update mode), with `d9c19db`.
 `SKILL.md` step 1 collects the critical flows "in that same pass" (line 35); step 2 writes each flow into
@@ -290,15 +292,15 @@ changes":
   `unverified: true`), which the results note's "Unverified units" list omits;
 - the (7, medium) stability verdict, one side of which is the unscored run;
 - the prompt-5 pairs, which this round did not re-run;
-- the check the three `STALE_*` rosters carry (below);
+- the check the three `STALE_*` rosters carry (below; ruled not applicable by design on 2026-10-17);
 - the browser gate and the comparison on Firefox and WebKit;
 - the Flows section in the comparison, which owes it no view, and the 36 changed images, which were not
   viewed;
-- §11 criterion 7's coupling half and its write-order half;
+- §11 criterion 7's write-order half (its coupling half closed on the fixture in `c1520fe`);
 - the restricted-wording audit of the private repository, which did not run for this note;
 - plan A's A16 Step 8 acceptance judge, whose run and verdict no file read for this note records;
-- §11 criterion 1's lint-code sentence, which rests on plan A's decision 5, whose answer no file read
-  for this note records;
+- §11 criterion 1's lint-code sentence, which rests on plan A's decision 5, left open for the pull request
+  review on 2026-10-16;
 - the tiers of plan B's B1 and B2, which no file read for this note states ("Tiers");
 - the four deferrals of design §9 ("Deferrals left to later work").
 
@@ -306,7 +308,8 @@ changes":
 `tools/eval-report.ts`, `STALE_C1_RUNS`, `STALE_C3_RUNS` and `STALE_C5_RUNS`, each with 4 entries keyed
 on the capabilities `opus` and `sonnet`, that match no run of this round. They state nothing about this
 round's scores; this round's re-judging is recorded in `results.json`'s `rejudged[]` instead. The check
-those rosters carry did not run, and the ruling on them is the user's.
+those rosters carry did not run, and the ruling on them is the user's. Ruled 2026-10-17: the rosters stay,
+and their check is not applicable to this round by design.
 
 **What the round did not measure.** c9 is vacuous on all four p6 runs and both p7 high runs, which carry
 no `catalog_refs` (the critic, results note). Both capability labels were filled by one model at one
@@ -417,7 +420,8 @@ so its entries that quote a c3 or c5 score describe scores the tables no longer 
 (ch-2 O and D, ch-4 S and O) with "Carried forward from the last re-score:" and changed neither their
 value nor their review status. The judge did not count them as ratings the run authored. A stricter
 reading counts them as authored, and band 0 then applies. The run fails on the must c5 under either
-reading, so the reading moves no result in this round. The ruling is the user's.
+reading, so the reading moves no result in this round. The ruling is the user's. Ruled 2026-10-17: the
+lenient reading, written into `rubric.md` in `9247dfe`.
 
 **The critic's blocking candidates** (results note, "Blocking candidates"), and where each went:
 
@@ -464,7 +468,11 @@ reading, so the reading moves no result in this round. The ruling is the user's.
   `SKILL.md`'s rule for a missing input; that is why the input now states the tiers.
 - In the superseded p1 runs, the medium runs rated `flow-retry` Medium where the user's intent was High.
 - Found while writing this note: the golden fixture's ch-9 carries no coupling assumption although its
-  two flows share steps (criterion 7).
+  two flows share steps (criterion 7). Closed in `c1520fe` by the user's ruling of 2026-10-16.
+- p7 high run 1 prefixed the rationales of four re-scored ratings (ch-2 O and D, ch-4 S and O) with
+  "Carried forward from the last re-score:" and left their value and review status unchanged. The user
+  ruled on 2026-10-17 that such a rating is the reviewer's for c5 (`9247dfe`); the rewrite of a re-scored
+  rating's rationale is a finding of its own.
 
 ## Harness findings
 
@@ -571,6 +579,17 @@ reviewer of this note ran after the round was judged, all at the Opus tier and n
 By the remote-tracking branch, the 27 commits after `1856a45` are not pushed. This note opens no pull
 request; whether one exists is not checked for this note.
 
+**Rulings of 2026-10-16 and 2026-10-17.** Decision 1 stays open for the pull request review. Decision 2:
+the round stands as recorded, with its confounds stated; the re-runs of prompt 5, of prompt 7 medium run 1
+and of the prompt 6 pairs wait for the harness follow-ups and a later round, and do not block the merge.
+Decision 3: `flow-model` lands on `main` through one pull request from the branch `prose`, into which it is
+merged, as a merge commit; the merge button is that decision. Decision 4: the push is of `prose`, under
+the user's authorization. Decision 5: plan A's decision 5 stays open for the review; the golden fixture
+gained ch-9's coupling assumption in `c1520fe` (criterion 7); the stricter reading of c5 is declined and
+the lenient reading is written into `rubric.md` in `9247dfe` (ruled 2026-10-17); the three `STALE_*`
+rosters stay, and their check is not applicable to this round by design, since a roster retires itself
+against a results file whose runs it does not name.
+
 ## Follow-ups agreed, not yet made
 
 From `session-facts.md`:
@@ -599,4 +618,6 @@ against `62ccd8c`, viewed 21 changed views of 132, all in `flows`, `row-ch-5`, `
 links each flow to its record, and they do not change in print, where a link carries no underline and
 its parent's colour. The branch is to be pushed and a pull request opened under the user's
 authorization; once that is done, it supersedes the sentences "the 27 commits after `1856a45` are not
-pushed" and "This note opens no pull request" under "Decisions for the user".
+pushed" and "This note opens no pull request" under "Decisions for the user". By the user's ruling of
+2026-10-17 the branch lands through `prose`: `flow-model` is merged into `prose`, and one pull request from
+`prose` to `main`, as a merge commit, carries both; the push and the pull request are of `prose`.
