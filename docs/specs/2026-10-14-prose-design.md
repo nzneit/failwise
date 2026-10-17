@@ -55,7 +55,7 @@ one machine check per criterion. Stage 2 is the readability pass. The two are me
 | D12 | Stage 1 changes nothing in the prose beyond what §6 names, so its round measures placement, wording and the checks alone. | §6 |
 | D13 | The two shipped fixtures the c1 lint would fire on are amended to agree with their inputs, rather than the lint narrowed. Confirmed by the user on 2026-10-14, before plan A. (amended 2026-10-14 at plan B2: four fixtures, two of them with regenerated computed blocks) | §6.4 |
 | D14 | `evals/rubric.md` is outside the prose checker, because it carries no provenance tags and changes by dated ruling. Confirmed by the user on 2026-10-14, before plan A. | §7.6 |
-| D15 | The stricter c5 reading the acceptance note left unruled is not applied; the 2026-10-13 lenient reading stands and every note names the open reading. Confirmed at the stage-0 gate (§11.4, decision 6); the attribution hole the strict reading would close is on the acceptance agenda. | §8.5, §11.4 |
+| D15 | The stricter c5 reading the acceptance note left unruled is not applied; the 2026-10-13 lenient reading stands and every note names the open reading. Confirmed at the stage-0 gate (§11.4, decision 6); the attribution hole the strict reading would close is on the acceptance agenda. (amended 2026-10-17: the user declined the stricter reading, as the flow-model acceptance note records under Decision 5, and 9247dfe writes the lenient reading into rubric 4's c5; the rule that closes the hole stays a follow-up, §11.8 ruling 3) | §8.5, §11.4 |
 
 ## 3. Evidence
 
@@ -468,7 +468,9 @@ lenient reading stands, and the open reading is named (D15); the model is the on
 on Flash is not yet a gain on Claude. An after round on Opus at high and Sonnet at medium remains an option once
 stage 2 passes; under this harness it needs `ANTHROPIC_API_KEY` in the environment or a credentials file under the
 fresh `CLAUDE_CONFIG_DIR`, and the per-model table has no row for either, so the probe gate asserts only that the
-window line exists and is not capped.
+window line exists and is not capped. (amended 2026-10-17: the c5 reading of D15 is no longer open; the user
+declined the stricter reading on that date, as the flow-model acceptance note records under Decision 5, and 9247dfe
+writes the lenient reading into rubric 4's c5; the rule that closes the hole stays a follow-up, §11.8 ruling 3)
 
 ## 9. Tiers and workflow
 
@@ -509,7 +511,7 @@ runs on Fable throughout.
 ### 11.1 Risks carried
 
 - A warning the runs ignore. If stage 1's round shows the new warnings fired and unresolved, the revision makes them blockers, with the pointer moved onto a chain or `qualityScore` taught non-row blockers, since a blocker whose pointer is outside `chains[]` zeroes the score (`scripts/lib/quality.ts:18`).
-- Judge variance masking or faking a gain, bounded by the pair rule and rejudging, and the open c5 reading of D15.
+- Judge variance masking or faking a gain, bounded by the pair rule and rejudging, and the open c5 reading of D15 (amended 2026-10-17: the c5 reading is no longer open; the user declined the stricter reading, and 9247dfe writes the lenient one into rubric 4's c5).
 - Twin text and line-number citations in older documents going stale under the stage-2 restructure. The plans and the flow-model acceptance note are historical records and are not rewritten; the spec notes it.
 - The private checks are the only verification of reworded sourced text; the branch avoids rewording it (§7.4), and `SKILL.md` and every changed reference file still pass the distill Recheck before commit.
 - How an Opus judge reads a fired warning in `validate.json` is untested: the judge prompt names only `rating-provisional` as counting against nothing, and the prompt is out of scope. The stage-1 note reads the c1 and c14 scores of runs whose final document carries a new warning.
@@ -565,7 +567,8 @@ three rounds (D4).
 
 ### 11.5 Rulings at the stage-1 gate (2026-10-15)
 
-The stage-1 round, prose-1, was judged under rubric 4 and, as judged, fails §8.3's first clause on five pairs: c1
+The stage-1 round, prose-1, was judged under rubric 4 and, as judged, fails §8.3's first clause on five cells over
+four pairs (corrected 2026-10-17 from "five pairs", the round note's own count): c1
 on (5, high) and (7, medium), c5 on (5, high), and c11 on (6, high) and (6, medium). Its critic raised the
 contested readings, the Fable result gate ruled escalate, and the user ruled on each item on 2026-10-15. The
 rulings follow, each with where it lands. Round 1b is the second round of §8.3's failure path,
@@ -676,8 +679,8 @@ text commit 0a6ffe4 applied rulings 2, 4 and 6.
 5. The `update-check.ts` row's content correction stands, and the C0 rule's widening is confirmed in its narrow wording: a statement about a script's observable behaviour that the script's code contradicts may be corrected inside a rewritten section, when verified against the code, logged and named in the commit body.
 6. The list markers on the twin lines of `references/structure-elements.md` are the section's form. The twin rule says the words of the reference's copy are never touched and its line form follows its section, in `docs/style.md:90` (0a6ffe4) and in §4.3 here.
 7. Every follow-up is recorded in the acceptance note in a recommended order, and none is opened on this branch: first the harness and the gate, then the text rules batched into one round, then §8.5's Claude-model round as that plan's measuring round. The sheet parser of §11.4 decision 10 is closed, not carried.
-8. When `flow-model` lands on `main` by squash merge, `main` is merged into `prose`, with no rebase. The user pushes `prose` once the C8 commits are in and opens the pull request after `main` is merged in.
-9. The `flows-section` branch lands on `flow-model` first, merged by the user with the checks run by hand, and reaches `prose` through ruling 8's merge, after the C8 commits; merging it into `prose` directly is the fallback.
+8. When `flow-model` lands on `main` by squash merge, `main` is merged into `prose`, with no rebase. The user pushes `prose` once the C8 commits are in and opens the pull request after `main` is merged in. (amended 2026-10-17 by the user's ruling, recorded in the acceptance note's ruling 8 and in `docs/specs/2026-10-12-flow-model-acceptance.md`, Decision 3: `flow-model` is merged into `prose` as 2d69eb0, on the notes commit rewritten as 885426d, and one pull request from `prose` to `main`, merged as a merge commit, lands both; the squash merge and the merge of `main` into `prose` do not happen, and every `prose` hash the notes cite stays on `main` under the merge commit)
+9. The `flows-section` branch lands on `flow-model` first, merged by the user with the checks run by hand, and reaches `prose` through ruling 8's merge, after the C8 commits; merging it into `prose` directly is the fallback. (amended 2026-10-17: the section reached `flow-model` as 598567e on 2026-10-16 and reaches `prose` through 2d69eb0, the merge of `flow-model` into `prose` that entry 8 as amended records; the fallback was not used)
 
 ## 12. Acceptance criteria
 
