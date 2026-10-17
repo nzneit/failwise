@@ -703,17 +703,47 @@ test("propagates to: each consumer once, in index order, on the first chain of t
   ]);
 });
 
-test("model.flows is in the presentational order and marks the provisional and chain-named flows", () => {
+test("model.flows is in the presentational order and marks provisional only a chain-named flow whose population is not re-scored", () => {
   const doc = docOf({}, {}, {});
   doc.flows = [
     { id: "flow-b", name: "B", value_priority: "Low" },
     { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers", review: { status: "provisional" } } },
     { id: "flow-c", name: "C", value_priority: "High", users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } },
   ];
-  doc.chains[0].flows = ["flow-a"];
+  // The chain names flow-a, provisional, and flow-c, re-scored; flow-b no chain names.
+  doc.chains[0].flows = ["flow-a", "flow-c"];
   const model = modelOf(doc);
   assert.deepEqual(model.flows.map((f) => f.id), ["flow-a", "flow-c", "flow-b"]);
-  assert.deepEqual(model.flows.map((f) => [f.provisional, f.namedByChain]), [[true, true], [false, false], [false, false]]);
+  assert.deepEqual(model.flows.map((f) => f.provisional), [true, false, false]);
+});
+
+test("a flow's steps resolve to the function's element and statement, and an unresolved step keeps its id", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", steps: ["fn-1", "fn-missing"] }];
+  const [flow] = modelOf(doc).flows;
+  assert.deepEqual(flow.steps, [
+    { id: "fn-1", element: "svc", statement: "serve requests" },
+    { id: "fn-missing", element: null, statement: null },
+  ]);
+});
+
+test("a flow carries the chains that name it in the index order, each with its priority and badge style", () => {
+  // ch-1 M, ch-2 H, ch-3 L at one severity, so the index order is ch-2, ch-1, ch-3.
+  const doc = chainsWithPriorities(["M", "H", "L"]);
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "Low" },
+    { id: "flow-c", name: "C", value_priority: "Low" },
+  ];
+  doc.chains[0].flows = ["flow-a"];
+  doc.chains[1].flows = ["flow-a"];
+  doc.chains[2].flows = ["flow-b", "flow-a"];
+  const flows = modelOf(doc).flows;
+  assert.deepEqual(flows.map((f) => f.chains), [
+    [{ id: "ch-2", priority: "H", style: "top" }, { id: "ch-1", priority: "M", style: "mid" }, { id: "ch-3", priority: "L", style: "low" }],
+    [{ id: "ch-3", priority: "L", style: "low" }],
+    [],
+  ]);
 });
 
 test("a chain that names flows carries them, the first as the one whose band was used, and the disjointness flag", () => {

@@ -49,6 +49,11 @@
         "text": "ch-9 names the flows flow-checkout and flow-retry; their populations are treated as disjoint and their union is not computed, so the row's Severity band is read over the higher of the two single-flow classes rather than the majority the two might jointly reach.",
         "owner": "user",
         "status": "open"
+      },
+      {
+        "text": "ch-9's flows flow-checkout and flow-retry share the steps fn-checkout-order and fn-gateway-authorize, so a failure in either shared provider breaks both flows together; that coupling is not modelled, and the row rates on the flows as named.",
+        "owner": "user",
+        "status": "open"
       }
     ],
     "reviews": [

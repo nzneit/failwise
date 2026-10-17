@@ -98,11 +98,20 @@ export interface RootRow { id: string; name: string; codebase: string | null; ch
 // The index rows under one top-level element; `root` null for the rows whose chain reaches none.
 export interface GroupSection { root: { id: string; name: string } | null; rows: RowModel[] }
 
-// One flow of the document, for the Flows section (§5.3): its tier, its referent population and the
-// flags the legend and the provisional mark read. `steps` holds the function ids in order; `partial`
-// records a prefix; `provisional` is set when a chain names the flow and its `users.review` is absent
-// or `provisional`; `namedByChain` is set when any chain names it. The interface order is
-// presentational only and ranks nothing (DF4).
+// One step of a flow: the function id, with the element it belongs to and its statement when the id
+// resolves, both null when it does not (invariant flow-step-resolves keeps a valid document's steps
+// resolvable).
+export interface FlowStep { id: string; element: string | null; statement: string | null }
+
+// One chain that names a flow, for the record's Chains line: its id, its priority value and the
+// badge style of that value in the loaded vocabulary.
+export interface FlowChain { id: string; priority: string; style: RankStyle }
+
+// One flow of the document, for the Flows section (§5.3): its tier, its referent population, the
+// chains that name it and the flag the provisional mark reads. `steps` holds the resolved steps in
+// order; `partial` records a prefix; `chains` lists the naming chains in the index order;
+// `provisional` is set when a chain names the flow and its `users.review` is absent or
+// `provisional`. The interface order is presentational only and ranks nothing (DF4).
 export interface FlowRow {
   id: string;
   name: string;
@@ -111,10 +120,10 @@ export interface FlowRow {
   share: string | null;
   selectingCondition: string | null;
   sources: Source[];
-  steps: string[];
+  steps: FlowStep[];
   partial: boolean;
+  chains: FlowChain[];
   provisional: boolean;
-  namedByChain: boolean;
 }
 
 export interface ReportModel {
@@ -565,23 +574,30 @@ function buildAttention(rows: RowModel[], actions: ActionRow[], provisionalRatin
 // The flow value-priority tiers in the report's fixed order: High, then Medium, then Low (DF4).
 const VALUE_PRIORITY_ORDER: ValuePriority[] = ["High", "Medium", "Low"];
 
-// A flow's steps as function ids, resolved through the function index; a step that names no function
-// is kept as it stands (invariant flow-step-resolves keeps a valid document's steps resolvable).
-function stepNames(doc: FmeaDocument, docIndex: DocIndex, steps: string[]): string[] {
-  return steps.map((step) => {
-    const at = docIndex.fn.get(step);
-    return at === undefined ? step : doc.functions[at].id;
+// A flow's steps, each resolved through the function index to its element and statement; a step
+// that names no function keeps its id alone (invariant flow-step-resolves keeps a valid document's
+// steps resolvable).
+function flowSteps(doc: FmeaDocument, docIndex: DocIndex, steps: string[]): FlowStep[] {
+  return steps.map((id) => {
+    const at = docIndex.fn.get(id);
+    const fn = at === undefined ? undefined : doc.functions[at];
+    return { id, element: fn?.element ?? null, statement: fn?.statement ?? null };
   });
 }
 
+// The chains that name a flow, in the index order, each with its priority value and badge style.
+function flowChains(rows: RowModel[], flowId: string): FlowChain[] {
+  return rows.filter((row) => row.flows.includes(flowId)).map((row) => ({ id: row.chain.id, priority: row.chain.priority.value, style: row.style }));
+}
+
 // The flows in the report's fixed order — High first, then by id — a presentational order that ranks
-// nothing (§5.3, DF4). Each row carries the flags the legend and the provisional mark read.
-function flowRows(doc: FmeaDocument, docIndex: DocIndex): FlowRow[] {
-  const namedByChain = new Set(doc.chains.flatMap((c) => c.flows ?? []));
+// nothing (§5.3, DF4). Each row carries the flag the record's provisional mark reads; the section's
+// key explains that mark.
+function flowRows(doc: FmeaDocument, docIndex: DocIndex, indexRows: RowModel[]): FlowRow[] {
   const rows = (doc.flows ?? []).map((flow): FlowRow => {
     const users = flow.users;
     const review = users?.review;
-    const named = namedByChain.has(flow.id);
+    const chains = flowChains(indexRows, flow.id);
     return {
       id: flow.id,
       name: flow.name,
@@ -590,10 +606,10 @@ function flowRows(doc: FmeaDocument, docIndex: DocIndex): FlowRow[] {
       share: users?.share ?? null,
       selectingCondition: users?.selecting_condition ?? null,
       sources: flow.sources ?? [],
-      steps: stepNames(doc, docIndex, flow.steps ?? []),
+      steps: flowSteps(doc, docIndex, flow.steps ?? []),
       partial: flow.steps_partial === true,
-      provisional: named && (review === undefined || review.status === "provisional"),
-      namedByChain: named,
+      chains,
+      provisional: chains.length > 0 && (review === undefined || review.status === "provisional"),
     };
   });
   return rows.sort((a, b) =>
@@ -622,7 +638,7 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     tiles,
     vocabulary: table.vocabulary.map((value) => ({ value, style: rankStyle(table.vocabulary, value) })),
     rows,
-    flows: flowRows(doc, docIndex),
+    flows: flowRows(doc, docIndex, rows),
     groups: groupFindings(located),
     actions,
     tracked: actions.some((a) => a.tracker !== null),
