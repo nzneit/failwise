@@ -59,7 +59,7 @@ function run(argv: string[], fake: Fake = {}): { status: number; lines: string[]
 test("everything owed is there, one part in two pieces: the count, exit 0", () => {
   const result = run([]);
   assert.equal(result.status, 0);
-  assert.equal(result.lines.at(-2), "## shots: 76 files under build/shots/"); // 5 widths × 15 files, and the PDF
+  assert.equal(result.lines.at(-2), "## shots: 81 files under build/shots/"); // 5 widths × 16 files, and the PDF
   assert.equal(result.lines.at(-1), "## not run here: firefox, webkit");
   assert.ok(!result.lines.some((line) => line.startsWith("## not asserted")), result.lines.join("\n"));
 });
@@ -129,7 +129,7 @@ test("a report with no chains owes no key, no index and no row", () => {
   const html = SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join("") + '<p class="empty">No chains.</p>';
   const result = run(["--report", "/work/empty.html"], { html, written: ["page.png", ...SECTION_PARTS.map((id) => `${id}.png`)] });
   assert.equal(result.status, 0);
-  assert.equal(result.lines.at(-2), "## shots: 46 files under build/shots/"); // 5 widths × 9 files, and the PDF
+  assert.equal(result.lines.at(-2), "## shots: 51 files under build/shots/"); // 5 widths × 10 files, and the PDF
 });
 
 test("an index inside a frame still owes the key and the index", () => {

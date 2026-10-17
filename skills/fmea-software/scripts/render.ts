@@ -11,7 +11,7 @@ import { parseArgs } from "./lib/args.ts";
 import { assertExtension, assertWritable, readJsonFile, readTextFile, writeFileAtomic } from "./lib/io.ts";
 import { isEntry, run } from "./lib/cli.ts";
 import { buildReportModel } from "./lib/report-model.ts";
-import type { ActionRow, Attention, CheckGroup, FlowRow, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RootRow, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
+import type { ActionRow, Attention, CheckGroup, FlowChain, FlowRow, GroupLocation, GroupSection, PlacedFinding, RankStyle, ReportModel, RootRow, RowMark, RowModel, Tiles, Where } from "./lib/report-model.ts";
 
 export { sortChains } from "./lib/report-model.ts";
 
@@ -215,26 +215,53 @@ function dependenciesHtml(edges: DependencyEdge[]): string {
     frameHtml("Dependencies", `<table aria-labelledby="dependencies-caption">${head}<tbody>${edges.map(row).join("")}</tbody></table>`);
 }
 
-const FLOWS_CAPTION = "One row per flow, High first then by id, a presentational order that ranks nothing.";
-const FLOWS_LEGEND = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
-const FLOWS_PROVISIONAL_NOTE = "A chain-named flow whose population has not been re-scored is marked provisional; the Severity of the rows that rest on it, and the priority that follows, are not final.";
+// The Flows section's key (§5.3), six entries. The first, labelled Priority, reads DF4's disclaimer
+// verbatim and the order sentence. One entry per tier badge then gives that tier's test, the badge
+// beside its text, since no label is wider than the provisional mark. The Chains entry says what
+// the record's Chains line lists, the priority each chain carries, which flow's population a chain
+// reads its Severity over (one flow, several flows) and that a chain on a step that does not name
+// the flow is left out. The mark entry says why a chain-named flow is provisional while its
+// population is not re-scored.
+const FLOWS_KEY_TITLE = "How to read this section";
+const FLOWS_DISCLAIMER = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
+const TIER_TESTS: Record<ValuePriority, string> = {
+  High: "Losing the flow stops the business serving its external users at all.",
+  Medium: "Losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person.",
+  Low: "Losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered.",
+};
+const FLOWS_ORDER = "Flows are listed High first, then by id, a presentational order that ranks nothing.";
+const FLOWS_CHAINS_NOTE = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. A chain on one of the flow's steps that does not name the flow is not listed.";
+const FLOW_PROVISIONAL = "The flow's population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
 const FLOWS_PARTIAL = "a starting point only; the recorded steps are a prefix";
 // The chain annotation (§5.3): its label, the phrase marking the flow the Severity rationale used, and
 // the disjointness note a chain that names more than one flow carries (§4.2).
 const BREAKS_LABEL = "breaks:";
 const BREAKS_CHOSEN = "the flow whose band was used";
 const FLOWS_DISJOINT_NOTE = "The named flows are treated as disjoint and their union is not computed; the band is the highest of the single flows' classes.";
-const FLOWS_HEAD = "<thead><tr><th>Flow</th><th>Priority</th><th>Population</th><th>Sources</th><th>Steps</th></tr></thead>";
 // The flow value-priority tiers use the same badge styles as the loaded table's first, middle and
 // last values, so a tier is read at a glance and stays the bare label (DF4, C201).
+const VALUE_PRIORITIES: readonly ValuePriority[] = ["High", "Medium", "Low"];
 const VALUE_PRIORITY_STYLE: Record<ValuePriority, RankStyle> = { High: "top", Medium: "mid", Low: "low" };
 
-// The population, with the share and the selecting condition when the flow records them.
+function flowMarkHtml(): string {
+  return `<span class="mark mark-provisional" title="${e(FLOW_PROVISIONAL)}">provisional</span>`;
+}
+
+function flowsKeyHtml(): string {
+  const badge = (v: ValuePriority): string => badgeHtml(v, VALUE_PRIORITY_STYLE[v]);
+  const tiers: [string, string][] = VALUE_PRIORITIES.map((v) => [badge(v), TIER_TESTS[v]]);
+  return keyBlockHtml(FLOWS_KEY_TITLE, [
+    ["<b>Priority</b>", `${FLOWS_DISCLAIMER} ${FLOWS_ORDER}`],
+    ...tiers,
+    ["<b>Chains</b>", FLOWS_CHAINS_NOTE],
+    [flowMarkHtml(), FLOW_PROVISIONAL],
+  ]);
+}
+
+// The population, with the provisional mark beside it while the flow is chain-named and not re-scored.
 function flowPopulationHtml(f: FlowRow): string {
   if (f.population === null) return "&mdash;";
-  const share = f.share === null ? "" : ` <span class="muted">share: ${e(f.share)}</span>`;
-  const condition = f.selectingCondition === null ? "" : ` <span class="muted">selecting: ${e(f.selectingCondition)}</span>`;
-  return `${e(f.population)}${share}${condition}`;
+  return f.provisional ? `${e(f.population)} ${flowMarkHtml()}` : e(f.population);
 }
 
 function flowSourcesHtml(sources: FlowRow["sources"]): string {
@@ -242,28 +269,45 @@ function flowSourcesHtml(sources: FlowRow["sources"]): string {
   return sources.map((s) => `<span class="muted">${e(s.kind)}</span> <code>${e(s.ref)}</code>`).join("<br>");
 }
 
-// The ordered steps, and, for a partial flow, the marker phrase that says the list is a prefix.
+// The chains that name the flow, each linked to its row with its priority badge; "none" when no chain does.
+function flowChainsHtml(chains: FlowChain[]): string {
+  if (chains.length === 0) return `<span class="empty">none</span>`;
+  const refs = chains.map((c) => `<a class="chain-ref" href="#row-${e(c.id)}">${badgeHtml(c.priority, c.style)}<code>${e(c.id)}</code></a>`).join("");
+  return `<span class="chain-list">${refs}</span>`;
+}
+
+// The ordered steps, a resolved step as its element, a colon and its statement and an unresolved one
+// as its id alone, and, for a partial flow, the phrase that says the list is a prefix.
 function flowStepsHtml(f: FlowRow): string {
-  const steps = f.steps.map((s) => `<code>${e(s)}</code>`).join(" &rarr; ");
-  if (!f.partial) return steps === "" ? "&mdash;" : steps;
-  const marker = `<span class="muted">${e(FLOWS_PARTIAL)}</span>`;
-  return steps === "" ? marker : `${steps}<br>${marker}`;
+  const items = f.steps.map((s) => s.element === null || s.statement === null
+    ? `<li><code>${e(s.id)}</code></li>`
+    : `<li><code>${e(s.element)}</code>: ${e(s.statement)}</li>`).join("");
+  const list = items === "" ? "" : `<ol class="steps">${items}</ol>`;
+  const marker = f.partial ? `<p class="muted">${e(FLOWS_PARTIAL)}</p>` : "";
+  return list === "" && marker === "" ? "&mdash;" : list + marker;
 }
 
-function flowRowHtml(f: FlowRow): string {
-  const mark = f.provisional ? `<br>${markHtml("provisional")}` : "";
-  return `<tr><td><code>${e(f.id)}</code> ${e(f.name)}${mark}</td>` +
-    `<td>${badgeHtml(f.valuePriority, VALUE_PRIORITY_STYLE[f.valuePriority])}</td>` +
-    `<td>${flowPopulationHtml(f)}</td><td>${flowSourcesHtml(f.sources)}</td><td>${flowStepsHtml(f)}</td></tr>`;
+// The record's labelled lines: the population, the selecting condition and the share when recorded,
+// the sources, the chains and the steps.
+function flowLinesHtml(f: FlowRow): string {
+  const lines: [string, string][] = [["Population", flowPopulationHtml(f)]];
+  if (f.selectingCondition !== null) lines.push(["Selecting condition", e(f.selectingCondition)]);
+  if (f.share !== null) lines.push(["Share", e(f.share)]);
+  lines.push(["Sources", flowSourcesHtml(f.sources)], ["Chains", flowChainsHtml(f.chains)], ["Steps", flowStepsHtml(f)]);
+  return lines.map(([dt, dd]) => `<dt>${dt}</dt><dd>${dd}</dd>`).join("");
 }
 
-// The Flows section: a caption, a framed table (§5.3) or its empty state, and the legend that pins
-// DF4's sentence and names the provisional note.
+// One flow's record: the tier badge, the name as the record's heading and the id on the left, the
+// labelled lines on the right. The heading carries no id; the article does.
+function flowHtml(f: FlowRow): string {
+  return `<article class="flow" id="flow-${e(f.id)}"><div class="flow-who"><div class="flow-head">${badgeHtml(f.valuePriority, VALUE_PRIORITY_STYLE[f.valuePriority])}` +
+    `<h3 class="flow-name">${e(f.name)}</h3></div><code class="flow-id">${e(f.id)}</code></div><dl class="flow-what">${flowLinesHtml(f)}</dl></article>`;
+}
+
+// The Flows section: the key and one record per flow (§5.3), or the empty state alone.
 function flowsHtml(flows: FlowRow[]): string {
-  const legend = `<p>${e(FLOWS_LEGEND)} <span class="muted">${e(FLOWS_PROVISIONAL_NOTE)}</span></p>`;
-  if (flows.length === 0) return `<p class="empty">No flows recorded.</p>${legend}`;
-  return captionHtml("flows-caption", FLOWS_CAPTION) +
-    frameHtml("Flows", `<table aria-labelledby="flows-caption">${FLOWS_HEAD}<tbody>${flows.map(flowRowHtml).join("")}</tbody></table>`) + legend;
+  if (flows.length === 0) return `<p class="empty">No flows recorded.</p>`;
+  return flowsKeyHtml() + `<div class="flows">${flows.map(flowHtml).join("")}</div>`;
 }
 
 // The element tree; `labels` is indexed by element position and names each element's codebase, null for none printed.
@@ -299,7 +343,12 @@ function keyHtml(vocabulary: ReportModel["vocabulary"]): string {
     ["<b>RPN</b>", KEY_TEXT.rpn],
     ...marks.map((m): [string, string] => [markHtml(m), KEY_TEXT[m]]),
   ];
-  return `<div class="key"><h3 class="key-title">How to read this table</h3><dl>${entries.map(([dt, dd]) => `<dt>${dt}</dt><dd>${e(dd)}</dd>`).join("")}</dl></div>`;
+  return keyBlockHtml("How to read this table", entries);
+}
+
+/** A key block: its title and one term and explanation per entry, the term as markup and the explanation as text. */
+function keyBlockHtml(title: string, entries: [string, string][]): string {
+  return `<div class="key"><h3 class="key-title">${e(title)}</h3><dl>${entries.map(([dt, dd]) => `<dt>${dt}</dt><dd>${e(dd)}</dd>`).join("")}</dl></div>`;
 }
 
 function actionsCellHtml(cell: RowModel["actionsCell"]): string {
@@ -332,12 +381,15 @@ function part(label: string, body: string): string {
 
 // The chain annotation (§5.3): the flows the row breaks, the first named flow marked as the one whose
 // band the Severity rationale used, and, for a chain that names more than one flow, the disjointness
-// note. A row that names no flow prints nothing — no label, no empty list.
+// note. Each flow's link and its mark share one inline-block span, so a narrow screen never wraps the
+// mark away from its flow. A row that names no flow prints nothing — no label, no empty list.
 function flowBreaksHtml(row: RowModel): string {
   if (row.flows.length === 0) return "";
-  const listed = row.flows.map((id) => id !== row.chosenFlow
-    ? `<code>${e(id)}</code>`
-    : `<code>${e(id)}</code> <span class="mark mark-chosen">${e(BREAKS_CHOSEN)}</span>`).join(", ");
+  const listed = row.flows.map((id) => {
+    const link = `<a href="#flow-${e(id)}"><code>${e(id)}</code></a>`;
+    const flow = id === row.chosenFlow ? `${link} <span class="mark mark-chosen">${e(BREAKS_CHOSEN)}</span>` : link;
+    return `<span class="breaks-flow">${flow}</span>`;
+  }).join(", ");
   const note = row.disjoint ? ` <span class="muted">${e(FLOWS_DISJOINT_NOTE)}</span>` : "";
   return `<p class="breaks">${e(BREAKS_LABEL)} ${listed}${note}</p>`;
 }

@@ -21,10 +21,10 @@ const DRY_RUN = "browser: chromium version 1\n  Install location:    /cache/chro
 const COMPARE = "/repo/build/compare";
 const BEFORE_TREE = "build/compare/before-tree/";
 
-/** The report the browser-runner tests start from: every section part, the key and the index, and one
- *  group section holding two rows. */
+/** The report the browser-runner tests start from: every section part, the Flows section holding a key of
+ *  its own as a real report's does, the chains' key and the index, and one group section holding two rows. */
 export const FAKE_REPORT =
-  SECTION_PARTS.map((id) => `<section id="${id}"></section>`).join("") +
+  SECTION_PARTS.map((id) => `<section id="${id}">${id === "flows" ? '<div class="key"></div>' : ""}</section>`).join("") +
   '<section id="chains"><div class="key"></div><table class="index"></table>' +
   '<section class="group" id="group-checkout"><h3>Checkout service <code>checkout</code></h3>' +
   '<article class="row" id="row-ch-1"></article><article class="row" id="row-ch-2"></article></section></section>';

@@ -100,13 +100,14 @@ export function recordNotAsserted(check: CheckId, width: number, measured: unkno
   return true;
 }
 
-/** The element the part `stem` is photographed from: `#<stem>` for a name of SECTION_PARTS; `.key` for "key";
+/** The element the part `stem` is photographed from: `#<stem>` for a name of SECTION_PARTS; for "key", the chains
+ *  section's key `#chains .key` (the Flows section has a key of its own, photographed with its section);
  *  for "index", the index's frame `.frame:has(> table.index)` when it matches, else `table.index`; for a stem that
  *  starts "group-", the `section.group` whose id attribute equals it, unreduced; for a stem that starts "row-",
  *  the `article.row` whose rowStem(id) equals it, and an Error when none does. */
 export async function partLocator(page: Page, stem: string): Promise<Locator> {
   if ((SECTION_PARTS as readonly string[]).includes(stem)) return page.locator(`#${stem}`);
-  if (stem === "key") return page.locator(".key");
+  if (stem === "key") return page.locator("#chains .key");
   if (stem === "index") {
     const frame = page.locator(".frame:has(> table.index)");
     return (await frame.count()) > 0 ? frame : page.locator("table.index");

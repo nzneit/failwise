@@ -67,7 +67,7 @@ At the end, Claude gives you the analysis and the rendered report. Claude then a
   - a summary strip and a "Needs attention" block, under the title and the scope
   - the ground rules, assumptions and review record
   - the structure of the system, with a table of its top-level elements and a table of its dependencies
-  - the flows, with their value priority and their users
+  - the flows, with their value priority, their users, their steps and the chains that name each one
   - an index of the failure chains, sorted by priority
   - one section per chain, grouped by top-level element
   - the actions
