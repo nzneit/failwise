@@ -31,7 +31,7 @@ The sources below keep their own licenses, and where a license text must travel 
 - **License:** MIT License, https://github.com/ddunnock/claude-plugins/blob/main/LICENSE. Copyright (c) 2026 David Dunnock. The license text ships beside this file as [`MIT-ddunnock-claude-plugins.txt`](MIT-ddunnock-claude-plugins.txt).
 - **Records:** C086–C090, in the source register in `references/provenance.md`.
 - **Attribution:** `references/methodology.md`, the credit line under "The seven-step spine".
-- **Use:** nothing is reproduced word for word; adapted (`adapted-from:C086`, on three rows) in the transfer-status table of `references/methodology.md`, (`adapted-from:C086`, once) in the seven-step sentence under "The spine" in `SKILL.md` and (`adapted-from:C090`, once) in `references/quality-and-lint.md`; paraphrased in `references/methodology.md`, `references/quality-and-lint.md`, `references/scales-software.md`, `references/provenance.md` and `SKILL.md`.
+- **Use:** nothing is reproduced word for word; adapted (`adapted-from:C086`) in `references/methodology.md`, once under "The seven-step spine" and on three rows of the transfer-status table, and once in the seven-step sentence under "The spine" in `SKILL.md`; and (`adapted-from:C090`, twice) in `references/quality-and-lint.md`; paraphrased in `references/methodology.md`, `references/quality-and-lint.md`, `references/scales-software.md`, `references/provenance.md` and `SKILL.md`.
 
 ## NASA Software Safety Guidebook, NASA-GB-8719.13
 

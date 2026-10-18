@@ -617,7 +617,9 @@ moves two rulings of §11.5, ruling 10's launcher being used from round 1c rathe
 and 10 are left as the record of the earlier ruling; round 1b's note is regenerated after the re-judges and
 committed again; and the §6.3 split sentence (§11.5 ruling 7), `SKILL.md`'s singular "that substitution"
 (§11.5 ruling 4) and the stability predicate, which fails on both prompt-5 pairs under the 0.2 bound without
-being a gate, stay with part C.
+being a gate, stay with part C. (amended 2026-10-18 after the review of pull request 30: task E6's commit also
+changed the seed section's provisional-ratings sentence in `SKILL.md`, adding "until a named person re-scores
+each one", for skeptic finding c5-7, as task E6 of plan B names it; §11.5 ruling 8 does not list that change)
 
 Round 1c follows the epilogue's revision, with the result gate run once; its note is committed as the round of
 record after the user reads it.
