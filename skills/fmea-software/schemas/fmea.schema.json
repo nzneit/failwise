@@ -73,7 +73,7 @@
     },
     "plainId": {
       "title": "Plain id",
-      "description": "An opaque identifier: a leading letter or digit, then letters, digits, '.', '_', ':' or '-'. Used for the analysis, functions, chains and actions; carries no hierarchy; compared byte-for-byte. A converted sheet's row id is kept when it fits this grammar.",
+      "description": "An opaque identifier: a leading letter or digit, then letters, digits, '.', '_', ':' or '-'. Used for the analysis, codebases, functions, chains, actions and flows; carries no hierarchy; compared byte-for-byte. A converted sheet's row id is kept when it fits this grammar.",
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
     },
@@ -354,7 +354,7 @@
         },
         "users": {
           "$ref": "#/$defs/flowUsers",
-          "description": "The referent population the Severity blast radius is read over. Required of any flow a chain names (invariant flow-users-required); absent on a flow no chain names."
+          "description": "The referent population the Severity blast radius is read over. Required of any flow a chain names (invariant flow-users-required); optional on a flow no chain names."
         },
         "steps": {
           "type": "array",
@@ -390,7 +390,7 @@
         },
         "review": {
           "$ref": "#/$defs/ratingReview",
-          "description": "The same status vocabulary a rating's review uses. rescored and authored require by and date (invariant flow-users-review-by-date), so this field gates the denominator rather than gesturing at it; while the whole object is absent, or its status is provisional, the lint flow-users-provisional fires and the report marks the rows resting on this denominator provisional."
+          "description": "The same status vocabulary a rating's review uses. On a flow a chain names, rescored and authored require by and date (invariant flow-users-review-by-date), so this field gates the denominator rather than gesturing at it; while the object is absent or provisional on such a flow, the lint flow-users-provisional fires and the report marks the rows resting on this denominator provisional."
         }
       }
     },
@@ -594,7 +594,7 @@
     },
     "ratingReview": {
       "title": "Rating review",
-      "description": "Who stands behind the rating value. by and date are required when status is not provisional; the keyword subset cannot make that conditional, so the invariant rating-review-by-date enforces it.",
+      "description": "Who stands behind the rating value. by and date are required when status is not provisional; the keyword subset cannot make that conditional, so the invariant rating-review-by-date enforces it on a rating. On a flow a chain names, the invariant flow-users-review-by-date gates users.review the same way.",
       "type": "object",
       "additionalProperties": false,
       "required": ["status"],

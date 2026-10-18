@@ -791,10 +791,13 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // element `codebase` ids, 6 from the order-store edge, 70 from `ch-9` and 21 from its three
   // `rating-provisional` findings in `computed`. 20 of them are `minLength` (2 from the codebase
   // names, 12 from `ch-9`, 6 from the findings). The flow model's `flows[]` and `chains[].flows`
-  // add 18: the derivation document instantiates one flow carrying `sources`, `steps`, `users` and
-  // a `review`, and the golden reaches none of the new nodes. The total is 1,490, so the floor is
-  // 1,434.
-  assert.ok(derived >= 1434, `expected at least 1434 derived violations, ran ${derived}`);
+  // add 18 from the derivation document, which instantiates one flow carrying `sources`, `steps`,
+  // `users` and a `review`. The golden then gained 79: 43 from its three flows, 3 from the flow
+  // lists of `ch-5` and `ch-9`, 12 from its two added assumptions and 21 from its three
+  // `flow-users-provisional` findings in `computed`. Its order-store edge's new `limits` adds none,
+  // because that field carries no constraint. The total is 1,569 (1,336 from the golden, 233 from
+  // the derivation document), so the floor is 1,513.
+  assert.ok(derived >= 1513, `expected at least 1513 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -809,7 +812,11 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // `meta.codebases` entries, 2 from the two element `codebase` ids, 6 from the order-store edge,
   // 70 from `ch-9` and 21 from its three `rating-provisional` findings in `computed`. 20 of them
   // are `minLength` (2 from the codebase names, 12 from `ch-9`, 6 from the findings), so the total
-  // and the floor are 291. The flow model adds four: the derived flow's name, its source ref, its
-  // users population and its review author. The total and the floor are 295.
-  assert.ok(minLengthDerived >= 295, `expected at least 295 derived minLength violations, ran ${minLengthDerived}`);
+  // and the floor are 291. The flow model adds four from the derivation document: the derived
+  // flow's name, its source ref, its users population and its review author. The golden then
+  // gained 19: 9 from its three flows (each one's name, source ref and users population), 4 from
+  // its two added assumptions (each one's text and owner) and 6 from its three
+  // `flow-users-provisional` findings (each one's rule and message). The total and the floor are
+  // 314 (270 from the golden, 44 from the derivation document).
+  assert.ok(minLengthDerived >= 314, `expected at least 314 derived minLength violations, ran ${minLengthDerived}`);
 });
