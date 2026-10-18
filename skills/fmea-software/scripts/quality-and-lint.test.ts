@@ -69,8 +69,12 @@ test("scales-software.md restates every anchor row that names a radius class, an
   assert.ok(range, "the sentence states its row range up front");
   const [lo, hi] = [Number(range![1]), Number(range![2])];
   assert.deepEqual(Array.from({ length: hi - lo + 1 }, (_, i) => hi - i), radius);
-  const tenth = rows.find((r) => r.rating === 10)!;
-  assert.ok(tenth.anchor.includes("the reference population"), "rating 10's population is restated in referent terms");
+  for (const row of rows.filter((r) => r.rating >= 2)) {
+    assert.ok(row.anchor.includes("the reference population"), `rating ${row.rating}'s population is restated in referent terms`);
+  }
+  for (const row of rows) {
+    assert.ok(!row.anchor.includes("the function's users"), `rating ${row.rating} does not name the function's users`);
+  }
 });
 
 test("DF4's sentence stands verbatim in the row that disclaims the canon's criticality", () => {

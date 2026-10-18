@@ -484,12 +484,12 @@ test("staleComputed finds nothing in a computed block validate.ts --write would 
 
 test("staleComputed gives one COMPUTED_STALE issue for the score and one for a stored lint list that falls short", () => {
   const doc = golden();
-  const issues = staleComputed({ ...doc.computed!, quality_score: 3, lints: [] }, validateDocument(doc, table));
+  const issues = staleComputed({ ...doc.computed!, quality_score: 3, lints: [], validator_version: "0.0.1" }, validateDocument(doc, table));
   assert.deepEqual(issues, [
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/quality_score",
       message: "computed.quality_score is 3 but validate.ts now gives 89; run validate.ts --write, then render.ts again" },
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints",
-      message: `computed.lints, written by validator ${PLUGIN_VERSION}, holds 17 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again` },
+      message: `computed.lints, written by validator 0.0.1, holds 17 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again` },
   ]);
 });
 

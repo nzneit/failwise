@@ -1020,12 +1020,13 @@ test("a computed block left stale by priority.ts --write is refused with COMPUTE
   withTempDir((dir) => {
     const doc = golden();
     doc.chains[6].ratings.D.value = 5;
+    doc.computed = { ...doc.computed!, validator_version: "0.0.1" };
     const { render, path, out } = renderAndValidate(dir, applyPriorities(doc, table));
     assert.equal(render.status, 2);
     assert.equal(render.stdout, "");
     assert.equal(render.stderr,
       "error COMPUTED_STALE: computed-stale: computed.quality_score is 89 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
-      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator ${PLUGIN_VERSION}, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n`);
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.0.1, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n`);
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
