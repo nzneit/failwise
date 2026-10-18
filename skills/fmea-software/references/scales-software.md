@@ -287,6 +287,7 @@ The anchors above are written so that the categorical breaks of every factor fal
 - Every rating the skill writes is provisional: it carries `review.status: provisional`. [skill-authored]
 - It keeps that status until a named person re-scores it against these anchors, one rating at a time. [skill-authored]
 - Only after that re-score does it read `rescored`. [skill-authored]
+- A Severity rating on a chain that names a flow whose `users.review` is absent or `provisional` counts as provisional, whatever its own status. [skill-authored]
 - A re-score that changes a value changes the chain's RPN and may change its priority. [skill-authored]
 - So `priority.ts --write` runs again after such a re-score, before `validate.ts --write` and the re-render. [skill-authored]
 - Until `priority.ts --write` runs again, `validate.ts` refuses the document with `PRIORITY_MISMATCH`. [skill-authored]

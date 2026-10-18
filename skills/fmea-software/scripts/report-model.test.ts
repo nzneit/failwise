@@ -42,7 +42,7 @@ test("the tiles for the checkout fixture", () => {
   assert.deepEqual(modelOf(fixture()).tiles, {
     priorities: [{ value: "H", style: "top", count: 5 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
     chainsLine: "9 failure chains",
-    ratings: { provisional: 11, total: 30, line: "provisional, in 4 rows" },
+    ratings: { provisional: 12, total: 30, line: "provisional, in 5 rows" },
     checks: { blockers: "1 blocker", warnings: "16 warnings", alert: true },
     actions: { headline: "8 open", of: "of 9", line: "next due 2026-10-09" },
     qualityScore: 89,
@@ -226,9 +226,9 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
 });
 
-test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
+test("the fixture's row marks: provisional on ch-2, ch-5, ch-9, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
   assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
-    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff", "provisional"]], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
     ["ch-4", ["provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
   ]);
 });
@@ -512,9 +512,9 @@ test("attention: the checkout fixture's block", () => {
   });
   assert.equal(a.stale, null);
   assert.deepEqual(a.provisional, {
-    label: "11 ratings not yet reviewed",
+    label: "12 ratings not yet reviewed",
     rows: [
-      { chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-9", factors: ["S", "O", "D"] },
+      { chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-5", factors: ["S"] }, { chainId: "ch-9", factors: ["S", "O", "D"] },
       { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] },
     ],
   });
@@ -570,7 +570,7 @@ const CH1_MODE = "The authorization call exceeds its timeout budget and returns 
 
 test("roots: the checkout fixture's two top-level elements, every count rolling up the subtree", () => {
   assert.deepEqual(modelOf(fixture()).roots, [
-    { id: "checkout", name: "Checkout service", codebase: "Checkout service", chains: 8, top: { value: "H", count: 5 }, provisional: 4, openActions: 7 },
+    { id: "checkout", name: "Checkout service", codebase: "Checkout service", chains: 8, top: { value: "H", count: 5 }, provisional: 5, openActions: 7 },
     { id: "pricing", name: "Pricing service", codebase: "owned outside", chains: 1, top: { value: "H", count: 0 }, provisional: 0, openActions: 1 },
   ]);
 });
@@ -701,6 +701,38 @@ test("propagates to: each consumer once, in index order, on the first chain of t
     [{ chainId: "ch-a", element: "a" }, { chainId: "ch-b", element: "ghost" }, { chainId: "ch-c", element: "" }],
     [],
   ]);
+});
+
+test("a Severity rating counts as provisional, whatever its own status, while its chain names a flow whose population is not re-scored", () => {
+  // Every rating is re-scored. ch-1 names flow-a, whose users carry no review; ch-2 names flow-b,
+  // re-scored; ch-3 names no flow.
+  const doc = docOf({}, {}, {});
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "High", users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } },
+  ];
+  doc.chains[0].flows = ["flow-a"];
+  doc.chains[1].flows = ["flow-b"];
+  const model = modelOf(doc);
+  assert.deepEqual(model.tiles.ratings, { provisional: 1, total: 9, line: "provisional, in 1 row" });
+  assert.deepEqual(model.rows.map((r) => [r.chain.id, r.marks]), [["ch-1", ["provisional"]], ["ch-2", []], ["ch-3", []]]);
+  assert.deepEqual(model.attention.provisional, { label: "1 rating not yet reviewed", rows: [{ chainId: "ch-1", factors: ["S"] }] });
+  assert.deepEqual(model.roots.map((r) => r.provisional), [1]);
+
+  // A provisional review of the population counts the same way, and so does the post-action S; a
+  // Severity provisional on its own is counted once.
+  doc.flows[0].users!.review = { status: "provisional" };
+  doc.chains[0].ratings.S = rating(8, "provisional");
+  doc.chains[0].actions = [action("act-1", "Completed", "2026-10-01")];
+  doc.chains[0].post_ratings = { S: rating(6), O: rating(2), D: rating(4) };
+  assert.deepEqual(modelOf(doc).attention.provisional, { label: "2 ratings not yet reviewed", rows: [{ chainId: "ch-1", factors: ["S", "post-action S"] }] });
+
+  // Once a named person re-scores the population, only the ratings' own status counts.
+  doc.flows[0].users!.review = { status: "rescored", by: "R. Viewer", date: "2026-10-12" };
+  assert.deepEqual(modelOf(doc).tiles.ratings, { provisional: 1, total: 12, line: "provisional, in 1 row" });
+  doc.chains[0].ratings.S = rating(8);
+  assert.deepEqual(modelOf(doc).tiles.ratings, { provisional: 0, total: 12, line: "all reviewed" });
+  assert.equal(modelOf(doc).attention.provisional, null);
 });
 
 test("model.flows is in the presentational order and marks provisional only a chain-named flow whose population is not re-scored", () => {

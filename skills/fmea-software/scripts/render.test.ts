@@ -94,7 +94,7 @@ function dataBlock(html: string): string {
 }
 
 const MARK_TITLES = new Map<string, string>([
-  ["provisional", "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final."],
+  ["provisional", "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final. A Severity read over a flow population that no named reviewer has re-scored counts as provisional, whatever its own review."],
   ["stale", "The design or the scales changed after the row was rated; the row is due to be rated again."],
   ["handoff", "A cause is an attacker; the row is handed to threat modelling."],
   ["blocker", "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks."],
@@ -115,6 +115,10 @@ function withComputed(doc: FmeaDocument, lints: Lint[], quality_score = 0): Fmea
   doc.computed = { quality_score, lints, validated_at: "2026-09-12T11:00:00Z", validator_version: "0.1.0" };
   return doc;
 }
+// The "Needs attention" block's reason for its provisional item.
+const PROVISIONAL_WHY = "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. A Severity read over a flow population that no named reviewer has re-scored counts as provisional, whatever its own review. The priority of these rows is not final until one does.";
+// The stdout line of a successful render with n of m ratings provisional (the prose design's §6.4).
+const provisionalLine = (n: number, m: number): string => `provisional: ${n} of ${m} ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n`;
 // One item of the "Needs attention" block, as the markup contract fixes it.
 const attnItem = (what: string, list: string, why: string): string =>
   `<div class="attn-item"><div class="what">${what}</div><div>${list} <span class="why">${why}</span></div></div>`;
@@ -446,7 +450,7 @@ test("the header carries every field section 9 requires, and the provisional cou
   ]) {
     assert.ok(header.includes(pair), `the header is missing ${pair}`);
   }
-  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span>'), "the header is missing the provisional tile");
+  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">12 <small>of 30</small></span><span class="sub">provisional, in 5 rows</span>'), "the header is missing the provisional tile");
   assert.ok(!header.includes("ratings provisional"), "the old provisional line is still printed");
 });
 
@@ -468,7 +472,7 @@ test("the header shows the five tiles, each linking to its section", () => {
   assert.equal(occurrences(header, '<a class="tile'), 5);
   for (const tile of [
     '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>5</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
-    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">12 <small>of 30</small></span><span class="sub">provisional, in 5 rows</span></a>',
     '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">16 warnings</span></a>',
     '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
     '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">89 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
@@ -507,9 +511,9 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
     attnItem(`1 row fails an automated check<br>${mark("blocker")}`,
       '<a href="#row-ch-7"><code>ch-7</code></a> D &mdash; Detection is 1 with no existing detection control carrying evidence',
       "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again."),
-    attnItem(`11 ratings not yet reviewed<br>${mark("provisional")}`,
-      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
-      "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does."),
+    attnItem(`12 ratings not yet reviewed<br>${mark("provisional")}`,
+      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-5"><code>ch-5</code></a> S &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
+      PROVISIONAL_WHY),
     attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
       "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure."),
@@ -581,11 +585,31 @@ test("the contents line wraps between its links, and each link is at least 24 px
   assert.ok(!template.includes(".toc a { margin-right"));
 });
 
-test("row marks: one handoff, four provisional rows, no stale row", () => {
+test("row marks: one handoff, five provisional rows, no stale row", () => {
   const index = indexTable(renderHtml(golden(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
-  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 4);
+  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 5);
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
+  assert.ok(index.includes(`<a href="#row-ch-5"><code>ch-5</code></a><br>${mark("handoff")} ${mark("provisional")}</td>`),
+    "ch-5's re-scored Severity is read over flow-resume, whose population is not re-scored");
+});
+
+test("a re-scored Severity over a flow whose population is not re-scored is marked, counted and printed: update/before.fmea.json's ch-2", () => {
+  withTempDir((dir) => {
+    const out = join(dir, "report.html");
+    const r = runCli("render.ts", [fixturePath("update", "before.fmea.json"), "--out", out]);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, "");
+    assert.equal(r.stdout, provisionalLine(1, 15));
+    const html = readFileSync(out, "utf8");
+    const header = sectionOf(html, "header", "ground-rules");
+    assert.ok(header.includes('<span class="big">1 <small>of 15</small></span><span class="sub">provisional, in 1 row</span>'), "the tile counts ch-2's Severity");
+    assert.ok(header.includes(attnItem(`1 rating not yet reviewed<br>${mark("provisional")}`, '<a href="#row-ch-2"><code>ch-2</code></a> S',
+      PROVISIONAL_WHY)), "the Needs attention block lists ch-2's Severity");
+    assert.ok(!header.includes("attn-none"), "the nothing-needs-attention sentence");
+    assert.ok(indexTable(html).includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("provisional")}</td>`), "the index marks ch-2");
+    assert.ok(rowSection(html, "ch-2").includes(`<span class="muted">RPN 80</span> &middot; ${mark("provisional")}`), "the row header marks ch-2");
+  });
 });
 
 test("a flagged row carries the stale mark; a cleared row carries none", () => {
@@ -925,8 +949,8 @@ test("the CLI writes the report and exits 0", () => {
     const r = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out]);
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
-    assert.equal(r.stdout, "provisional: 11 of 30 ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n");
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
+    assert.equal(r.stdout, provisionalLine(12, 30));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">12 <small>of 30</small></span>'));
   });
 });
 
@@ -962,7 +986,7 @@ test("an existing output needs --force", () => {
     assert.equal(readFileSync(out, "utf8"), "old report\n");
     const forced = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out, "--force"]);
     assert.equal(forced.status, 0);
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">12 <small>of 30</small></span>'));
   });
 });
 
@@ -1339,7 +1363,7 @@ test("the header lists the codebases after Security boundary, each with its repo
 test("the top-level table rolls up each root, links a name to its group, and heads its count with the table's first value", () => {
   const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   assert.ok(structure.includes(`<table aria-labelledby="roots-caption">${ROOTS_HEAD}<tbody>` +
-    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">5</td><td class="num">4</td><td class="num">7</td></tr>' +
+    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">5</td><td class="num">5</td><td class="num">7</td></tr>' +
     '<tr><td><a href="#group-pricing">Pricing service</a></td><td>owned outside</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr></tbody></table>'));
   const idle = sectionOf(renderHtml(idleRoot(), table, template, vocabulary), "structure", "chains");
   assert.ok(idle.includes("<tr><td>Idle</td>"), "a root with no chains is not linked");

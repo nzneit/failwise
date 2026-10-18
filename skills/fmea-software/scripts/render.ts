@@ -21,11 +21,14 @@ export const TEMPLATE_PATH: string = join(import.meta.dirname, "..", "assets", "
 const FACTORS: Factor[] = ["S", "O", "D"];
 const SLOTS = ["title", "header", "ground-rules", "assumptions", "reviews", "structure", "flows", "chains", "actions", "lints", "provenance", "data"] as const;
 
+// A Severity rating read over a flow population no named reviewer has re-scored counts as provisional
+// (the review gate of scales-software.md); the chains key and the "Needs attention" block both say so.
+const FLOW_SEVERITY_PROVISIONAL = "A Severity read over a flow population that no named reviewer has re-scored counts as provisional, whatever its own review.";
 const KEY_TEXT: Record<"sod" | "priority" | "rpn" | RowMark | "warning", string> = {
   sod: "Severity, Occurrence and Detection, each rated 1 to 10 against the scales. Higher is worse: more harm, more likely, caught later or not at all.",
   priority: "Priority, highest first, looked up from S, O and D in the priority table. Rows are sorted by it.",
   rpn: "S × O × D, kept for comparison with older sheets. It is not used to rank rows.",
-  provisional: "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final.",
+  provisional: `At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final. ${FLOW_SEVERITY_PROVISIONAL}`,
   stale: "The design or the scales changed after the row was rated; the row is due to be rated again.",
   handoff: "A cause is an attacker; the row is handed to threat modelling.",
   blocker: "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks.",
@@ -39,7 +42,7 @@ const NEXT_ACTIONS_LABEL = "Next actions due";
 const ATTENTION_WHY = {
   blockers: "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again.",
   stale: "A stale row was rated before the design or the scales changed. Its ratings describe the earlier state until it is rated again.",
-  provisional: "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does.",
+  provisional: `A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. ${FLOW_SEVERITY_PROVISIONAL} The priority of these rows is not final until one does.`,
   handoffs: "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure.",
   nextActions: "The open actions with the earliest target dates, three at most. All actions are listed under Actions.",
 };
@@ -590,6 +593,7 @@ export function renderHtml(doc: FmeaDocument, table: PriorityTable, template: st
 // The prose design's §6.4: after a successful render, one stdout line when n > 0 of the m ratings are
 // provisional, and nothing when n is 0. The session reads it within a few turns of the final message,
 // where the hand-over is written, so the line carries the hand-over rule; the report is unchanged.
+// n is the report's own count, so a Severity read over an unconfirmed flow population is in it.
 function provisionalLine(n: number, m: number): string {
   return `provisional: ${n} of ${m} ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n`;
 }

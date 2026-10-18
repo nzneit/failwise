@@ -177,12 +177,33 @@ function ratingBlocks(chain: Chain): Ratings[] {
   return chain.post_ratings ? [chain.ratings, chain.post_ratings] : [chain.ratings];
 }
 
-function provisionalCount(chain: Chain): number {
-  let n = 0;
-  for (const ratings of ratingBlocks(chain)) {
-    for (const f of FACTORS) if (ratings[f].review.status === "provisional") n++;
+// The ids of the flows whose population no named person has re-scored: `users.review` absent or
+// `provisional`, the condition the lint flow-users-provisional and the Flows record's mark read.
+function unconfirmedFlows(doc: FmeaDocument): Set<string> {
+  const ids = new Set<string>();
+  for (const flow of doc.flows ?? []) {
+    const review = flow.users?.review;
+    if (review === undefined || review.status === "provisional") ids.add(flow.id);
   }
-  return n;
+  return ids;
+}
+
+// A row's provisional factors: S, O, D of the ratings, then those of the post-action ratings. A
+// Severity rating counts as provisional, whatever its own status, while the chain names a flow of
+// `unconfirmed`, since it is read over that flow's population (the review gate of
+// scales-software.md). This one list feeds every provisional count, the row's mark and the
+// "Needs attention" block alike.
+function provisionalFactors(chain: Chain, unconfirmed: ReadonlySet<string>): string[] {
+  const overFlow = (chain.flows ?? []).some((id) => unconfirmed.has(id));
+  const counts = (ratings: Ratings, f: Factor): boolean => ratings[f].review.status === "provisional" || (f === "S" && overFlow);
+  const factors: string[] = FACTORS.filter((f) => counts(chain.ratings, f));
+  const post = chain.post_ratings;
+  if (post) for (const f of FACTORS) if (counts(post, f)) factors.push(`post-action ${f}`);
+  return factors;
+}
+
+function provisionalCount(chain: Chain, unconfirmed: ReadonlySet<string>): number {
+  return provisionalFactors(chain, unconfirmed).length;
 }
 
 export function sortChains(doc: FmeaDocument, table: PriorityTable): Chain[] {
@@ -201,12 +222,12 @@ function priorityCounts(doc: FmeaDocument, vocabulary: string[]): PriorityCount[
   return [...counts].map(([value, n]) => ({ value, style: rankStyle(vocabulary, value), count: n }));
 }
 
-function ratingsTile(doc: FmeaDocument): Tiles["ratings"] {
+function ratingsTile(doc: FmeaDocument, unconfirmed: ReadonlySet<string>): Tiles["ratings"] {
   let provisional = 0;
   let total = 0;
   let rows = 0;
   for (const chain of doc.chains) {
-    const n = provisionalCount(chain);
+    const n = provisionalCount(chain, unconfirmed);
     provisional += n;
     total += ratingBlocks(chain).length * FACTORS.length;
     if (n > 0) rows++;
@@ -315,11 +336,11 @@ function rowFlows(chain: Chain, doc: FmeaDocument): Pick<RowModel, "flows" | "ch
 }
 
 // A row's marks, in the order of §5.7. `own` is every finding that points into the row.
-function rowMarks(chain: Chain, own: PlacedFinding[]): RowMark[] {
+function rowMarks(chain: Chain, own: PlacedFinding[], unconfirmed: ReadonlySet<string>): RowMark[] {
   const marks: RowMark[] = [];
   if (chain.stale.flag) marks.push("stale");
   if (chain.handoff) marks.push("handoff");
-  if (provisionalCount(chain) > 0) marks.push("provisional");
+  if (provisionalCount(chain, unconfirmed) > 0) marks.push("provisional");
   if (own.some((f) => f.severity === "blocker")) marks.push("blocker");
   return marks;
 }
@@ -402,7 +423,7 @@ function propagationsOf(rows: RowModel[], doc: FmeaDocument, docIndex: DocIndex,
 
 // The rows in the index order. A row's findings are found by its chain's position in
 // `doc.chains` (object identity), never by its id.
-function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[], docIndex: DocIndex, links: ResolvedLink[]): RowModel[] {
+function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[], docIndex: DocIndex, links: ResolvedLink[], unconfirmed: ReadonlySet<string>): RowModel[] {
   const rows = sortChains(doc, table).map((chain): RowModel => {
     const index = doc.chains.indexOf(chain);
     const own = located.filter((l) => l.index === index).map((l) => l.finding);
@@ -414,7 +435,7 @@ function buildRows(doc: FmeaDocument, table: PriorityTable, located: Located[], 
       statement: fn === undefined ? "" : doc.functions[fn].statement,
       style: rankStyle(table.vocabulary, chain.priority.value),
       postStyle: chain.post_priority ? rankStyle(table.vocabulary, chain.post_priority.value) : null,
-      marks: rowMarks(chain, own),
+      marks: rowMarks(chain, own, unconfirmed),
       findings: [...shown.filter((f) => f.severity === "blocker"), ...shown.filter((f) => f.severity !== "blocker")],
       actionsCell: actionsCell(chain),
       ...triggerMatch(chain),
@@ -457,7 +478,7 @@ interface OrderedRoot { at: number; row: RootRow }
 
 // The roots with their roll-ups, in table order: those with chains by the best priority rank over
 // their chains, then by id; then the chainless ones by id.
-function rootRows(doc: FmeaDocument, table: PriorityTable, chainRootOf: (number | undefined)[], roots: number[], effective: (Codebase | undefined)[]): OrderedRoot[] {
+function rootRows(doc: FmeaDocument, table: PriorityTable, chainRootOf: (number | undefined)[], roots: number[], effective: (Codebase | undefined)[], unconfirmed: ReadonlySet<string>): OrderedRoot[] {
   const top = table.vocabulary[0];
   const ranked = roots.map((at) => {
     const el = doc.elements[at];
@@ -468,7 +489,7 @@ function rootRows(doc: FmeaDocument, table: PriorityTable, chainRootOf: (number 
       codebase: codebaseText(doc, el, effective[at], true),
       chains: chains.length,
       top: { value: top, count: chains.filter((c) => c.priority.value === top).length },
-      provisional: chains.filter((c) => provisionalCount(c) > 0).length,
+      provisional: chains.filter((c) => provisionalCount(c, unconfirmed) > 0).length,
       openActions: chains.reduce((n, c) => n + c.actions.filter(isOpen).length, 0),
     };
     return { at, row, best: Math.min(...chains.map((c) => vocabularyRank(table, c.priority.value))) };
@@ -519,21 +540,13 @@ function handoffItem(rows: RowModel[]): Attention["handoffs"] {
   };
 }
 
-// A row's provisional factors: S, O, D of the ratings, then those of the post-action ratings.
-function provisionalFactors(chain: Chain): string[] {
-  const factors: string[] = FACTORS.filter((f) => chain.ratings[f].review.status === "provisional");
-  const post = chain.post_ratings;
-  if (post) for (const f of FACTORS) if (post[f].review.status === "provisional") factors.push(`post-action ${f}`);
-  return factors;
-}
-
 // The rows with a provisional rating, in the index order. The label counts ratings, not rows.
-function provisionalItem(rows: RowModel[], ratings: number): Attention["provisional"] {
+function provisionalItem(rows: RowModel[], ratings: number, unconfirmed: ReadonlySet<string>): Attention["provisional"] {
   const marked = rows.filter((row) => row.marks.includes("provisional"));
   if (marked.length === 0) return null;
   return {
     label: count(ratings, "rating", "ratings") + " not yet reviewed",
-    rows: marked.map((row) => ({ chainId: row.chain.id, factors: provisionalFactors(row.chain) })),
+    rows: marked.map((row) => ({ chainId: row.chain.id, factors: provisionalFactors(row.chain, unconfirmed) })),
   };
 }
 
@@ -561,11 +574,11 @@ function blockerItem(rows: RowModel[], located: Located[]): Attention["blockers"
 }
 
 // The "Needs attention" items, all derived by row position from the index rows (§4.1).
-function buildAttention(rows: RowModel[], actions: ActionRow[], provisionalRatings: number, located: Located[]): Attention {
+function buildAttention(rows: RowModel[], actions: ActionRow[], provisionalRatings: number, located: Located[], unconfirmed: ReadonlySet<string>): Attention {
   return {
     blockers: blockerItem(rows, located),
     stale: staleItem(rows),
-    provisional: provisionalItem(rows, provisionalRatings),
+    provisional: provisionalItem(rows, provisionalRatings, unconfirmed),
     handoffs: handoffItem(rows),
     nextActions: actions.filter((a) => a.open).slice(0, 3),
   };
@@ -618,10 +631,11 @@ function flowRows(doc: FmeaDocument, docIndex: DocIndex, indexRows: RowModel[]):
 }
 
 export function buildReportModel(doc: FmeaDocument, table: PriorityTable): ReportModel {
+  const unconfirmed = unconfirmedFlows(doc);
   const tiles: Tiles = {
     priorities: priorityCounts(doc, table.vocabulary),
     chainsLine: count(doc.chains.length, "failure chain", "failure chains"),
-    ratings: ratingsTile(doc),
+    ratings: ratingsTile(doc, unconfirmed),
     checks: checksTile(doc),
     actions: actionsTile(doc),
     qualityScore: doc.computed ? doc.computed.quality_score : null,
@@ -631,8 +645,8 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
   const links = resolvedLinks(doc, docIndex);
   const effective = effectiveCodebases(doc, docIndex);
   const chainRootOf = chainRoots(doc, docIndex);
-  const ordered = rootRows(doc, table, chainRootOf, rootIndexes(doc, docIndex), effective);
-  const rows = buildRows(doc, table, located, docIndex, links);
+  const ordered = rootRows(doc, table, chainRootOf, rootIndexes(doc, docIndex), effective, unconfirmed);
+  const rows = buildRows(doc, table, located, docIndex, links, unconfirmed);
   const actions = orderActions(doc);
   return {
     tiles,
@@ -642,7 +656,7 @@ export function buildReportModel(doc: FmeaDocument, table: PriorityTable): Repor
     groups: groupFindings(located),
     actions,
     tracked: actions.some((a) => a.tracker !== null),
-    attention: buildAttention(rows, actions, tiles.ratings.provisional, located),
+    attention: buildAttention(rows, actions, tiles.ratings.provisional, located, unconfirmed),
     codebases: doc.meta.codebases ?? [],
     roots: ordered.map((o) => o.row),
     edges: doc.dependencies,
