@@ -63,7 +63,9 @@
 //    then does it write round.json and exit 130, even when its own stdout or
 //    stderr died with the signal: a line it cannot write is dropped. The
 //    finished cells' folders stay in place, and the smoke call's config folder
-//    is removed.
+//    is removed. A cell that meets the SIGKILL runs no cleanup: its
+//    fmea-eval-*, fmea-plugin-* and fmea-config-* folders stay under $TMPDIR
+//    (/tmp when unset), to be removed by hand.
 //
 // The publish root is build/evals/prose-<stage>/ unless --publish-root names
 // another folder. FMEA_RUN_EVAL names another one-cell runner, FMEA_SECRET_TOOL

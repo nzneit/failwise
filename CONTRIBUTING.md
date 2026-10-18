@@ -38,7 +38,10 @@ the register.
 
 ## Writing the skill's prose
 
-`SKILL.md` and the reference files are written to `docs/style.md`: two kinds of text, the shape of a procedure, the caps, one word for one thing, the tag rules, the text no one changes, and the prose checker that `tools/check.ts` runs.
+`SKILL.md` and the reference files are written to `docs/style.md`. That page covers two kinds of
+text, the shape of a procedure, the caps, one word for one thing, and the tag rules. It also covers
+the text no one changes, what a change to a sourced sentence needs, and the prose checker that
+`tools/check.ts` runs.
 
 ## Opening a pull request
 
@@ -177,19 +180,27 @@ results object and writes no file. Write it to `build/evals/results.json` for `e
 read, as `JSON.stringify(result, null, 2)` of the `result` key of the Workflow task's output.
 
 From the prose round 1c on, `node tools/run-round.ts <stage>` (or `bun tools/run-round.ts
-<stage>`) runs the sixteen runs of a round on DeepSeek Flash into `build/evals/prose-<stage>/`, or
-into the folder `--publish-root <dir>` names. It reads the gateway key from the login keyring, the
-entry of service `goose` whose secret is JSON with the field `DEEPSEEK_API_KEY`, and smoke-tests the
-gateway first. It runs the first cell alone as a canary, then the other fifteen at most
+<stage>`) runs the sixteen runs of a round on DeepSeek V4.1-Flash. The runs go into
+`build/evals/prose-<stage>/`, or into the folder `--publish-root <dir>` names. The launcher runs
+only that model, through DeepSeek's Anthropic-compatible gateway. It reads the gateway key with
+`secret-tool` (libsecret, on Linux) from the login keyring entry of service `goose`. That entry's
+secret is JSON with the field `DEEPSEEK_API_KEY`. To store the key, run
+`secret-tool store --label=deepseek service goose`. At its prompt, paste
+`{"DEEPSEEK_API_KEY": "<key>"}`. `FMEA_SECRET_TOOL` names another command to run in place of
+`secret-tool`. For another model, or on a machine without `secret-tool`, use `tools/run-eval.sh`
+with `FMEA_EVAL_MODELS`. The launcher smoke-tests the gateway first. It runs the first cell alone
+as a canary, then the other fifteen at most
 `--parallel <n>` at once (4 by default, more than 8 only with `--force-parallel`). Each cell's
 output is appended to its log in `logs/` in that folder, so a re-run keeps the earlier attempt's
 log. The cells and the smoke call do not inherit the launching session's `CLAUDE*` variables: the
 launcher drops every variable whose name starts with `CLAUDE` from their environment and lists the
 dropped names in `round.json` as `env_stripped`. The launcher prints the summary lines in roster
 order, writes `round.json`, and names the `--cells` command, with `--no-canary`, for any cell that
-needs a re-run. `eval-report.ts` prints a `Round method` line under the Harness table from the
-`round.json` beside the `--results` file only, so generate the round's note with
-`--results build/evals/prose-<stage>/results.json`.
+needs a re-run. Judge a round with the same Workflow script and
+`args: {root: "<repository root>", evalsDir: "build/evals/prose-<stage>"}`. Write the result to
+`build/evals/prose-<stage>/results.json` in the same form. `eval-report.ts` prints a `Round method`
+line under the Harness table from the `round.json` beside the `--results` file only, so generate
+the round's note with `--results build/evals/prose-<stage>/results.json`.
 
 Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
 `CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
@@ -197,6 +208,10 @@ Sixteen unattended runs and their judging spend real model time and money. Each 
 default Anthropic table therefore needs `ANTHROPIC_API_KEY` in the environment; a model behind a
 gateway needs `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`. A run still grants Read with no path
 restriction, so run it from a machine and with keys you are content to expose.
+
+A run killed by SIGKILL runs no cleanup. When `tools/run-round.ts` stops a round, it sends SIGKILL
+to a cell that still runs 30 seconds after its SIGTERM. The killed run's `fmea-eval-*`,
+`fmea-plugin-*` and `fmea-config-*` folders stay under `$TMPDIR`. Remove them by hand.
 
 `tools/run-eval.sh` sets the context window per model from a table in the script. A model with a
 row gets its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and a model
@@ -213,14 +228,34 @@ The script sets `DISABLE_AUTOUPDATER=1` for the probe and the run, because the C
 in the middle of a round on 2026-10-14 and a round must run on one CLI version. Another session on
 the machine can still update the shared install, so each run records its CLI version.
 
-After the run, `tools/eval-context.ts` writes `context.json` into the run's folder: the CLI
-version, the window line, the compactions, the peak context, the isolation facts and the denied
-script calls. Both judging workflows read it before any judge: a run with no `context.json`, with
-a compaction, with no top-level assistant line, or with a top-level assistant line that lacks its
-usage figures, is unverified and gets no judge. The context agent runs at the `medium` model
-capability, so `args.models`, when given, must name `medium` in both `tools/workflows/evals.js`
-and `tools/workflows/rejudge.js`. The report's Harness table shows each run's CLI version, and a
-line under the table names the versions when a round ran on more than one. From round 1c,
-`context.json` also records `message_counts`, each count by priority that the run's final message
-states beside the document's counts before and after action, and the Harness table's Counts column
-shows whether they match; a wrong count is reported and never makes a run unverified.
+After the run, `tools/eval-context.ts` writes `context.json` into the run's folder. The file records
+the CLI version, the run's `CLAUDE_CONFIG_DIR`, the two window settings, the window line, the
+compactions and the peak context. It records the number of top-level assistant lines and the number
+of those lines without usage figures. It also records the isolation facts, the denied script calls,
+the lint counts and whether the final message is complete. Both judging workflows read it before
+any judge. A run is unverified and gets no judge when:
+
+- the run has no `context.json`;
+- its `context.json` is not JSON;
+- its `context.json` lacks a field the workflows read, or holds one of the wrong type:
+  `compactions`, `peak_context_tokens`, `assistant_lines`, `assistant_lines_without_usage`,
+  `window_line` or `final_message`;
+- the run has a compaction;
+- the run has no top-level assistant line;
+- a top-level assistant line lacks its usage figures;
+- the final message is not recorded complete: it is cut off, or `tools/eval-context.ts` could not
+  check it (§8.1 of `docs/specs/2026-10-14-prose-design.md`);
+- the context agent returned nothing on three attempts.
+
+The context agent runs at the `medium` model capability, so `args.models`, when given, must name
+`medium` in both `tools/workflows/evals.js` and `tools/workflows/rejudge.js`. The report's Harness
+table shows each run's CLI version, and a line under the table names the versions when a round ran
+on more than one. From round 1c, `context.json` also records `message_counts`. The field holds the
+document's counts by priority before and after action. Of the counts that the final message states,
+the field holds only the pairs of a count and a priority value that two patterns read. One pattern
+reads a count before the value, as in `8 H`, `2 rows at H` or `4 rated priority M`. The other reads
+the value, a colon or an equals sign, and then the count, as in `H: 8`. The patterns do not read
+other forms, such as the table form `H — **8**` or a count in words. The Harness table's Counts
+column shows whether those pairs match. When the patterns read no pair, the column shows
+`none stated`, even when the message states counts in another form. `match` and `mismatch` cover
+only the pairs that the patterns read. A wrong count is reported and never makes a run unverified.
