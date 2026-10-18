@@ -414,6 +414,8 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(text(props("element").parent).endsWith("Derivable from id; the report's tree and the ancestor walk of the lints read it."));
   assert.ok(text(schema).includes("Six parts are authored (meta, elements, functions, dependencies, chains, flows)"));
   assert.ok(!text(schema).includes("fifth part"));
+  assert.ok(text(schema).includes("the contract runs one way: the 0.6.0 scripts refuse a document that carries flows or the stale reason flow-changed"));
+  assert.ok(text(schema).endsWith("a document that carries neither validates under 0.6.0 and under this schema."));
   assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
 });
 

@@ -1,8 +1,8 @@
 # How the skill's prose is written
 
-This page is the style rule for `skills/fmea-software/SKILL.md` and the files in `skills/fmea-software/references/`. It states the rules of §4.3 and §7 of `docs/specs/2026-10-14-prose-design.md`, with the amendments of its §11. Line numbers are those of commit a90b912; once a rewrite moves a line, find the item by its quoted text. A bare file name is a reference file, and a test file without `tools/` is in `skills/fmea-software/scripts/`. Other paths start at `skills/fmea-software/`, except those under `tools/`, `dev/`, `docs/` and `build/`.
+This page is the style rule for `skills/fmea-software/SKILL.md` and the files in `skills/fmea-software/references/`. It states the rules of §4.3 and §7 of `docs/specs/2026-10-14-prose-design.md`, with the amendments of its §11. Line numbers are those of commit a90b912, with one exception. The `SKILL.md` lines of the next paragraph's example and of the twin table's Convert, Update and Migrate rows are those the review of pull request 30 read. Once a rewrite moves a line, find the item by its quoted text. A bare file name is a reference file, and a test file without `tools/` is in `skills/fmea-software/scripts/`. Other paths start at `skills/fmea-software/`, except those under `tools/`, `dev/`, `docs/` and `build/`.
 
-Rewrite only `SKILL.md` and the procedural sections of the references that §7.2 of the spec names. Leave the descriptive sections and `evals/rubric.md` alone. Lose, add or change no rule, and move none from its stage-1 position. Only a ruled item is exempt, such as the singular "that substitution is counted" at `SKILL.md:109` (§11.5 ruling 4). The three wording changes of §11.7 each add a rule, so they wait until after part C.
+Rewrite only `SKILL.md` and the procedural sections of the references that §7.2 of the spec names. Leave the descriptive sections and `evals/rubric.md` alone. Lose, add or change no rule, and move none from its stage-1 position. Only a ruled item is exempt, such as the singular "that substitution is counted" of §11.5 ruling 4. C4 rewrote it as "Count each of the two defaults, `status: existing` and `evidence.kind` `none`, in the column mapping like the others." at `SKILL.md:263`. The three wording changes of §11.7 each add a rule, so they wait until after part C.
 
 ## Two kinds of text
 
@@ -97,10 +97,10 @@ Two files carry twin text on purpose, and no test compares the twins. You may sh
 |---|---|---|
 | `:35`, step 1 | "Decide the ground rules before the analysis begins", "Write every assumption into `meta.assumptions` as its own item" and "Ask for what is missing" | `design-inputs.md:4`, `:70-71`; `quality-and-lint.md:67` |
 | `:41`, step 2 | "In a run over several services, make each service a root" | `structure-elements.md:160` |
-| `:98-99`, Convert | "A type, owner or external column that maps to a role or a boundary is used first", and the `security_relevant` and `Owner` clauses | `structure-elements.md:100-102`, `:106` |
-| `:165`, Update | "While `meta.codebases[]` is present and, for an entry that at least one element has as its effective codebase" | `structure-elements.md:130` |
-| `:173-175`, Migrate v1 | "A document written against the v1 kinds is migrated", and the `external_dependency` and `security_component` sentences | `structure-elements.md:111`, `:117-118`, `:125` |
-| `:185`, Migrate v2 | "A document written against schema v2, by 0.3.x to 0.5.x, is migrated" | `structure-elements.md:136-137` |
+| `:232-237`, Convert | "Use a type, owner or external column that maps to a role or a boundary first.", and the bullets after it on typing, `security_relevant` and the `Owner` column | `structure-elements.md:100-102`, `:106` |
+| `:296-299`, Update | "While `meta.codebases[]` is present, ask before the diff about each entry with elements none of which the new inputs restate.", and the three bullets after it | `structure-elements.md:130` |
+| `:377-378`, `:380-383`, Migrate v1 | "Migrate a document written against the v1 kinds in this update mode, never by hand", and the `external_dependency` and `security_component` bullets | `structure-elements.md:111`, `:117-118`, `:125` |
+| `:395`, `:397-399`, `:408-410`, Migrate v2 | "Migrate a document that 0.3.x to 0.5.x wrote against schema v2 in this update mode, never by hand." | `structure-elements.md:136-137` |
 
 ## Changing a sourced sentence
 
@@ -121,6 +121,6 @@ Run `node tools/check-prose.ts` from the repository root. It is the same command
 - Keep each paragraph and each bullet on one line. The checker measures each line alone.
 - A bullet is one item at any length. A tag anywhere in the bullet tags it.
 - A token with no letter and no digit, such as a spaced dash, counts as a word.
-- It prints the counts per heading and per file. It compares only each file's three totals with `dev/prose-baseline.json`, which holds one entry per file, first written on the stage-1 text. A count may fall and may never rise. Lower the baseline in the commit that lowers a count, with `node tools/check-prose.ts --write-baseline`. That write refuses a rise. The test suite refuses a baseline entry above its measured count, so a fall cannot go unrecorded.
-- After the arguments parse, it prints every count on every run, and it fails closed: input it cannot read or judge is never a pass. It exits 0 when the counts hold, and 1 on a rise, a bad argument or a scope mismatch. A scope mismatch is a file in scope that the baseline lacks, or a baseline entry outside the scope.
+- It prints the counts per heading and per file. It compares only each file's three totals with `dev/prose-baseline.json`, which holds one entry per file, first written on the stage-1 text. A count may fall and may never rise. Lower the baseline in the commit that lowers a count, with `node tools/check-prose.ts --write-baseline`. That write refuses a rise above a file's entry. The test suite refuses a baseline entry above its measured count, so a fall cannot go unrecorded.
+- After the arguments parse, it prints every count on every run, and it fails closed: input it cannot read or judge is never a pass. It exits 0 when the counts hold, and 1 on a rise, a bad argument or a scope mismatch. A scope mismatch is a file in scope that the baseline lacks, or a baseline entry outside the scope. When you add, rename or remove a reference file, run `node tools/check-prose.ts --write-baseline` in the same commit. It writes an entry for the new file and drops the entry of a file that is gone.
 - It exits 3 on an unreadable baseline, or one that is not a JSON object. Without `--write-baseline`, it exits 3 on a missing baseline. With `--write-baseline`, it writes a missing baseline. It also exits 3 on an unreadable file, a file that measures nothing, a references folder it cannot list, or a failed baseline write.

@@ -81,8 +81,10 @@ glob form, such as `node --test "tools/**/*.test.ts"`; `node --test <directory>`
 on Node 24.
 A commit that improves the prose lowers the baseline in the same commit with
 `node tools/check-prose.ts --write-baseline`, run from the repository root; the test suite refuses a
-baseline above the measured counts and the writer refuses a count that would rise, so the baseline
-moves only down.
+baseline above the measured counts and the writer refuses a count that would rise above its file's
+entry. When you add, rename or remove a reference file, run
+`node tools/check-prose.ts --write-baseline` in the same commit. It writes an entry for the new file
+and drops the entry of a file that is gone.
 
 The checkers are development tools declared in `dev/package.json`. Install them once with
 `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. Do not add

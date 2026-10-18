@@ -2,7 +2,8 @@
 // It reads SKILL.md and each references/*.md.
 // It counts, per heading, the untagged items, the sentences over 25 words and the filler words.
 // Every file is measured on one basis.
-// The baseline is a ratchet, not a cap: a file's total may fall and may never rise.
+// The baseline is a ratchet, not a cap: a file's total above its entry fails the run.
+// Neither this checker nor the test suite stops an entry raised together with its total.
 // A commit that lowers a count lowers the baseline in the same commit.
 // The checker fails closed: input it cannot read or judge is never a pass.
 //
@@ -15,7 +16,7 @@
 // After the arguments parse, it prints the counts per heading and per file for every file it read.
 // It prints them on every run.
 // Exit status 0 when the counts hold.
-// Exit status 1 on a count above its baseline or a write that would raise a count.
+// Exit status 1 on a count above its baseline or a write that would raise a count above its entry.
 // It also exits 1 on a file in scope that the baseline lacks, or a baseline entry outside the scope.
 // It also exits 1 on a bad argument.
 // Exit status 3 on an unreadable baseline, or a baseline that is not a JSON object.
