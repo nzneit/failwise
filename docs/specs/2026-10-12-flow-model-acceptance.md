@@ -614,12 +614,12 @@ against a results file whose runs it does not name.
 **Ruling of 2026-10-18 on decision 1.** By the maintainer's ruling on the review of pull request 30, the
 three revision decisions stand, with the amendments that section 6 of the review recommends. The
 sentence "Decision 1 stays open for the pull request review" above held until this ruling. (a) The
-`value_priority` rename stands, with both disclaimers. Ruled and not yet made: the account of the canon
-in the tier row of `methodology.md`; the three tier tests of `design-inputs.md`, restated without a
+`value_priority` rename stands, with both disclaimers. Made: the account of the canon in the tier row of
+`methodology.md`, the erratum to DF4's account of the canon, and the lineage row of `methodology.md`,
+ruled the same day. Ruled and not yet made: the three tier tests of `design-inputs.md`, restated without a
 recovery term; the entry of the report's Flows key, labelled Tier and opened with DF4's sentence; "read
-for the report's order of flows only" in place of "sort and filter only"; one `[skill-authored]`
-sentence after C014's word in `design-inputs.md`; and an erratum to DF4's account of the canon. The
-lineage row of `methodology.md`, ruled the same day, is not yet made either. (b) The floor stands. Made:
+for the report's order of flows only" in place of "sort and filter only"; and one `[skill-authored]`
+sentence after C014's word in `design-inputs.md`. (b) The floor stands. Made:
 the floor clause in the Severity sentence of `docs/scripts.md`, and `flow-changed` on a chain whose
 partial-prefix reading a change to a flow's `steps` or `steps_partial` starts or ends (design §5.4).
 Ruled and not yet made: two population rules in `scales-software.md`, one that keeps a condition such as
