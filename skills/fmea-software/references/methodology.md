@@ -117,7 +117,7 @@ A status is a claim about this skill's use of a rule, not about that rule's stan
 | PFMEA scoped to manufacturing and assembly processes | not applicable | The design side is v1; the process side is a stub that names this scope mismatch as the reason software delivery is an adaptation rather than a transfer | [paraphrased:C082] [skill-authored] |
 | FMEA-MSR | not applicable | J1739 carries it as one of its three FMEA types; v1 has no MSR branch | [paraphrased:C082] [skill-authored] |
 
-The skill draws no safety or hazard conclusion from any rule above: `Severity` is the technical consequence class of an end effect, disjoint from harm to people, property or the environment; no row records a failure condition, a hazardous event, a safety objective or an integrity requirement; no DAL, ASIL or SIL is mapped anywhere; F1.5's functional hazard assessment and F1.8's STPA are deliberately not modelled. [skill-authored]
+The skill draws no safety or hazard conclusion from any rule above: `Severity` is the technical consequence class of an end effect, disjoint from harm to people, property or the environment; no row records a failure condition, a hazardous event, a safety objective or an integrity requirement; no DAL, ASIL or SIL is mapped anywhere; functional hazard assessment and STPA are deliberately not modelled. [skill-authored]
 
 ## The four-way prioritization split
 

@@ -416,7 +416,9 @@ below; the user admits them — §10.)
   words (F1.5/F1.8 deliberately not modelled; no DAL/ASIL/SIL; `severity` is a technical consequence class), and
   keeps the row carrying DF4's disclaimer sentence verbatim; its
   existing "functional block diagrams → not applicable" and "criticality categories → not applicable" rows are
-  reconciled against the shipped behaviour.
+  reconciled against the shipped behaviour. *(Amended 2026-10-18, by the maintainer's ruling on the review of pull request
+  30: the safety boundary in `methodology.md` no longer names the finding ids F1.5 and F1.8, which `provenance.md`
+  says are never cited; it names the two analyses.)*
 - **`SKILL.md`** — procedure rewritten as a per-step list: collect flows in step 1/2; **fill `steps` after step 3**
   (steps reference functions, so the session resolves the ids from the team's prose and the human never transcribes
   opaque ids); name flows on chains in step 4; read the denominator in step 5. The **Update mode section** gains
