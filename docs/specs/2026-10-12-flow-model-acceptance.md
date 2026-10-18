@@ -69,10 +69,17 @@ All at `97261fc` on 2026-10-14, under node v24.17.0, as the evidence report of t
   assumptions gain the ch-9 disjointness entry; the lints gain three `flow-users-provisional` warnings.
   Rows ch-1 to ch-4 and ch-6 to ch-8 are byte-identical. **Unverified:** the comparison does not
   photograph the Flows section, because `SECTION_PARTS` in `dev/browser/matrix.ts:59` has no `flows`
-  entry; the 36 before, after and difference images in `build/compare/changed/` were not viewed for this
-  note's evidence; the comparison did not run on Firefox or WebKit.
+  entry; the 108 before, after and difference images of the 36 changed views in `build/compare/changed/`
+  were not viewed for this note's evidence; the comparison did not run on Firefox or WebKit.
+
+Corrected 2026-10-18 (the review of pull request 30): the comparison writes a before, an after and a
+difference image for each changed view, 108 images for the 36 changed views. This section, criterion 4
+and the unverified list called them 36 images before.
 
 ## Acceptance criteria (§11)
+
+Amended 2026-10-18 (the review of pull request 30): the path:line references in this note read the
+tree at `97261fc`; ruling 4's rubric line reads the rubric as at `97261fc`.
 
 | # | Subject | Verdict |
 |---|---|---|
@@ -156,8 +163,8 @@ fixture carries flows, so it cannot show the empty state; `render.test.ts:195`, 
 its empty state, and a partial flow renders its phrase", asserts `No flows recorded.`, and
 `render.test.ts:189` asserts that the legend prints DF4's sentence verbatim. Both are in the passing
 skill suite, and the browser gate passes on Chromium. **Unverified:** the comparison does not
-photograph the Flows section; the 36 changed images were not viewed; the gate and the comparison did
-not run on Firefox or WebKit.
+photograph the Flows section; the images of the 36 changed views were not viewed; the gate and the
+comparison did not run on Firefox or WebKit.
 
 **5. Not met.** Plan B Step 5 names three verdicts, met, unverified and not applicable; a measured
 failure fits none of them, so this note records it as not met. It is met at high and not met at
@@ -294,8 +301,8 @@ changes":
 - the prompt-5 pairs, which this round did not re-run;
 - the check the three `STALE_*` rosters carry (below; ruled not applicable by design on 2026-10-17);
 - the browser gate and the comparison on Firefox and WebKit;
-- the Flows section in the comparison, which owes it no view, and the 36 changed images, which were not
-  viewed;
+- the Flows section in the comparison, which owes it no view, and the images of the 36 changed views,
+  which were not viewed;
 - §11 criterion 7's write-order half (its coupling half closed on the fixture in `c1520fe`);
 - the restricted-wording audit of the private repository, which did not run for this note;
 - plan A's A16 Step 8 acceptance judge, whose run and verdict no file read for this note records;
@@ -353,7 +360,9 @@ No re-run now. Recorded in this note.
 Design §11 criterion 5 decides the case. No rubric, tool or test change this round. Recorded in this
 note, under criterion 5 and "What decides each pair".
 
-**4. The stability rule (`rubric.md` line 236 when ruled) on prompts whose inputs name no flows: amend
+**4. The stability rule (`rubric.md` line 236 when ruled; amended 2026-10-18 by the review of
+pull request 30: 236 is the line at `97261fc`, and the line at `23eb1c4`, when ruled, is 230) on
+prompts whose inputs name no flows: amend
 for the next round, with a not-applicable state.** On such a prompt the flows predicate is not
 applicable and the pair is judged on the element and count predicates; `eval-stability.ts` gains a
 fourth flows state, `not_applicable`, set from a per-prompt flag the workflow passes, distinct from
@@ -612,7 +621,7 @@ re-run for the record form, so criterion 4 was judged on the table form and the 
 assessed by this round. `SECTION_PARTS` in `dev/browser/matrix.ts` now includes `flows`, so a comparison
 photographs the section whenever both sides of it have the section; against `main`, which has none, it
 is a part added and is judged from `shots.ts`. That answers, for later rounds, the harness finding at
-lines 71, 159, 295 and 494 above. The merge's own comparison, `compare.ts --base HEAD` on the staged merge
+lines 71, 166, 304 and 511 above. The merge's own comparison, `compare.ts --base HEAD` on the staged merge
 against `62ccd8c`, viewed 21 changed views of 132, all in `flows`, `row-ch-5`, `row-ch-9` and
 `group-checkout`: the row and group parts change only at the "breaks:" line of ch-5 and ch-9, which now
 links each flow to its record, and they do not change in print, where a link carries no underline and
