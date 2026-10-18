@@ -71,12 +71,14 @@ The first runs both test suites under `node --test`: every `*.test.ts` file unde
 It fails when a suite has no test file, or when a folder of a suite cannot be listed; that suite
 then runs nothing. The second runs the static checks: the type check (`tsc`), the linter (`oxlint`),
 the dead-code, duplication and complexity analysis (`fallow`) and the prose ratchet
-(`tools/check-prose.ts`), which compares the counts of `SKILL.md` and the references with
-`dev/prose-baseline.json` and fails when one rises. The CI workflow also runs them on every pull
-request. Both need Node.js 24.2 or later on PATH (`bun tools/run-tests.ts` and
-`bun tools/check.ts` also work and find Node through nvm). The commands are the same in bash and
-fish. If you call `node --test` directly, use the recursive glob form, such as
-`node --test "tools/**/*.test.ts"`; `node --test <directory>` is not the same on Node 24.
+(`tools/check-prose.ts`). The prose ratchet compares the counts of `SKILL.md` and the references
+with `dev/prose-baseline.json`. It fails when a count rises, when a reference file is added,
+renamed or removed, and when it cannot read or judge its input; `docs/style.md` gives each case.
+The CI workflow also runs both commands on every pull request. Both need Node.js 24.2 or later on
+PATH (`bun tools/run-tests.ts` and `bun tools/check.ts` also work and find Node through nvm). The
+commands are the same in bash and fish. If you call `node --test` directly, use the recursive
+glob form, such as `node --test "tools/**/*.test.ts"`; `node --test <directory>` is not the same
+on Node 24.
 A commit that improves the prose lowers the baseline in the same commit with
 `node tools/check-prose.ts --write-baseline`, run from the repository root; the test suite refuses a
 baseline above the measured counts and the writer refuses a count that would rise, so the baseline

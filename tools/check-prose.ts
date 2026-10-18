@@ -18,7 +18,9 @@
 // Exit status 1 on a count above its baseline or a write that would raise a count.
 // It also exits 1 on a file in scope that the baseline lacks, or a baseline entry outside the scope.
 // It also exits 1 on a bad argument.
-// Exit status 3 on a missing or unreadable baseline, or a baseline that is not a JSON object.
+// Exit status 3 on an unreadable baseline, or a baseline that is not a JSON object.
+// Without --write-baseline, it also exits 3 on a missing baseline.
+// With --write-baseline, it writes a missing baseline.
 // It also exits 3 on an unreadable file, or a file that measures nothing.
 // It also exits 3 on a references folder that cannot be listed, or a baseline write that fails.
 // The coded lines are PROSE, USAGE, IO_READ and IO_WRITE.

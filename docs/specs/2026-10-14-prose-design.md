@@ -383,7 +383,9 @@ and `references/scales-software.md:133`.
 
 Words the skill uses in more than one sense (record, state, flag, control, review, check, end, change, open, status,
 and sixteen more in the brief's "Vocabulary") are not unified on this branch. The style rule asks that no new sense
-be introduced and that the schema's word be preferred.
+be introduced and that the schema's word be preferred. (amended 2026-10-18 after the review of pull request 30:
+the "One-meaning conflicts" list of the brief's "Vocabulary" holds seventeen more, not sixteen, and
+`docs/style.md` lists the seventeen)
 
 ### 7.6 The style rule and the prose checker
 

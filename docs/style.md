@@ -38,7 +38,7 @@ Count words as the checker does: tags removed, a code span one word, a link its 
 
 ## One word for one thing
 
-- Prefer the schema's word: call a thing what `schemas/fmea.schema.json` calls it. Give no word a new sense. Never unify a word the skill uses in several senses, such as record, state, flag, control, review, check, end, change, open or status. The other sixteen are under "One-meaning conflicts" in the "Vocabulary" section of `build/prose/brief.md`.
+- Prefer the schema's word: call a thing what `schemas/fmea.schema.json` calls it. Give no word a new sense. Never unify a word the skill uses in several senses, such as record, state, flag, control, review, check, end, change, open or status. The other seventeen are test, close or closed, follow, stop, severity, boundary, provider, consumer, dependency, detection, priority, finding, rule, verified or verification, requirement or requirements, fall and attempt.
 - Substitute only in skill-authored sentences, and only as this table allows.
 
 | Apply | Do not apply |
@@ -121,5 +121,5 @@ Run `node tools/check-prose.ts` from the repository root. It is the same command
 - A bullet is one item at any length. A tag anywhere in the bullet tags it.
 - A token with no letter and no digit, such as a spaced dash, counts as a word.
 - It prints the counts per heading and per file. It compares only each file's three totals with `dev/prose-baseline.json`, which holds one entry per file, first written on the stage-1 text. A count may fall and may never rise. Lower the baseline in the commit that lowers a count, with `node tools/check-prose.ts --write-baseline`. That write refuses a rise. The test suite refuses a baseline entry above its measured count, so a fall cannot go unrecorded.
-- It prints every count on every run, and it fails closed: input it cannot read or judge is never a pass. It exits 0 when the counts hold, and 1 on a rise, a bad argument or a scope mismatch. A scope mismatch is a file in scope that the baseline lacks, or a baseline entry outside the scope.
-- It exits 3 on a missing or unreadable baseline, or one that is not a JSON object. It also exits 3 on an unreadable file, a file that measures nothing, a references folder it cannot list, or a failed baseline write.
+- After the arguments parse, it prints every count on every run, and it fails closed: input it cannot read or judge is never a pass. It exits 0 when the counts hold, and 1 on a rise, a bad argument or a scope mismatch. A scope mismatch is a file in scope that the baseline lacks, or a baseline entry outside the scope.
+- It exits 3 on an unreadable baseline, or one that is not a JSON object. Without `--write-baseline`, it exits 3 on a missing baseline. With `--write-baseline`, it writes a missing baseline. It also exits 3 on an unreadable file, a file that measures nothing, a references folder it cannot list, or a failed baseline write.
