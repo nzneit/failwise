@@ -98,7 +98,8 @@ function diffElements(copy: FmeaDocument, draft: FmeaDocument): ElementChange[] 
     .map(({ change, item, fields }) => ({ change, id: item.id, fields }));
 }
 
-/** The three parts of `users` that feed the Severity denominator; the review block is not one of them. */
+/** The three parts of `users` that feed the Severity denominator; the review block is not one of them.
+ *  `steps` and `steps_partial` feed it only through the partial-prefix reading (`markPrefixReach`). */
 function sameReferent(a: FlowUsers | undefined, b: FlowUsers | undefined): boolean {
   if (a === undefined || b === undefined) return a === b;
   return a.population === b.population && a.share === b.share && a.selecting_condition === b.selecting_condition;
@@ -196,10 +197,44 @@ function flowList(ids: readonly string[]): string {
   return ids.length > 0 ? ids.join(", ") : "none";
 }
 
-/** The two flow reaches: a chain re-pointed to another flow, and a chain naming a flow whose `users` moved. */
+/** The partial-prefix reading of scales-software.md: the flow's recorded steps are a prefix
+ *  (`steps_partial`) without the function, so a chain on that function reads the flow as subset. */
+function prefixReading(flow: Flow, fn: string): boolean {
+  return flow.steps_partial === true && !(flow.steps ?? []).includes(fn);
+}
+
+const PREFIX_FIELDS: readonly FlowField[] = ["steps", "steps_partial"];
+
+/** A `steps` or `steps_partial` change reaches a chain naming the flow only where it starts or ends
+ *  the partial-prefix reading for the chain's function; any other such change moves no class. Both
+ *  sides read the draft chain's function, so only the flow's own change decides. */
+function markPrefixReach(ctx: Ctx, mark: Mark, f: FlowChange, old: Flow, now: Flow): void {
+  const fields = f.fields.filter((x) => PREFIX_FIELDS.includes(x));
+  if (fields.length === 0) return;
+  for (const i of chainsNaming(ctx, f.id)) {
+    const fn = ctx.draft.chains[i].function;
+    const is = prefixReading(now, fn);
+    if (prefixReading(old, fn) !== is) mark(i, `flow ${f.id} changed ${fields.join(", ")}, so its recorded steps are ${is ? "now" : "no longer"} a prefix without ${fn}`, "flow-changed");
+  }
+}
+
+/** Each changed flow's partial-prefix reaches, the copy's and the draft's flow read by id. */
+function markPrefixReaches(ctx: Ctx, mark: Mark): void {
+  const before = firstByKey(ctx.copy.flows ?? [], (f) => f.id);
+  const after = firstByKey(ctx.draft.flows ?? [], (f) => f.id);
+  for (const f of ctx.flows) {
+    const old = before.get(f.id);
+    const now = after.get(f.id);
+    if (old !== undefined && now !== undefined) markPrefixReach(ctx, mark, f, old, now);
+  }
+}
+
+/** The three flow reaches: a chain re-pointed to another flow, a chain naming a flow whose `users`
+ *  moved, and a chain whose partial-prefix reading a `steps` or `steps_partial` change starts or ends. */
 function markFlowReaches(ctx: Ctx, mark: Mark): void {
   for (const r of ctx.repointed) mark(r.index, `chain ${r.chainId} names ${flowList(r.to)} in place of ${flowList(r.from)}`, "flow-changed");
   for (const f of ctx.flows) if (f.fields.includes("users")) for (const i of chainsNaming(ctx, f.id)) mark(i, `flow ${f.id} changed users`, "flow-changed");
+  markPrefixReaches(ctx, mark);
 }
 
 /** The row for every chain the structural and flow reaches touch, first reach winning; each row

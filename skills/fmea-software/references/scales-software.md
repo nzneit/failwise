@@ -310,6 +310,7 @@ The anchors above are written so that the categorical breaks of every factor fal
 - Rows carry no scales version of their own. [skill-authored]
 - When the update mode finds the pin behind N, it marks every chain that has `ratings` as stale. [skill-authored]
 - The stale reason is `scales-version`, subject to the §5 precedence when another stale rule also fires on the row. [skill-authored]
+- Where several stale rules fire on a row, the re-read covers every factor that any of them touches. [skill-authored]
 - When the pin is behind N, the update mode sets each marked chain's `since_version` to the new `meta.version`. [skill-authored]
 - When the pin is behind N, the update mode advances the pin in the same run, after the marking. [skill-authored]
 - Because the pin is advanced in the same run, a later update run finds no version gap. [skill-authored]

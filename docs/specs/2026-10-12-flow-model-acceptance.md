@@ -147,6 +147,12 @@ unchanged, and `flow-changed`, both the `users`-change trigger and the chain re-
 covered end to end only by the `update-check` unit tests. c12 scores 2 on the three scored p7 runs
 (`results.json`).
 
+Amended 2026-10-18, by the maintainer's ruling on the review of pull request 30: a `steps` or
+`steps_partial` change that starts or ends a naming chain's partial-prefix reading now marks it
+`flow-changed` (design §5.4, trigger (c)). New tests in `update-check.test.ts` pin both directions and
+the changes that move nothing, so the `steps` and `steps_partial` cases above no longer rest on a
+reading of the code.
+
 **4. Met**, on Chromium and in the markup; three checks are unverified. Commits `6090b70` (the Flows
 section, its legend and its provisional marker), `ff6f548` (the chain names the flows it breaks and
 marks the one that set the band) and `0766a5d`. The report the comparison renders from the checkout
@@ -525,6 +531,12 @@ mandated re-read may move S, because the population S is read over can now be a 
 are re-opened for re-read and not for a change of factor: nothing in this design changes how Occurrence
 or Detection is computed (§1), and `scales-software.md:137` states that "no other factor moves".
 
+Amended 2026-10-18, by the maintainer's ruling on the review of pull request 30: a row that another
+stale rule also reaches records that rule's reason by the precedence order, not `scales-version`. Its
+re-read still covers all three factors, because the re-read covers every factor that any rule firing on
+the row touches, as the update mode of `SKILL.md` and the Versioning section of `scales-software.md`
+now state. So the version gap still re-reads all three factors on every rated row.
+
 ## Deferrals left to later work
 
 Design §9 opens: "Recorded so it is not silently dropped, none of it blocks v1:". Each of its four items
@@ -598,6 +610,28 @@ gained ch-9's coupling assumption in `c1520fe` (criterion 7); the stricter readi
 the lenient reading is written into `rubric.md` in `9247dfe` (ruled 2026-10-17); the three `STALE_*`
 rosters stay, and their check is not applicable to this round by design, since a roster retires itself
 against a results file whose runs it does not name.
+
+**Ruling of 2026-10-18 on decision 1.** By the maintainer's ruling on the review of pull request 30, the
+three revision decisions stand, with the amendments that section 6 of the review recommends. The
+sentence "Decision 1 stays open for the pull request review" above held until this ruling. (a) The
+`value_priority` rename stands, with both disclaimers. Ruled and not yet made: the account of the canon
+in the tier row of `methodology.md`; the three tier tests of `design-inputs.md`, restated without a
+recovery term; the entry of the report's Flows key, labelled Tier and opened with DF4's sentence; "read
+for the report's order of flows only" in place of "sort and filter only"; one `[skill-authored]`
+sentence after C014's word in `design-inputs.md`; and an erratum to DF4's account of the canon. The
+lineage row of `methodology.md`, ruled the same day, is not yet made either. (b) The floor stands. Made:
+the floor clause in the Severity sentence of `docs/scripts.md`, and `flow-changed` on a chain whose
+partial-prefix reading a change to a flow's `steps` or `steps_partial` starts or ends (design §5.4).
+Ruled and not yet made: two population rules in `scales-software.md`, one that keeps a condition such as
+a retry out of a flow's population and one that has the Severity rationale state the flow's share of the
+system's users, and the golden fixture's retry and resume predicates moved into
+`users.selecting_condition`. (c) The worst-single-flow reading stands. Made: the coupling-assumption
+rule, as a sentence of `quality-and-lint.md` and a step-4 bullet of `SKILL.md`. Ruled and not yet made:
+five sentences in `scales-software.md` that name the reading, its exception to the worst-credible rule
+and its bound of one class; one model-level disjointness assumption with the ground rules; and the band
+mark worded as the author's claim, with a reviewer-row sentence, a lint that the rationale names the
+first entry, the mark printed only on a chain that names two or more flows, and design §5.3 worded the
+same way. DF3, DF4 and §12 of the design carry dated amendments that point here.
 
 ## Follow-ups agreed, not yet made
 

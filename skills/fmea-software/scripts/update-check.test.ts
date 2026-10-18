@@ -202,6 +202,62 @@ test("diffUpdate: a chain's flows set change reaches it as flow-changed, and a n
   assert.deepEqual(changed(copy, (d) => { flowOf(d, "flow-1").name = "Checkout submission again"; flowOf(d, "flow-1").value_priority = "Low"; }).reached, []);
 });
 
+/** flowDoc with flow-1's `steps` and, where given, its `steps_partial`; ch-1 names flow-1 and is on fn-checkout. */
+function stepsDoc(steps: string[], partial?: boolean): FmeaDocument {
+  const doc = flowDoc();
+  setSteps(flowOf(doc, "flow-1"), steps, partial);
+  return doc;
+}
+
+/** Sets a flow's `steps`, and its `steps_partial`, or removes the flag where none is given. */
+function setSteps(f: Flow, steps: string[], partial: boolean | undefined): void {
+  f.steps = steps;
+  if (partial === undefined) delete f.steps_partial;
+  else f.steps_partial = partial;
+}
+
+/** The reaches of a draft of `copy` whose flow-1 takes `steps` and `partial`, as chain, rule and reason. */
+function stepsReach(copy: FmeaDocument, steps: string[], partial: boolean | undefined): [string, string, StaleReason][] {
+  return changed(copy, (d) => setSteps(flowOf(d, "flow-1"), steps, partial)).reached.map((r) => [r.chainId, r.rule, r.reason]);
+}
+
+test("diffUpdate: a steps or steps_partial change that moves the chain's function into a partial prefix, or completes the steps, reaches it as flow-changed", () => {
+  // The prefix fn-pay leaves out ch-1's fn-checkout, so the partial-prefix rule of scales-software.md reads the flow as subset.
+  const copy = stepsDoc(["fn-pay"], true);
+  assert.deepEqual(stepsReach(copy, ["fn-pay", "fn-checkout"], true), [["ch-1", "flow flow-1 changed steps, so its recorded steps are no longer a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(copy, ["fn-pay"], undefined), [["ch-1", "flow flow-1 changed steps_partial, so its recorded steps are no longer a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(copy, ["fn-pay", "fn-checkout"], false), [["ch-1", "flow flow-1 changed steps, steps_partial, so its recorded steps are no longer a prefix without fn-checkout", "flow-changed"]]);
+});
+
+test("diffUpdate: a steps or steps_partial change that moves the chain's function out of a partial prefix reaches it as flow-changed", () => {
+  assert.deepEqual(stepsReach(stepsDoc(["fn-checkout"], true), ["fn-pay"], true), [["ch-1", "flow flow-1 changed steps, so its recorded steps are now a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(stepsDoc(["fn-pay"]), ["fn-pay"], true), [["ch-1", "flow flow-1 changed steps_partial, so its recorded steps are now a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(stepsDoc(["fn-checkout"]), [], true), [["ch-1", "flow flow-1 changed steps, steps_partial, so its recorded steps are now a prefix without fn-checkout", "flow-changed"]]);
+});
+
+test("diffUpdate: a steps or steps_partial change that moves no function into or out of a partial prefix reports the change and marks nothing", () => {
+  const cases: [FmeaDocument, string[], boolean | undefined, string][] = [
+    [stepsDoc(["fn-pay"], true), ["fn-pay", "fn-ship"], true, "steps"], // still a prefix without fn-checkout
+    [stepsDoc(["fn-checkout"], true), ["fn-checkout", "fn-pay"], true, "steps"], // the prefix keeps fn-checkout
+    [stepsDoc(["fn-checkout"], true), ["fn-checkout"], undefined, "steps_partial"], // complete steps that keep fn-checkout
+    [stepsDoc(["fn-checkout"]), ["fn-pay"], undefined, "steps"], // complete steps without fn-checkout are no prefix
+  ];
+  for (const [copy, steps, partial, field] of cases) {
+    const diff = changed(copy, (d) => setSteps(flowOf(d, "flow-1"), steps, partial));
+    assert.deepEqual(diff.flows, [{ change: "changed", id: "flow-1", fields: [field] }]);
+    assert.deepEqual(diff.reached, [], `${field} to ${steps.join(", ")}`);
+  }
+});
+
+test("diffUpdate: the partial-prefix reach reads each naming chain's own function", () => {
+  const copy = graphDoc({ elements: ["checkout", "pay"], chains: [["ch-1", "checkout"], ["ch-2", "pay"]] });
+  copy.flows = [{ ...flow("flow-1"), steps: ["fn-checkout"], steps_partial: true }];
+  chainOf(copy, "ch-1").flows = ["flow-1"];
+  chainOf(copy, "ch-2").flows = ["flow-1"];
+  const seen = changed(copy, (d) => { flowOf(d, "flow-1").steps = ["fn-checkout", "fn-pay"]; });
+  assert.deepEqual(seen.reached.map((r) => [r.chainId, r.rule]), [["ch-2", "flow flow-1 changed steps, so its recorded steps are no longer a prefix without fn-pay"]]);
+});
+
 function flowOf(doc: FmeaDocument, id: string): Flow {
   const f = doc.flows?.find((x) => x.id === id);
   assert.ok(f, `no flow ${id}`);
@@ -348,6 +404,25 @@ test("stale-reason: a row reached by an element change still refuses function-ch
   const r = runCheck(copy, draft, "--check");
   assert.equal(r.status, 2, r.stdout);
   assert.match(r.stderr, /^error UPDATE_MISMATCH: stale-reason: chain ch-1 is reached by edge checkout to gw changed but its stale.reason is function-changed at \/chains\/0\/stale\/reason$/m);
+});
+
+test("update-check.ts --check refuses a row the partial-prefix reach leaves unflagged, in both directions, and accepts it flagged flow-changed", () => {
+  for (const [before, after, partial, rule] of [
+    [["fn-pay"], ["fn-pay", "fn-checkout"], true, "flow flow-1 changed steps, so its recorded steps are no longer a prefix without fn-checkout"],
+    [["fn-checkout"], ["fn-pay"], true, "flow flow-1 changed steps, so its recorded steps are now a prefix without fn-checkout"],
+  ] as const) {
+    const copy = groundedFlowDoc();
+    setSteps(flowOf(copy, "flow-1"), [...before], partial);
+    const draft = bumped(copy);
+    setSteps(flowOf(draft, "flow-1"), [...after], partial);
+    const unflagged = runCheck(copy, draft, "--check");
+    assert.equal(unflagged.status, 2, unflagged.stdout);
+    assert.ok(unflagged.stdout.includes(`stale:\n  ch-1: ${rule}\n`), unflagged.stdout);
+    assert.ok(unflagged.stderr.split("\n").includes(`error UPDATE_MISMATCH: stale-missing: chain ch-1 is reached by ${rule} but its stale.flag is false at /chains/0/stale/flag`), unflagged.stderr);
+    chainOf(draft, "ch-1").stale = { flag: true, reason: "flow-changed", since_version: draft.meta.version };
+    const flagged = runCheck(copy, draft, "--check");
+    assert.equal(flagged.status, 0, flagged.stderr);
+  }
 });
 
 test("update-check.ts: a flow's users.review change is reported as users.review and marks nothing stale", () => {

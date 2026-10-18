@@ -80,6 +80,8 @@ This repository publishes an [example report](https://nzneit.github.io/failwise/
 node skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out checkout-report.html
 ```
 
+The command also prints one line that counts the provisional ratings. That line is an instruction to Claude. When you run the command yourself, ignore it.
+
 ## What an FMEA is
 
 An FMEA asks these questions about each part of a system:
