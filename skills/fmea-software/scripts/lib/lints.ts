@@ -207,8 +207,11 @@ function rationaleUnnamedLint(at: ChainFlows): Lint[] {
 
 // The c1 lint's run-placeholder pattern and the words that name an edge's sla or limits, each a
 // whole word, case-insensitive; `none recorded` and `none published` joined the pattern at the
-// stage-1 gate (spec §11.5, ruling 5).
-const PLACEHOLDER = /\b(?:not stated|none stated|not given|not provided|not documented|not recorded|not published|none recorded|none published|unknown|n\/a|tbd)\b/i;
+// stage-1 gate (spec §11.5, ruling 5). `not published` and `none published` left it on 2026-10-18,
+// by the maintainer's ruling on the review of pull request 30: the inputs' own words for a stated
+// absence hold them, and the run copies those words. A run that writes either where the inputs are
+// silent is left to the judge, as ruling 5 leaves the copied-words case.
+const PLACEHOLDER = /\b(?:not stated|none stated|not given|not provided|not documented|not recorded|none recorded|unknown|n\/a|tbd)\b/i;
 const FIELD_WORD = /\b(?:limits?|ceiling|scaling|rate|sla|availability|latency)\b/i;
 const EDGE_FIELDS = ["sla", "limits"] as const;
 
@@ -687,7 +690,7 @@ export const MACHINE_RULES: MachineRule[] = [
     },
   },
   {
-    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1, and since the stage-1 gate the baseline's `none recorded`, `none published` and design- and supplied-inputs placeholders as well (spec §11.5, ruling 5).
+    // A provider whose SLA or limits the inputs do not state is recorded as an open assumption, never as a placeholder; the gap the 0.7.0 round missed on prompt 1, and since the stage-1 gate the baseline's `none recorded` and design- and supplied-inputs placeholders as well (spec §11.5, ruling 5). Since 2026-10-18, by the maintainer's ruling on the review of pull request 30, a bare `none published` or `not published` is stated; `none published in the design inputs` still fires through the inputs test.
     id: "edge-reliability-unstated",
     severity: "warning",
     check(doc) {

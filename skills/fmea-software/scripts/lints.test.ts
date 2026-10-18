@@ -758,6 +758,19 @@ test("edge-reliability-unstated is silent on the inputs' stated absence, the ord
   assert.deepEqual(fired(pricingDoc({ sla: "99.99% monthly", limits: "no published request ceiling" }, []), UNSTATED), []);
 });
 
+// The maintainer's ruling of 2026-10-18 on the review of pull request 30: not published and none
+// published left the pattern, since the inputs' own words for a stated absence hold them and the run
+// copies those words. A text that also names the inputs still fires through the inputs test.
+test("edge-reliability-unstated is silent on a stated absence copied from the inputs that holds not published or none published", () => {
+  for (const v of ["None Published", "none published", "not published", "The provider has not published an SLA"]) {
+    assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: v }, []), UNSTATED), [], v);
+    assert.deepEqual(fired(pricingDoc({ sla: v, limits: "50 rps per merchant" }, []), UNSTATED), [], v);
+  }
+  for (const v of ["none published in the inputs", "not published in the supplied inputs"]) {
+    assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: v }, []), UNSTATED), FIRES_ONCE, v);
+  }
+});
+
 test("edge-reliability-unstated is silent on the golden's assumption, which names the provider and a ceiling", () => {
   assert.deepEqual(fired(pricingDoc({ sla: "99.9% monthly" }, [open(GOLDEN_PRICING)]), UNSTATED), []);
 });
@@ -834,8 +847,8 @@ test("edge-reliability-unstated: minimalDoc and readingDoc stay silent", () => {
 // value and each assumption that names pricing is copied verbatim from
 // build/evals/prose-0/<prompt>/<capability>/<run>/analysis.json; the other edges are stated there.
 
-test("edge-reliability-unstated: the placeholder pattern reads none recorded and none published, and the inputs test reads the design and supplied inputs", () => {
-  for (const v of ["none recorded", "None Published", "nothing in the design inputs", "nothing in the supplied inputs", "nothing in the inputs"]) {
+test("edge-reliability-unstated: the placeholder pattern reads none recorded, and the inputs test reads the design and supplied inputs", () => {
+  for (const v of ["none recorded", "nothing in the design inputs", "nothing in the supplied inputs", "nothing in the inputs"]) {
     assert.deepEqual(fired(pricingDoc({ sla: SLA, limits: v }, []), UNSTATED), FIRES_ONCE, v);
   }
   for (const v of ["nothing in the provider's inputs", "nothing recorded"]) {
