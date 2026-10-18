@@ -237,6 +237,27 @@ test("update-check.ts prints the flows section, calls a name change informationa
   assert.ok(/update-check: [^\n]*, 1 chain re-pointed\n$/.test(repointed.stdout), repointed.stdout);
 });
 
+test("update-check.ts prints none for the empty side of a re-point, in the chains re-pointed line, the stale rule and the --check refusal", () => {
+  const unnamed = groundedFlowDoc();
+  delete chainOf(unnamed, "ch-1").flows;
+  const firstNaming = bumped(unnamed);
+  chainOf(firstNaming, "ch-1").flows = ["flow-1"];
+  const named = groundedFlowDoc();
+  const unnaming = bumped(named);
+  chainOf(unnaming, "ch-1").flows = [];
+  chainOf(unnaming, "ch-1").stale = { flag: true, reason: "control-removed", since_version: unnaming.meta.version };
+  for (const [copy, draft, line, rule, refusal] of [
+    [unnamed, firstNaming, "ch-1: none to flow-1", "chain ch-1 names flow-1 in place of none", "stale-missing: chain ch-1 is reached by chain ch-1 names flow-1 in place of none but its stale.flag is false at /chains/0/stale/flag"],
+    [named, unnaming, "ch-1: flow-1 to none", "chain ch-1 names none in place of flow-1", "stale-reason: chain ch-1 is reached by chain ch-1 names none in place of flow-1 but its stale.reason is control-removed at /chains/0/stale/reason"],
+  ] as const) {
+    const r = runCheck(copy, draft, "--check");
+    assert.equal(r.status, 2, r.stdout);
+    assert.ok(r.stdout.includes(`chains re-pointed:\n  ${line}\n`), r.stdout);
+    assert.ok(r.stdout.includes(`stale:\n  ch-1: ${rule}\n`), r.stdout);
+    assert.ok(r.stderr.split("\n").includes(`error UPDATE_MISMATCH: ${refusal}`), r.stderr);
+  }
+});
+
 test("a removed flow a chain still names is refused and listed with the flows to re-point to", () => {
   const copy = flowDoc();
   const draft = bumped(copy);
@@ -247,13 +268,28 @@ test("a removed flow a chain still names is refused and listed with the flows to
   assert.match(r.stderr, /^error UPDATE_MISMATCH: removed-flow-still-named: chain ch-1 names flow-1, which this update removes at \/chains\/0\/flows\/0$/m);
 });
 
-test("a chain-named flow that lost its last non-catalog source is refused by the same guard", () => {
+test("a chain-named flow with no non-catalog source is refused by the same guard", () => {
   const copy = flowDoc();
   const draft = bumped(copy);
   flowOf(draft, "flow-1").sources = [{ kind: "catalog", ref: "cat-service-01" }];
   const r = runCheck(copy, draft, "--check");
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stderr, /^error UPDATE_MISMATCH: flow-sources-lost: flow flow-1 is named by chain ch-1 and has lost its last source whose kind is not catalog at \/flows\/0\/sources$/m);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: flow-sources-lost: flow flow-1 is named by chain ch-1 and has no source whose kind is not catalog at \/flows\/0\/sources$/m);
+});
+
+test("flow-sources-lost gives one line per flow, at the first chain naming it, and lists every chain that names it", () => {
+  const copy = graphDoc({ elements: ["checkout"], chains: [["ch-1", "checkout"], ["ch-2", "checkout"]] });
+  copy.flows = [flow("flow-1"), flow("flow-2")];
+  chainOf(copy, "ch-1").flows = ["flow-1"];
+  chainOf(copy, "ch-2").flows = ["flow-2", "flow-1"];
+  const draft = bumped(copy);
+  flowOf(draft, "flow-1").sources = [{ kind: "catalog", ref: "cat-service-01" }];
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.deepEqual(r.stderr.split("\n").filter((l) => l.includes("flow-sources-lost")), [
+    "error UPDATE_MISMATCH: flow-sources-lost: flow flow-1 is named by chains ch-1, ch-2 and has no source whose kind is not catalog at /flows/0/sources",
+    "error UPDATE_MISMATCH: flow-sources-lost: flow flow-2 is named by chain ch-2 and has no source whose kind is not catalog at /flows/1/sources",
+  ]);
 });
 
 test("a removed flow no chain names is reported and marks nothing stale", () => {

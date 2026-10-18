@@ -172,7 +172,7 @@ function consumerLinks(ctx: Ctx, e: EdgeChange): ResolvedLink[] {
 }
 
 /** The draft chains, in draft order, whose `flows[]` names `flowId`. */
-function chainsNaming(ctx: Ctx, flowId: string): number[] {
+function chainsNaming(ctx: Pair, flowId: string): number[] {
   return ctx.draft.chains.flatMap((c, i) => (c.flows?.includes(flowId) ? [i] : []));
 }
 
@@ -191,9 +191,14 @@ function markChangedEdges(ctx: Ctx, mark: Mark): void {
   }
 }
 
+/** One side of a re-point as printed: its flow ids joined, or `none` for a chain that names no flow. */
+function flowList(ids: readonly string[]): string {
+  return ids.length > 0 ? ids.join(", ") : "none";
+}
+
 /** The two flow reaches: a chain re-pointed to another flow, and a chain naming a flow whose `users` moved. */
 function markFlowReaches(ctx: Ctx, mark: Mark): void {
-  for (const r of ctx.repointed) mark(r.index, `chain ${r.chainId} names ${r.to.join(", ")} in place of ${r.from.join(", ")}`, "flow-changed");
+  for (const r of ctx.repointed) mark(r.index, `chain ${r.chainId} names ${flowList(r.to)} in place of ${flowList(r.from)}`, "flow-changed");
   for (const f of ctx.flows) if (f.fields.includes("users")) for (const i of chainsNaming(ctx, f.id)) mark(i, `flow ${f.id} changed users`, "flow-changed");
 }
 
@@ -476,14 +481,19 @@ const removedFlowStillNamed: CheckRule = (ctx, i) => {
     : []);
 };
 
-/** One issue per row naming a draft flow that resolves to no source whose kind is not catalog: the
- *  denominator would rest on a catalog row alone. A name with no draft flow is the guard above's. */
+/** One issue per draft flow that a row names and that has no source whose kind is not catalog: the
+ *  denominator would rest on a catalog row alone. The issue is given at the first row naming the
+ *  flow and lists every row naming it, in draft order. It reads the draft only, so its message
+ *  states the draft's sources, not a change. A name with no draft flow is the guard above's. */
 const flowSourcesLost: CheckRule = (ctx, i) => {
   const c = ctx.draft.chains[i];
-  return (c.flows ?? []).flatMap((flow) => {
+  return [...new Set(c.flows ?? [])].flatMap((flow) => {
     const at = ctx.flows.get(flow);
     if (at === undefined || (ctx.draft.flows?.[at].sources ?? []).some((s) => s.kind !== "catalog")) return [];
-    return mismatch("flow-sources-lost", `flow ${flow} is named by chain ${c.id} and has lost its last source whose kind is not catalog`, ptr("flows", at, "sources"));
+    const naming = chainsNaming(ctx, flow);
+    if (naming[0] !== i) return [];
+    const ids = naming.map((n) => ctx.draft.chains[n].id);
+    return mismatch("flow-sources-lost", `flow ${flow} is named by ${ids.length === 1 ? "chain" : "chains"} ${ids.join(", ")} and has no source whose kind is not catalog`, ptr("flows", at, "sources"));
   });
 };
 
@@ -537,7 +547,7 @@ export function diffLines(diff: UpdateDiff, check: boolean): string[] {
     ...section("edges", diff.edges.map((e) => changeLine(e.change, `${e.from} to ${e.to}`, e.fields))),
     ...section("elements", diff.elements.map((e) => changeLine(e.change, e.id, e.fields))),
     ...section("flows", diff.flows.map((f) => changeLine(f.change, f.id, f.fields))),
-    ...section("chains re-pointed", diff.repointed.map((r) => `${r.chainId}: ${r.from.join(", ")} to ${r.to.join(", ")}`)),
+    ...section("chains re-pointed", diff.repointed.map((r) => `${r.chainId}: ${flowList(r.from)} to ${flowList(r.to)}`)),
     ...section("flows removed", diff.removedFlows.map(removedFlowLine)),
     ...section("stale", diff.reached.map((r) => `${r.chainId}: ${r.rule}`)),
     ...section("unmarked", diff.unmarked.map((r) => `${r.chainId}: ${r.rule}`)),

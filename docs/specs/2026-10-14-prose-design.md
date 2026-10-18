@@ -302,7 +302,7 @@ block makes `render.ts` refuse. A test asserts that no shipped fixture carries e
 alternative the user may prefer is to narrow the lint instead.
 
 **`conversion-substitution-unrecorded`** (warning). Let `r` be the number of chains with at least one rating whose
-`rationale` matches `^converted from .+; no rationale recorded$`. Split the `change` text of every `meta.history[]`
+`rationale` matches `^converted from .+; no rationale recorded$` (amended 2026-10-18 after the review of pull request 30: the pattern is read case-insensitively on the trimmed `rationale`, with an optional final full stop, `/^converted from .+; no rationale recorded\.?$/i`). Split the `change` text of every `meta.history[]`
 entry into clauses on `.` and `;`. The lint fires when `r > 0` and no clause contains the word `rationale`
 together with one of: `r` as a standalone integer, not adjacent to a letter, `-` or `_` (so a chain id such as
 `ch-1` does not count and a date does not count); the number word for `r` from one to ten; or the id or name of

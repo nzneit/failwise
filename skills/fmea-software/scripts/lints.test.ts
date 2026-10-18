@@ -658,11 +658,25 @@ test("chain-flow-rationale-unnamed reads ids out of the Severity rationale", () 
   const doc = minimalDoc();
   doc.flows = [{ id: "flow-1", name: "Checkout submission", value_priority: "High" }];
   doc.chains[0].flows = ["flow-1"];
-  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names no flow id"]]);
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names none of the flows the chain names"]]);
   doc.chains[0].ratings.S.rationale = "the checkout journey dies, so S is 8";
-  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names no flow id"]]);
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names none of the flows the chain names"]]);
   doc.chains[0].ratings.S.rationale = "flow-1 dies at majority radius, so S is 8";
   assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed"), []);
+});
+
+test("chain-flow-rationale-unnamed reads a flow id followed by a final full stop, a colon or an ellipsis, and not one inside a longer id", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "Checkout submission", value_priority: "High" }];
+  doc.chains[0].flows = ["flow-1"];
+  for (const rationale of ["S is 8, the band read over the worst single flow, flow-1.", "flow-1: shoppers lose checkout, so S is 8", "S is 8 over flow-1... which dies at majority radius"]) {
+    doc.chains[0].ratings.S.rationale = rationale;
+    assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed"), [], rationale);
+  }
+  for (const rationale of ["myflow-1x dies, so S is 8", "flow-1.cache dies, so S is 8", "flow-10 dies, so S is 8"]) {
+    doc.chains[0].ratings.S.rationale = rationale;
+    assert.equal(fired(doc, "chain-flow-rationale-unnamed").length, 1, rationale);
+  }
 });
 
 test("flow-users-provisional fires while a chain-named flow's users.review is absent or provisional", () => {
@@ -968,6 +982,14 @@ test("conversion-substitution-unrecorded: the inputs/ prefix on the default stil
   const own = convertedDoc([], []);
   own.chains[0].ratings.S.rationale = "the sheet's own words";
   assert.deepEqual(fired(own, UNRECORDED), []);
+});
+
+test("conversion-substitution-unrecorded: the default counts in sentence case, with a final full stop, or with spaces around it", () => {
+  for (const rationale of ["Converted from legacy-rpn-sheet.csv; no rationale recorded", "converted from legacy-rpn-sheet.csv; no rationale recorded.", "CONVERTED FROM legacy-rpn-sheet.csv; No rationale recorded.", "  converted from legacy-rpn-sheet.csv; no rationale recorded "]) {
+    const doc = convertedDoc([], []);
+    doc.chains[1].ratings.S.rationale = rationale;
+    assert.deepEqual(fired(doc, UNRECORDED), unrecorded(1), rationale);
+  }
 });
 
 test("conversion-substitution-unrecorded: minimalDoc stays silent", () => {

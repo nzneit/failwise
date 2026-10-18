@@ -196,15 +196,13 @@ function noStepsLint(at: ChainFlows, name: NamedFlow): Lint[] {
     `chain ${at.chain.id} names flow ${name.flow.id}, which records no steps`)];
 }
 
-// The maximal runs of the id grammar's characters; a whole token, so `flow-1` reads in `flow-1 dies`
-// and does not read inside `myflow-1x`.
-const ID_TOKEN = /[A-Za-z0-9._:-]+/g;
-
+// Each named flow's id is read in the rationale as a whole token (wholeToken, below), so `flow-1`
+// reads in `flow-1 dies`, `flow-1.`, `flow-1:` and `flow-1...`, and does not read inside `myflow-1x`.
 function rationaleUnnamedLint(at: ChainFlows): Lint[] {
-  const tokens = new Set(at.chain.ratings.S.rationale.match(ID_TOKEN) ?? []);
-  if (at.named.some((name) => tokens.has(name.flow.id))) return [];
+  const rationale = at.chain.ratings.S.rationale;
+  if (at.named.some((name) => wholeToken(rationale, name.flow.id))) return [];
   return [lint("chain-flow-rationale-unnamed", "warning", ptr("chains", at.chainIndex, "ratings", "S"),
-    `chain ${at.chain.id} names flow ${at.named[0].flow.id} and its Severity rationale names no flow id`)];
+    `chain ${at.chain.id} names flow ${at.named[0].flow.id} and its Severity rationale names none of the flows the chain names`)];
 }
 
 // The c1 lint's run-placeholder pattern and the words that name an edge's sla or limits, each a
@@ -263,7 +261,7 @@ function edgeReliabilityLints(doc: FmeaDocument, index: number, edge: Dependency
 // cell; the change text that marks a document as a conversion; and the number word of each count
 // from one to twelve. The words ran to ten until the second stage-1 gate, whose ruling 3 (spec
 // §11.6) counts the ratings' evidence kind by rating as well, twelve on the legacy sheet's four rows.
-const DEFAULT_RATIONALE = /^converted from .+; no rationale recorded$/;
+const DEFAULT_RATIONALE = /^converted from .+; no rationale recorded\.?$/i;
 const CONVERSION = /converted from|column mapping|conversion/i;
 const NUMBER_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
@@ -287,7 +285,7 @@ function chainRows(doc: FmeaDocument, keep: (chain: Chain) => boolean): DefaultR
 
 // The default rationale, counted by row: each chain with at least one rating that carries it.
 function rationaleDefault(doc: FmeaDocument): Substitution | undefined {
-  const rows = chainRows(doc, (chain) => FACTORS.some((f) => DEFAULT_RATIONALE.test(chain.ratings[f].rationale)));
+  const rows = chainRows(doc, (chain) => FACTORS.some((f) => DEFAULT_RATIONALE.test(chain.ratings[f].rationale.trim())));
   return rows.length === 0 ? undefined : { count: rows.length, rows };
 }
 
