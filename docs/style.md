@@ -28,7 +28,7 @@ Give each step of the spine in `SKILL.md`, and each of its other modes, this sha
 
 ## Caps
 
-Count words as the checker does: tags removed, a code span one word, a link its label, parentheticals kept. Table cells are measured; headings, frontmatter, fenced blocks and sentences under three words are not.
+Count words as the checker does: tags removed, a code span one word, a link its label, parentheticals kept. The checker measures each cell of a row except the last. It does not measure the first row of a table, headings, frontmatter, fenced blocks or sentences under three words.
 - Keep an instruction sentence to 20 words, and a description sentence to 25. Keep a procedural paragraph to six sentences; make a longer one a list.
 - Split a sentence over its cap at a clause boundary, outside the text no one changes. Write in the active voice, one rule per sentence.
 - Keep every stated uncertainty, every caveat that is content and every "may" that grants permission. Such caveats include "stays provisional until", "no standard in the corpus binds" and a licence condition.
@@ -86,7 +86,10 @@ A test, a licence, a script or the private audit depends on the exact form of th
 | The DF4 disclaimer row, the row headed "A flow's value-priority tier" | `methodology.md:111` | `quality-and-lint.test.ts:76` |
 | Rule 7, the first column-0 line starting `7. `, with its `validate.ts` and `render.ts` spans | `work-tracking.md:26` | `tools/skill-commands.test.ts:149` |
 
-The test pins above are among the 61 pinned literals of the scan, listed under "Pinned literals" in the untracked `build/prose/brief.md`. The other pins hold `evals/prompts.json` (`prompts.test.ts`, `tools/run-eval.test.ts`), `evals/rubric.md` and the two judge workflows, `tools/workflows/evals.js` and `tools/workflows/rejudge.js` (`tools/eval-report.test.ts`), which stage 2 leaves alone. Of §4.3's literals that change by design, the lint-count sentence and the two fixtures' `computed` blocks changed in stage 1. Stage 2 shortens the frontmatter `description` of `SKILL.md` to 1,024 characters or fewer.
+The table above lists the tests that pin text in `SKILL.md` and the references. The other pins hold `evals/prompts.json` (`prompts.test.ts`, `tools/run-eval.test.ts`), `evals/rubric.md` and the two judge workflows, `tools/workflows/evals.js` and `tools/workflows/rejudge.js` (`tools/eval-report.test.ts`), which stage 2 leaves alone. Of §4.3's literals that change by design, the lint-count sentence and the two fixtures' `computed` blocks changed in stage 1. Stage 2 shortens the frontmatter `description` of `SKILL.md` to 1,024 characters or fewer.
+
+### Twin text
+
 Two files carry twin text on purpose, and no test compares the twins. You may shorten the `SKILL.md` copy by the twin rule above; never touch the words of the reference's copy, whose line form follows its section (ruled at the prose acceptance, 2026-10-16).
 
 | `SKILL.md` | Its text | The reference's copy |
@@ -114,6 +117,9 @@ A sourced sentence carries `sourced:`, `paraphrased:`, `adapted-from:` or `cites
 Run `node tools/check-prose.ts` from the repository root. It is the same command in bash and fish, and `bun tools/check-prose.ts` also works. `tools/check.ts` runs it as its fourth step, after `tsc`, `oxlint` and `fallow`.
 - It reads `SKILL.md` and every `references/*.md`; `evals/rubric.md` and this page are outside it. It counts untagged items, sentences over 25 words and filler words, per heading and per file.
 - An item is a sentence outside a table, a bullet, or a table row. A row is untagged when its last cell holds no tag. The register in `provenance.md` and the generated region in `structure-elements.md` are exempt.
-- It compares each count with `dev/prose-baseline.json`, first written on the stage-1 text. A count may fall and may never rise. Lower the baseline in the commit that lowers a count, with `node tools/check-prose.ts --write-baseline`. That write refuses a rise. The test suite refuses a baseline entry above its measured count, so a fall cannot go unrecorded.
+- Keep each paragraph and each bullet on one line. The checker measures each line alone.
+- A bullet is one item at any length. A tag anywhere in the bullet tags it.
+- A token with no letter and no digit, such as a spaced dash, counts as a word.
+- It prints the counts per heading and per file. It compares only each file's three totals with `dev/prose-baseline.json`, which holds one entry per file, first written on the stage-1 text. A count may fall and may never rise. Lower the baseline in the commit that lowers a count, with `node tools/check-prose.ts --write-baseline`. That write refuses a rise. The test suite refuses a baseline entry above its measured count, so a fall cannot go unrecorded.
 - It prints every count on every run, and it fails closed: input it cannot read or judge is never a pass. It exits 0 when the counts hold, and 1 on a rise, a bad argument or a scope mismatch. A scope mismatch is a file in scope that the baseline lacks, or a baseline entry outside the scope.
 - It exits 3 on a missing or unreadable baseline, or one that is not a JSON object. It also exits 3 on an unreadable file, a file that measures nothing, a references folder it cannot list, or a failed baseline write.

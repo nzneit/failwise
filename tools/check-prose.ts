@@ -2,7 +2,7 @@
 // It reads SKILL.md and each references/*.md.
 // It counts, per heading, the untagged items, the sentences over 25 words and the filler words.
 // Every file is measured on one basis.
-// The baseline is a ratchet, not a cap: a count may fall and may never rise.
+// The baseline is a ratchet, not a cap: a file's total may fall and may never rise.
 // A commit that lowers a count lowers the baseline in the same commit.
 // The checker fails closed: input it cannot read or judge is never a pass.
 //
