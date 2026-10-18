@@ -31,6 +31,18 @@
 // args.evalsDir has no default, so a re-judging never reads a round its caller
 // did not name.
 //
+// The args example at the top and the re-judges just named are the record of a
+// re-judging made before the context gate below was added; today this file can
+// score no run of the flow-model round. The gate reads each run's context.json,
+// which tools/eval-context.ts writes from the run's transcript and the run
+// directory's autocompact.txt, the reply of the probe that tools/run-eval.sh
+// runs before each run. The flow-model runs were made before that probe
+// existed: they have neither file, so the gate holds every one of them
+// unverified and calls no judge, and tools/eval-context.ts exits 3 on them and
+// writes nothing. A context.json written before 2026-10-15 has no final_message
+// and is gated too, until tools/eval-context.ts is run on the run directory
+// again.
+//
 // Fail-closed (plan reference §C): every agent() call goes through tryAgent(),
 // which retries up to three times. A judge that still returns nothing, returns a
 // result outside its schema, or says it did not score the run (scored: false,

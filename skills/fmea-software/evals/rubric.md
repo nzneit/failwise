@@ -277,9 +277,16 @@ Change this file first, then every code site in its row, then run `node --test "
 tests that pin the old value (`tools/eval-stability.test.ts` for the floor and the fraction,
 `tools/eval-report.test.ts` for the 80% rule and the must flags) fail until their expectations are
 updated in the same change — re-run `node tools/eval-stability.ts` on the two `analysis.json` files of
-each of the eight (prompt, model capability) pairs and copy each printed object over the matching `stability[]`
-entry in `build/evals/results.json` (the report copies stability verdicts out of that file and does not
-recompute them), then regenerate the results document with `node tools/eval-report.ts`, which recomputes
-every run's total and pass from the judges' per-criterion scores. Record the change in the acceptance
+each (prompt, model capability) pair of the round, with `--flows-not-applicable` for each prompt in
+`FLOWS_NOT_APPLICABLE_PROMPTS` in `tools/workflows/evals.js` (prompt 6), and merge each printed object
+into the matching `stability[]` entry of the round's own `results.json`
+(`build/evals/<round>/results.json`; the v1 round's is `build/evals/results.json`): the printed fields
+replace the entry's, the entry keeps its `prompt` and `model_capability`, and its `unverified` is set
+to `verified !== true`, as `tools/workflows/evals.js` sets it. The report copies stability verdicts out
+of that file and does not recompute them: it finds an entry by `prompt` and `model_capability`, and
+prints `UNVERIFIED` from `unverified`. Then regenerate the round's results document with
+`node tools/eval-report.ts --results <that file> --out <the round's results document> --title <its title>`
+(their defaults are the v1 round's file, document and title), which recomputes every run's total and
+pass from the judges' per-criterion scores. Record the change in the acceptance
 note `docs/specs/2026-09-07-acceptance.md` under `## Threshold changes` with the value before, the value
 after, and the reason. A threshold is never changed in the judge's prompt or in the results file alone.
