@@ -45,7 +45,7 @@ A seeded chain is rated by the anchors in `scales-software.md`, on the same evid
 ### What a postmortem hands over
 
 - The Howie report is the *how we got here* account, a narrative that tells the human and organizational side of an incident alongside what failed technically. [paraphrased:C078]
-- It calls root-cause analysis a legacy term that carries negative baggage. [paraphrased:C078]
+- Howie calls root-cause analysis a legacy term that carries negative baggage. [paraphrased:C078]
 - The only causal term it uses for its own practice is contributing factors, always in the plural. [paraphrased:C078]
 - So a seeded chain writes those contributing factors into `causes[]`, one entry each. [skill-authored]
 - The skill does not use root-cause wording when it reports back to a team that works this way. [skill-authored]
@@ -60,7 +60,7 @@ A seeded chain is rated by the anchors in `scales-software.md`, on the same evid
 - Howie keeps corrective actions out of the learning review. [paraphrased:C076]
 - They go to a parking lot and are dealt with in a separate action-items section or meeting. [paraphrased:C076]
 - Its reason is that actions proposed inside the review pull attention away from understanding what happened and tend to be hasty and half-considered. [paraphrased:C076]
-- So many of them end up rejected, carried out to little benefit, or parked on the backlog for good. [paraphrased:C076]
+- So, many of them end up rejected, carried out to little benefit, or parked on the backlog for good. [paraphrased:C076]
 - It also holds that, because a system never stops changing, today's action items can turn into contributing factors in later incidents. [paraphrased:C076]
 - The FMEA is the artifact that obligates and prioritizes action. [skill-authored]
 - So seeding takes the postmortem's contributing factors and controls as inputs. [skill-authored]
@@ -87,7 +87,7 @@ An action authored during the analysis is never given an incident identifier it 
 - That caution binds here, because a rating is itself a single ordinal. [skill-authored]
 - Those inputs are evidence a rating rationale rests on, never numbers to be averaged into the rating. [skill-authored]
 - Recorded incident severity labels are not Severity evidence either. [adapted-from:C003]
-- Severity is what the VOID calls gray data, highly variable and weak in fidelity, set by judgement and often chosen to pull attention onto an incident. [paraphrased:C003]
+- Incident severity is what the VOID calls gray data, highly variable and weak in fidelity, set by judgement and often chosen to pull attention onto an incident. [paraphrased:C003]
 - A SEV label may still say which incidents are worth reading. [skill-authored]
 - The Severity rating is taken from the end-level effect against the anchors, not from the label. [skill-authored]
 - Ratings a seeded run writes are `provisional`, like every rating the skill writes. [skill-authored]
