@@ -11,7 +11,8 @@
 // line is split, and each heading the legacy messages name is checked against SKILL.md. The Scripts
 // table's update-check.ts row that names UPDATE_MISMATCH must name each flow guard of
 // lib/update-diff.ts by its rule id. No shell is involved: each line is split on spaces and its
-// script started with this Node, so the test behaves the same under bash and fish.
+// script started with this Node, so the test behaves the same under bash and fish. The frontmatter
+// description of SKILL.md is held to 1,024 characters or fewer, the limit of a skill description.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -210,4 +211,14 @@ test("each SKILL.md heading the KIND_LEGACY and DEPENDENCY_LEGACY messages name 
   assert.deepEqual([...named].sort(), ["Migrate a v1 document", "Migrate a v2 document"],
     "lib/legacy.ts names both migration headings, each written whole inside one template literal with bare double quotes");
   for (const heading of named) assert.match(skillMd, new RegExp(`^### ${heading}$`, "m"), `SKILL.md has no '### ${heading}' heading`);
+});
+
+test("SKILL.md's frontmatter description is 1,024 characters or fewer, the limit of a skill description", () => {
+  const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skillMd);
+  assert.ok(frontmatter, "SKILL.md opens with a frontmatter block");
+  const lines = frontmatter[1].split("\n").filter((line) => line.startsWith("description:"));
+  assert.equal(lines.length, 1, "the frontmatter has one description line");
+  const description = lines[0].slice("description:".length).trim();
+  assert.doesNotMatch(description, /^[>|]?$/, "the description is written whole on its own line");
+  assert.ok(description.length <= 1024, `the description is ${description.length} characters, over 1,024`);
 });
