@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import type { Chain, CitedOccurrence, DependencyEdge, Element, FmeaDocument, Rating, RatingEvidenceKind, ReviewStatus, Strength } from "./lib/types.ts";
+import type { Chain, CitedOccurrence, DependencyEdge, Element, FmeaDocument, Flow, FlowUsers, Rating, RatingEvidenceKind, ReviewStatus, Strength } from "./lib/types.ts";
 import { computePriority } from "./lib/table.ts";
 import type { PriorityTable } from "./lib/table.ts";
 
@@ -295,3 +295,75 @@ export function graphDoc(spec: GraphSpec): FmeaDocument {
   }
   return doc;
 }
+
+/** A DF3 reading fixture: the name a test names it, the band the reading produces, and the change
+ *  that makes `readingDoc()`'s chain name the flow(s) the reading turns on. */
+export interface Df3Reading { name: string; band: number; build: (doc: FmeaDocument) => void }
+
+/** The base every DF3 reading is built on: minimalDoc with the two metadata lists a lint-free
+ *  document carries, so a reading supplies only its flows and its band. minimalDoc's chain reads
+ *  S 8 over the function's users with no flow named — the class the radius floor names, and the
+ *  class a reading is read against — and no invariant and no machine lint fires on it. Named apart
+ *  from `update-check.test.ts`'s local `flowDoc()`, which builds a document to diff, so the two can
+ *  never be confused. */
+export function readingDoc(): FmeaDocument {
+  const doc = minimalDoc();
+  doc.meta.ground_rules = ["rate against the shipped anchors"];
+  doc.meta.assumptions = [{ text: "the flows a reading names are read as the inputs state them", owner: "T. Tester", status: "open" }];
+  return doc;
+}
+
+/** A chain-named flow: a non-catalog source and a re-scored user review, the evidence and the gate
+ *  `flow-sources-required` and `flow-users-review-by-date` require, its steps one function of the
+ *  base document, with `extra` supplying the population's parts or a partial prefix. */
+function namedFlow(id: string, population: string, extra: { share?: string; selecting_condition?: string; steps?: string[]; steps_partial?: boolean } = {}): Flow {
+  const users: FlowUsers = { population, review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } };
+  if (extra.share !== undefined) users.share = extra.share;
+  if (extra.selecting_condition !== undefined) users.selecting_condition = extra.selecting_condition;
+  const flow: Flow = { id, name: "A shopper flow at checkout", value_priority: "High", sources: [{ kind: "document", ref: "checkout-inputs.md" }], users, steps: extra.steps ?? ["fn-1"] };
+  if (extra.steps_partial === true) flow.steps_partial = true;
+  return flow;
+}
+
+/** One fixture per DF3 reading. §8.2 lists seven — the chain that names no flow (the function
+ *  fallback), a flow read at majority, a flow read at subset, the floor, the partial prefix read at
+ *  subset before the floor, the share that raises before the floor, and the single client read at
+ *  majority — and §11 criterion 7 miscounts them as five; this covers the seven. Each states the
+ *  band its reading produces against minimalDoc's S 8. These pin that the tool ACCEPTS the reading
+ *  and annotates it consistently, not that the tool computes a class: no script does, the reading
+ *  is the author's, and a change to how the class is derived by hand does not touch these. */
+export const DF3_READINGS: Df3Reading[] = [
+  {
+    // flow-1 exists but no chain names it, so the chain reads over the function's users: S 8, the floor's class.
+    name: "the function fallback, the chain naming no flow", band: 8,
+    build: (doc) => { doc.flows = [namedFlow("flow-1", "all shoppers at checkout")]; },
+  },
+  {
+    name: "a flow read at majority", band: 9,
+    build: (doc) => { doc.flows = [namedFlow("flow-1", "all shoppers at checkout")]; doc.chains[0].flows = ["flow-1"]; },
+  },
+  {
+    name: "a flow read at subset", band: 8,
+    build: (doc) => { doc.flows = [namedFlow("flow-1", "shoppers at checkout", { selecting_condition: "orders retried after a timeout" })]; doc.chains[0].flows = ["flow-1"]; },
+  },
+  {
+    name: "the floor, a narrower flow keeping the function's class", band: 8,
+    build: (doc) => { doc.flows = [namedFlow("flow-1", "internal only: the reconciliation operators")]; doc.chains[0].flows = ["flow-1"]; },
+  },
+  {
+    name: "a partial prefix read at subset before the floor", band: 8,
+    build: (doc) => {
+      doc.functions.push({ id: "fn-2", element: "svc", statement: "settle an authorization", conditions: [], for_whom: "clients" });
+      doc.flows = [namedFlow("flow-1", "internal only: the reconciliation operators", { steps: ["fn-2"], steps_partial: true })];
+      doc.chains[0].flows = ["flow-1"];
+    },
+  },
+  {
+    name: "a share raising the flow's class before the floor", band: 9,
+    build: (doc) => { doc.flows = [namedFlow("flow-1", "shoppers at checkout", { selecting_condition: "orders retried after a timeout", share: "70% of the flow's requests over the incident window" })]; doc.chains[0].flows = ["flow-1"]; },
+  },
+  {
+    name: "a flow whose population is one named client, read at majority", band: 9,
+    build: (doc) => { doc.flows = [namedFlow("flow-1", "the Acme Corp tenant")]; doc.chains[0].flows = ["flow-1"]; },
+  },
+];

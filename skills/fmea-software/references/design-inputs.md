@@ -8,10 +8,10 @@ No input is a rating and no input is a chain; an input is evidence about the sys
 
 | # | Input | What to collect | Provenance |
 |---|---|---|---|
-| 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. | [paraphrased:C014] |
+| 1 | Critical flows | The user and system flows, already prioritised by criticality, that the analysis follows through the structure. In the document each flow is one entry of `flows[]`: `name` and `value_priority` are written as collected; `sources` records where knowledge of the flow came from; `users.population`, with the optional `users.share` and `users.selecting_condition`, states its referent population; `steps` lists the functions it passes through and `steps_partial` says whether that list is a prefix; and a chain names the flows it breaks in `chains[].flows`. | [paraphrased:C014] [skill-authored] |
 | 2 | Component inventory by type | The system decomposed by component type: ingress, networking, compute, data, storage, supporting services — identity, messaging, key and secret storage — and egress. | [paraphrased:C014] |
 | 3 | Dependency classification | Every dependency placed on two axes: internal or external by the element's boundary (`in_scope` against `owned_outside` or `third_party`), and strong or weak. | [paraphrased:C014] [skill-authored] |
-| 4 | Dependency reliability data | For every element that is the provider of an edge, whatever its boundary, the availability SLA and the scaling limits. | [paraphrased:C014] [skill-authored] |
+| 4 | Dependency reliability data | For every element that is the provider of an edge, whatever its boundary, the availability SLA and the scaling limits. The cited source states the SLA and limits for internal dependencies. This skill collects them for every provider of an edge, inside or outside the boundary. | [paraphrased:C014] [skill-authored] |
 | 5 | Incident history | The incidents the system has had, the postmortems written for them, and the follow-up tasks those postmortems raised. | [cites:C023] |
 | 6 | Release controls | Release-side controls such as canary releases and staged rollouts. | [cites:C018] |
 | 7 | Observability controls | Central error logging and alerting. | [cites:C022] |
@@ -27,53 +27,105 @@ Items 1 to 4 and 14 are the structure inputs and are wanted before step 2; items
 
 ## Flows, components and dependencies
 
-Flows come first: the analysis assumes user and system flows have already been identified and prioritised by criticality, and plans the components each critical flow needs against them. [paraphrased:C014]
-Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [skill-authored]
-A strong dependency is one the system cannot function or stay available without; a weak one, when absent, costs named features while the system as a whole keeps serving. [paraphrased:C014]
-The source states the reliability data — availability SLA, scaling limits — for internal dependencies. [paraphrased:C014]
-This skill asks for it on every element that is the provider of an edge, a `skill-authored` extension. [skill-authored]
-Internal or external is a boundary question, strong or weak is a criticality question, and an element is classified on both. [skill-authored]
-In the analysis JSON this lands on the edge from the consumer to the provider in `dependencies[]`: `strength` holds strong or weak, `sla` and `limits` hold the commitment and the limits as free text in the source's own words. [skill-authored]
-An element whose boundary is `owned_outside` or `third_party` is the provider of at least one edge and is an external dependency; an `in_scope` element that is the provider of an edge is an internal dependency. [skill-authored]
+- Flows come first. [paraphrased:C014]
+- The analysis assumes user and system flows have already been identified and prioritised by criticality, and plans the components each critical flow needs against them. [paraphrased:C014]
+- Criticality is the cited source's own word. [cites:C014]
+- The run records that order as `value_priority` and does no criticality analysis. [skill-authored]
+- One flow is a user-valued journey named once, not a per-step slice of that journey. [skill-authored]
+- A flow with no external user is not a defect: it is internal or machine-only. [skill-authored]
+- `users.population` names that population (`internal only: the reconciliation operators`). [skill-authored]
+- The structural test reads the internal-only class for it. [skill-authored]
+- A population is a label and never a quantity. [skill-authored]
+- The count stays in the incident record. [skill-authored]
+- Only its fraction goes in `share`. [skill-authored]
+- Where the team knows only that one service publishes and another consumes, record what is known. [skill-authored]
+- In that case, name the end population in `users.population`. [skill-authored]
+- In that case, list the known consumers as `steps` or as an open assumption owned by `user`. [skill-authored]
+- In that case, set `steps_partial: true`. [skill-authored]
+- `value_priority` is the flow's value-priority tier: a three-level label the run records on each flow and reads for the report's order of flows only. [paraphrased:C201] [skill-authored]
+- Copy a tier the inputs give. [skill-authored]
+- Apply the tests below only to a flow the inputs leave untiered. [skill-authored]
+- Apply them in order, and give the flow the first tier whose test it meets. [skill-authored]
+- Each criterion is a test a second rater can apply to one flow without reading the first rater's answer. [skill-authored]
+  - **Low** — losing this flow reaches no external user. [skill-authored]
+  - **Medium** — the inputs state another path that delivers this flow's outcome to its users while the flow is lost. [skill-authored]
+  - **High** — every other flow. [skill-authored]
+- The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. [skill-authored]
+- The three criteria measure business impact and not safety, because `Severity` is a technical consequence class. [skill-authored]
+- Decomposition is by component type, and the seven types in row 2 are the prompt for finding elements. [paraphrased:C014] [skill-authored]
+- A strong dependency is one the system cannot function or stay available without. [paraphrased:C014]
+- A weak one, when absent, costs named features while the system as a whole keeps serving. [paraphrased:C014]
+- The source states the reliability data — availability SLA, scaling limits — for internal dependencies. [paraphrased:C014]
+- This skill asks for it on every element that is the provider of an edge, a `skill-authored` extension. [skill-authored]
+- Internal or external is a boundary question, and strong or weak is a criticality question. [paraphrased:C014] [skill-authored]
+- Classify each element on both. [paraphrased:C014] [skill-authored]
+- In the analysis JSON, this lands on the edge from the consumer to the provider in `dependencies[]`. [skill-authored]
+- `strength` holds strong or weak. [skill-authored]
+- `sla` and `limits` hold the commitment and the limits as free text in the source's own words. [skill-authored]
+- An element whose boundary is `owned_outside` or `third_party` is the provider of at least one edge. [paraphrased:C014] [skill-authored]
+- Such an element is an external dependency. [paraphrased:C014] [skill-authored]
+- An `in_scope` element that is the provider of an edge is an internal dependency. [paraphrased:C014] [skill-authored]
 
 ## Incident history
 
-Collect the incidents, the postmortems and the follow-up tasks together: Google's Production Readiness Review is the prior art for taking all three as review inputs. [cites:C023]
-Read them for two things the analysis needs — which failure modes have actually occurred, and which controls were in place when they did. [skill-authored]
-A chain seeded from an incident carries that incident's identifier in `source_incident`, so the row can be traced back to the record it came from. [skill-authored]
-A design that has not shipped has no incident history: the input is then empty, and that fact is written down as an assumption rather than filled in from a similar system. [skill-authored]
-An incident record is a source of a chain and of an element, never by itself a rating. [skill-authored]
+- Collect the incidents, the postmortems and the follow-up tasks together. [cites:C023]
+- Google's Production Readiness Review is the prior art for taking all three as review inputs. [cites:C023]
+- Read them for two things the analysis needs: which failure modes occurred, and which controls were then in place. [cites:C023] [skill-authored]
+- A chain seeded from an incident carries that incident's identifier in `source_incident`. [skill-authored]
+- That identifier lets the row be traced back to the record it came from. [skill-authored]
+- A design that has not shipped has no incident history: the input is then empty. [skill-authored]
+- Write that fact down as an assumption rather than filling in the input from a similar system. [skill-authored]
+- An incident record is a source of a chain and of an element, never by itself a rating. [skill-authored]
 
 ## The control inventory
 
-The inventory is of controls that exist now, collected per system, because a control another team runs is not a control on this one. [skill-authored]
-Release-side controls to look for include canary releases and staged rollouts. [cites:C018]
-Observability controls to look for: central error logging and alerting. [cites:C022]
-Static checks and small-scale tests are two layers, not one: Yuan et al. (OSDI '14) separate the faults a checker can find by reading error-handling code from the faults reached by statement-coverage testing of that code. [cites:C028]
-Which of these is a prevention control and which a detection control is the skill's own classification: no source in the evidence base assigns any of them to a control kind. [skill-authored]
-Record each control with its `status` — `existing` or `planned` — and its evidence kind, because a planned control does not satisfy the detection lint and an unevidenced one carries `none`. [skill-authored]
-A control found here can also become an element later; finding it does not settle that it works. [skill-authored]
+- The inventory is of controls that exist now. [skill-authored]
+- The inventory is collected per system, because a control another team runs is not a control on this one. [skill-authored]
+- Release-side controls to look for include canary releases and staged rollouts. [cites:C018]
+- Observability controls to look for: central error logging and alerting. [cites:C022]
+- Static checks and small-scale tests are two layers, not one. Yuan et al. (OSDI '14) separate the faults a checker can find by reading error-handling code from the faults reached by statement-coverage testing of that code. [cites:C028]
+- Which of these is a prevention control and which a detection control is the skill's own classification. [skill-authored]
+- Record each control with its `status` (`existing` or `planned`), because a planned control does not satisfy the detection lint. [skill-authored]
+- Record each control with its evidence kind, because an unevidenced one carries `none`. [skill-authored]
+- A control found here can also become an element later. [skill-authored]
+- Finding a control here does not settle that it works. [skill-authored]
 
 ## Ground rules and assumptions
 
-Decide the ground rules before the analysis begins: what will count as a failure, which kinds of failure are included, what fault tolerance is assumed. [paraphrased:C130]
-Write every assumption down as its own item, because each one matters. [paraphrased:C110] An unwritten assumption is a defect in the analysis, not a detail. [skill-authored]
+- Decide the ground rules before the analysis begins: what will count as a failure, which kinds of failure are included, what fault tolerance is assumed. [paraphrased:C130]
+- Write every assumption down as its own item, because each one matters. [paraphrased:C110]
+- An unwritten assumption is a defect in the analysis, not a detail. [skill-authored]
+
 NASA's software safety guidebook puts it this way: "Don't let assumptions go unwritten. Each one is important. In other words, 'ASSUME NOTHING' unless you write it down." [sourced:C110]
 Reproduced from NASA-GB-8719.13, a work of the United States Government; public domain in the United States. [skill-authored]
-The NASA sample ground rules are not carried into the skill: that set is hardware-scoped — it leaves human-error failure modes out of scope and categorises criticality on the worst-case effect of a hardware item's failure — so what transfers is the practice of deciding the rules first, not the rules. [paraphrased:C110] [paraphrased:C130]
-Both NASA documents list dependence on the accuracy of the documentation among the technique's known weaknesses, which is why every element records where its description came from. [paraphrased:C110] [paraphrased:C130] [skill-authored]
-How deep the inventory goes follows the lifecycle phase: functions or problem domains at requirements; functions, configuration items, or objects and classes at architectural design; configuration items, units, objects and instances at detailed design. [paraphrased:C130]
-At the architectural design phase only a preliminary analysis is possible, so an inventory taken there is collected expecting to revisit it. [paraphrased:C130]
-Ground rules and assumptions are analysis metadata, not element data: `meta.ground_rules` holds one entry per rule and `meta.assumptions` holds each assumption with an owner and an open or closed status. [skill-authored]
-An unattended run records every missing input as an open assumption owned by the user, and proceeds without it. [skill-authored]
-The exception is an answer the document cannot validate without, or a removal the update rules put to the person, which the migration, conversion and update rules name: the run does not proceed without it, writes nothing and ends with the question. [skill-authored]
+
+- The NASA sample ground rules are not carried into the skill. [paraphrased:C110] [paraphrased:C130]
+- That set is hardware-scoped — it leaves human-error failure modes out of scope and categorises criticality on the worst-case effect of a hardware item's failure. [paraphrased:C110] [paraphrased:C130]
+- So what transfers is the practice of deciding the rules first, not the rules. [paraphrased:C110] [paraphrased:C130]
+- Both NASA documents list dependence on the accuracy of the documentation among the technique's known weaknesses, which is why every element records where its description came from. [paraphrased:C110] [paraphrased:C130] [skill-authored]
+- How deep the inventory goes follows the lifecycle phase: functions or problem domains at requirements; functions, configuration items, or objects and classes at architectural design; configuration items, units, objects and instances at detailed design. [paraphrased:C130]
+- At the architectural design phase only a preliminary analysis is possible. [paraphrased:C130]
+- So an inventory taken there is collected expecting to revisit it. [skill-authored]
+- Ground rules and assumptions are analysis metadata, not element data. [skill-authored]
+- `meta.ground_rules` holds one entry per rule. [skill-authored]
+- `meta.assumptions` holds each assumption with an owner and an open or closed status. [skill-authored]
+- An unattended run records every missing input as an open assumption owned by the user. [skill-authored]
+- It proceeds without that input. [skill-authored]
+- The exception is an answer the document cannot validate without, or a removal the update rules put to the person. [skill-authored]
+- The migration, conversion and update rules name each such answer and removal. [skill-authored]
+- The run does not proceed without that answer or removal. [skill-authored]
+- In that case, the run writes nothing. [skill-authored]
+- In that case, it ends with the question. [skill-authored]
 
 ## Contracts and data flows
 
-The contract files and the data flows are the skill's own checklist items, because the research produced no record on interface or data-flow inputs. [skill-authored]
-They are in the checklist because an interface element cannot be described without its contract, and a datastore or event-stream element cannot be described without knowing what data reaches it. [skill-authored]
-Collect the schema and interface definition files from the repository, the published rate and size limits, the declared error responses, and for each flow what data crosses which boundary and in which direction. [skill-authored]
-v1 ships no catalog rows for interfaces, event streams or datastores; the questions that elicit them are in design-failure-catalog.md, the rows are not. [skill-authored]
+- The contract files and the data flows are the skill's own checklist items, because the research produced no record on interface or data-flow inputs. [skill-authored]
+- They are in the checklist because an interface element cannot be described without its contract. [skill-authored]
+- They are also in the checklist because a datastore or event-stream element cannot be described without knowing what data reaches it. [skill-authored]
+- Collect the schema and interface definition files from the repository. [skill-authored]
+- Collect the published rate and size limits and the declared error responses. [skill-authored]
+- For each flow, collect what data crosses which boundary and in which direction. [skill-authored]
+- v1 ships no catalog rows for interfaces, event streams or datastores; the questions that elicit them are in design-failure-catalog.md, the rows are not. [skill-authored]
 
 ## Where the inputs live
 
@@ -98,5 +150,6 @@ Where an input is missing and a person supplies it instead, the source kind is `
 
 Every element lists at least one source whose kind is not `catalog`: the validator enforces it as the invariant `element-source-non-catalog`. [skill-authored]
 A catalog source records only that a catalog row prompted the element; it is not evidence that the element exists in the system. [skill-authored]
-So no chain is rated for an element with no listed non-catalog source — collect the missing source and add it, or leave the element out of the analysis and record why. [skill-authored]
+Rate no chain for an element with no listed non-catalog source. [skill-authored]
+Collect the missing source and add it, or leave the element out of the analysis and record why. [skill-authored]
 The catalog row's own provenance stays on the chain, in `catalog_refs[]`, and never becomes the element's source. [skill-authored]

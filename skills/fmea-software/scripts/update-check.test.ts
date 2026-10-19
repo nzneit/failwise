@@ -1,13 +1,19 @@
 // The structural check of an update: lib/update-diff.ts driven directly, then update-check.ts through runCli.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diffUpdate } from "./lib/update-diff.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { STALE_REASON_ORDER, diffUpdate } from "./lib/update-diff.ts";
 import type { UpdateDiff } from "./lib/update-diff.ts";
 import { legacyIssues } from "./lib/legacy.ts";
-import type { Cause, Chain, DependencyEdge, FmeaDocument, StaleReason } from "./lib/types.ts";
-import { clone, edge, fixturePath, graphDoc, loadFixture, moveEdgesIntoBlocks, newElement, rating, runCli, withTempDir, writeJson } from "./test-helpers.ts";
+import { loadSchema } from "./lib/schema.ts";
+import type { Cause, Chain, DependencyEdge, Flow, FmeaDocument, StaleReason } from "./lib/types.ts";
+import { SKILL_ROOT, clone, edge, fixturePath, graphDoc, loadFixture, moveEdgesIntoBlocks, newElement, rating, runCli, withTempDir, writeJson } from "./test-helpers.ts";
 
-const EMPTY: UpdateDiff = { edges: [], elements: [], reached: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
+const EMPTY: UpdateDiff = { edges: [], elements: [], flows: [], reached: [], repointed: [], removedFlows: [], unmarked: [], removedLinks: [], orphans: [], changedProviders: [], order: [] };
+
+/** The operating document, read to cross-check its precedence sentence against STALE_REASON_ORDER. */
+const skill = readFileSync(join(SKILL_ROOT, "SKILL.md"), "utf8");
 
 /** diffUpdate of `copy` against a clone of it that `edit` changes. */
 function changed(copy: FmeaDocument, edit: (draft: FmeaDocument) => void): UpdateDiff {
@@ -44,7 +50,7 @@ test("diffUpdate: a boundary change reaches its element's own chains only, and l
   assert.deepEqual(changed(copy, (d) => { d.elements[1].boundary = "owned_outside"; }), {
     ...EMPTY,
     elements: [{ change: "changed", id: "pricing", fields: ["boundary"] }],
-    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing boundary changed" }],
+    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing boundary changed", reason: "element-changed" }],
     unmarked: [{ chainId: "ch-3", rule: "link /chains/2/causes/0 into ch-2, a row this update marks" }],
     order: ["ch-2"],
   });
@@ -55,7 +61,7 @@ test("diffUpdate: an element change in two fields names both in its chains' rule
   assert.deepEqual(changed(copy, (d) => { d.elements[1].kind = "datastore"; d.elements[1].security_relevant = true; }), {
     ...EMPTY,
     elements: [{ change: "changed", id: "pricing", fields: ["kind", "security_relevant"] }],
-    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing kind, security_relevant changed" }],
+    reached: [{ chainId: "ch-2", index: 1, rule: "element pricing kind, security_relevant changed", reason: "element-changed" }],
     order: ["ch-2"],
   });
 });
@@ -73,7 +79,7 @@ test("diffUpdate: a re-parented consumer marks the provider's chains through the
     ...EMPTY,
     edges: [{ change: "added", from: "api", to: "gw", fields: [] }, { change: "removed", from: "checkout.api", to: "gw", fields: [] }],
     elements: [{ change: "added", id: "api", fields: [] }, { change: "removed", id: "checkout.api", fields: [] }],
-    reached: [{ chainId: "ch-1", index: 0, rule: "edge api to gw changed" }],
+    reached: [{ chainId: "ch-1", index: 0, rule: "edge api to gw changed", reason: "element-changed" }],
     order: ["ch-1"],
   });
 });
@@ -121,10 +127,10 @@ test("diffUpdate: an edge change reaches the chains on to and the links into the
     ...EMPTY,
     edges: [{ change: "changed", from: "shop.api", to: "gw", fields: ["sla"] }],
     reached: [
-      { chainId: "ch-1", index: 0, rule: "edge shop.api to gw changed" },
-      { chainId: "ch-3", index: 2, rule: "link /chains/2/causes/0 into ch-1 across edge shop.api to gw" },
-      { chainId: "ch-4", index: 3, rule: "link /chains/3/causes/0 into ch-1 across edge shop.api to gw" },
-      { chainId: "ch-5", index: 4, rule: "link /chains/4/causes/0 into ch-1 across edge shop.api to gw" },
+      { chainId: "ch-1", index: 0, rule: "edge shop.api to gw changed", reason: "element-changed" },
+      { chainId: "ch-3", index: 2, rule: "link /chains/2/causes/0 into ch-1 across edge shop.api to gw", reason: "element-changed" },
+      { chainId: "ch-4", index: 3, rule: "link /chains/3/causes/0 into ch-1 across edge shop.api to gw", reason: "element-changed" },
+      { chainId: "ch-5", index: 4, rule: "link /chains/4/causes/0 into ch-1 across edge shop.api to gw", reason: "element-changed" },
     ],
     unmarked: [
       { chainId: "ch-6", rule: "link /chains/5/causes/0 into ch-1, a row this update marks" },
@@ -179,6 +185,257 @@ test("diffUpdate: a removed codebase and a cleared or relabelled element mark no
     delete d.elements[1].codebase;
     d.elements[1].name = "Auth library";
   }), EMPTY);
+});
+
+test("diffUpdate: a chain-named flow's users change reaches its chain as flow-changed and marks nothing else", () => {
+  const copy = flowDoc();
+  const seen = changed(copy, (d) => { flowOf(d, "flow-1").users = { population: "internal only: operators" }; });
+  assert.deepEqual(seen.reached.map((r) => [r.chainId, r.rule, r.reason]), [["ch-1", "flow flow-1 changed users", "flow-changed"]]);
+  assert.deepEqual(seen.flows, [{ change: "changed", id: "flow-1", fields: ["users"] }]);
+});
+
+test("diffUpdate: a chain's flows set change reaches it as flow-changed, and a name or a tier change marks nothing", () => {
+  const copy = flowDoc();
+  const repointed = changed(copy, (d) => { chainOf(d, "ch-1").flows = ["flow-2"]; });
+  assert.deepEqual(repointed.reached.map((r) => [r.chainId, r.rule, r.reason]), [["ch-1", "chain ch-1 names flow-2 in place of flow-1", "flow-changed"]]);
+  assert.deepEqual(repointed.repointed, [{ chainId: "ch-1", index: 0, from: ["flow-1"], to: ["flow-2"] }]);
+  assert.deepEqual(changed(copy, (d) => { flowOf(d, "flow-1").name = "Checkout submission again"; flowOf(d, "flow-1").value_priority = "Low"; }).reached, []);
+});
+
+/** flowDoc with flow-1's `steps` and, where given, its `steps_partial`; ch-1 names flow-1 and is on fn-checkout. */
+function stepsDoc(steps: string[], partial?: boolean): FmeaDocument {
+  const doc = flowDoc();
+  setSteps(flowOf(doc, "flow-1"), steps, partial);
+  return doc;
+}
+
+/** Sets a flow's `steps`, and its `steps_partial`, or removes the flag where none is given. */
+function setSteps(f: Flow, steps: string[], partial: boolean | undefined): void {
+  f.steps = steps;
+  if (partial === undefined) delete f.steps_partial;
+  else f.steps_partial = partial;
+}
+
+/** The reaches of a draft of `copy` whose flow-1 takes `steps` and `partial`, as chain, rule and reason. */
+function stepsReach(copy: FmeaDocument, steps: string[], partial: boolean | undefined): [string, string, StaleReason][] {
+  return changed(copy, (d) => setSteps(flowOf(d, "flow-1"), steps, partial)).reached.map((r) => [r.chainId, r.rule, r.reason]);
+}
+
+test("diffUpdate: a steps or steps_partial change that moves the chain's function into a partial prefix, or completes the steps, reaches it as flow-changed", () => {
+  // The prefix fn-pay leaves out ch-1's fn-checkout, so the partial-prefix rule of scales-software.md reads the flow as subset.
+  const copy = stepsDoc(["fn-pay"], true);
+  assert.deepEqual(stepsReach(copy, ["fn-pay", "fn-checkout"], true), [["ch-1", "flow flow-1 changed steps, so its recorded steps are no longer a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(copy, ["fn-pay"], undefined), [["ch-1", "flow flow-1 changed steps_partial, so its recorded steps are no longer a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(copy, ["fn-pay", "fn-checkout"], false), [["ch-1", "flow flow-1 changed steps, steps_partial, so its recorded steps are no longer a prefix without fn-checkout", "flow-changed"]]);
+});
+
+test("diffUpdate: a steps or steps_partial change that moves the chain's function out of a partial prefix reaches it as flow-changed", () => {
+  assert.deepEqual(stepsReach(stepsDoc(["fn-checkout"], true), ["fn-pay"], true), [["ch-1", "flow flow-1 changed steps, so its recorded steps are now a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(stepsDoc(["fn-pay"]), ["fn-pay"], true), [["ch-1", "flow flow-1 changed steps_partial, so its recorded steps are now a prefix without fn-checkout", "flow-changed"]]);
+  assert.deepEqual(stepsReach(stepsDoc(["fn-checkout"]), [], true), [["ch-1", "flow flow-1 changed steps, steps_partial, so its recorded steps are now a prefix without fn-checkout", "flow-changed"]]);
+});
+
+test("diffUpdate: a steps or steps_partial change that moves no function into or out of a partial prefix reports the change and marks nothing", () => {
+  const cases: [FmeaDocument, string[], boolean | undefined, string][] = [
+    [stepsDoc(["fn-pay"], true), ["fn-pay", "fn-ship"], true, "steps"], // still a prefix without fn-checkout
+    [stepsDoc(["fn-checkout"], true), ["fn-checkout", "fn-pay"], true, "steps"], // the prefix keeps fn-checkout
+    [stepsDoc(["fn-checkout"], true), ["fn-checkout"], undefined, "steps_partial"], // complete steps that keep fn-checkout
+    [stepsDoc(["fn-checkout"]), ["fn-pay"], undefined, "steps"], // complete steps without fn-checkout are no prefix
+  ];
+  for (const [copy, steps, partial, field] of cases) {
+    const diff = changed(copy, (d) => setSteps(flowOf(d, "flow-1"), steps, partial));
+    assert.deepEqual(diff.flows, [{ change: "changed", id: "flow-1", fields: [field] }]);
+    assert.deepEqual(diff.reached, [], `${field} to ${steps.join(", ")}`);
+  }
+});
+
+test("diffUpdate: the partial-prefix reach reads each naming chain's own function", () => {
+  const copy = graphDoc({ elements: ["checkout", "pay"], chains: [["ch-1", "checkout"], ["ch-2", "pay"]] });
+  copy.flows = [{ ...flow("flow-1"), steps: ["fn-checkout"], steps_partial: true }];
+  chainOf(copy, "ch-1").flows = ["flow-1"];
+  chainOf(copy, "ch-2").flows = ["flow-1"];
+  const seen = changed(copy, (d) => { flowOf(d, "flow-1").steps = ["fn-checkout", "fn-pay"]; });
+  assert.deepEqual(seen.reached.map((r) => [r.chainId, r.rule]), [["ch-2", "flow flow-1 changed steps, so its recorded steps are no longer a prefix without fn-pay"]]);
+});
+
+function flowOf(doc: FmeaDocument, id: string): Flow {
+  const f = doc.flows?.find((x) => x.id === id);
+  assert.ok(f, `no flow ${id}`);
+  return f;
+}
+
+/** A bare flow: the id, its name and the tier the schema requires, no users and no sources. */
+function flow(id: string): Flow {
+  return { id, name: id, value_priority: "High" };
+}
+
+/** ch-1 on checkout names flow-1; flow-2 is named by no chain. */
+function flowDoc(): FmeaDocument {
+  const doc = graphDoc({ elements: ["checkout"], chains: [["ch-1", "checkout"]] });
+  doc.flows = [flow("flow-1"), flow("flow-2")];
+  chainOf(doc, "ch-1").flows = ["flow-1"];
+  return doc;
+}
+
+test("update-check.ts prints the flows section, calls a name change informational, and counts the chain re-points", () => {
+  const copy = flowDoc();
+  const renamedDraft = clone(copy);
+  flowOf(renamedDraft, "flow-1").name = "Checkout submission again";
+  const renamed = runCheck(copy, renamedDraft);
+  assert.equal(renamed.status, 0, renamed.stderr);
+  assert.ok(renamed.stdout.includes("flows:\n  changed flow-1: name\n"), renamed.stdout);
+  assert.ok(renamed.stdout.includes("stale:\n  none"), "a name change marks nothing stale");
+  const repointedDraft = clone(copy);
+  chainOf(repointedDraft, "ch-1").flows = ["flow-2"];
+  const repointed = runCheck(copy, repointedDraft);
+  assert.ok(repointed.stdout.includes("chains re-pointed:\n  ch-1: flow-1 to flow-2\n"), repointed.stdout);
+  // The counts line ends with the last count, so match its tail rather than a substring with a trailing comma.
+  assert.ok(/update-check: [^\n]*, 1 chain re-pointed\n$/.test(repointed.stdout), repointed.stdout);
+});
+
+test("update-check.ts prints none for the empty side of a re-point, in the chains re-pointed line, the stale rule and the --check refusal", () => {
+  const unnamed = groundedFlowDoc();
+  delete chainOf(unnamed, "ch-1").flows;
+  const firstNaming = bumped(unnamed);
+  chainOf(firstNaming, "ch-1").flows = ["flow-1"];
+  const named = groundedFlowDoc();
+  const unnaming = bumped(named);
+  chainOf(unnaming, "ch-1").flows = [];
+  chainOf(unnaming, "ch-1").stale = { flag: true, reason: "control-removed", since_version: unnaming.meta.version };
+  for (const [copy, draft, line, rule, refusal] of [
+    [unnamed, firstNaming, "ch-1: none to flow-1", "chain ch-1 names flow-1 in place of none", "stale-missing: chain ch-1 is reached by chain ch-1 names flow-1 in place of none but its stale.flag is false at /chains/0/stale/flag"],
+    [named, unnaming, "ch-1: flow-1 to none", "chain ch-1 names none in place of flow-1", "stale-reason: chain ch-1 is reached by chain ch-1 names none in place of flow-1 but its stale.reason is control-removed at /chains/0/stale/reason"],
+  ] as const) {
+    const r = runCheck(copy, draft, "--check");
+    assert.equal(r.status, 2, r.stdout);
+    assert.ok(r.stdout.includes(`chains re-pointed:\n  ${line}\n`), r.stdout);
+    assert.ok(r.stdout.includes(`stale:\n  ch-1: ${rule}\n`), r.stdout);
+    assert.ok(r.stderr.split("\n").includes(`error UPDATE_MISMATCH: ${refusal}`), r.stderr);
+  }
+});
+
+test("a removed flow a chain still names is refused and listed with the flows to re-point to", () => {
+  const copy = flowDoc();
+  const draft = bumped(copy);
+  draft.flows = draft.flows!.filter((f) => f.id !== "flow-1");
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.ok(r.stdout.includes("flows removed:\n  flow-1: named by ch-1; repoint to flow-2, or drop\n"), r.stdout);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: removed-flow-still-named: chain ch-1 names flow-1, which this update removes at \/chains\/0\/flows\/0$/m);
+});
+
+test("a chain-named flow with no non-catalog source is refused by the same guard", () => {
+  const copy = flowDoc();
+  const draft = bumped(copy);
+  flowOf(draft, "flow-1").sources = [{ kind: "catalog", ref: "cat-service-01" }];
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: flow-sources-lost: flow flow-1 is named by chain ch-1 and has no source whose kind is not catalog at \/flows\/0\/sources$/m);
+});
+
+test("flow-sources-lost gives one line per flow, at the first chain naming it, and lists every chain that names it", () => {
+  const copy = graphDoc({ elements: ["checkout"], chains: [["ch-1", "checkout"], ["ch-2", "checkout"]] });
+  copy.flows = [flow("flow-1"), flow("flow-2")];
+  chainOf(copy, "ch-1").flows = ["flow-1"];
+  chainOf(copy, "ch-2").flows = ["flow-2", "flow-1"];
+  const draft = bumped(copy);
+  flowOf(draft, "flow-1").sources = [{ kind: "catalog", ref: "cat-service-01" }];
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.deepEqual(r.stderr.split("\n").filter((l) => l.includes("flow-sources-lost")), [
+    "error UPDATE_MISMATCH: flow-sources-lost: flow flow-1 is named by chains ch-1, ch-2 and has no source whose kind is not catalog at /flows/0/sources",
+    "error UPDATE_MISMATCH: flow-sources-lost: flow flow-2 is named by chain ch-2 and has no source whose kind is not catalog at /flows/1/sources",
+  ]);
+});
+
+test("a removed flow no chain names is reported and marks nothing stale", () => {
+  const copy = flowDoc();
+  const draft = clone(copy);
+  draft.flows = draft.flows!.filter((f) => f.id !== "flow-2");
+  const r = runCheck(copy, draft);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("flows removed:\n  flow-2: named by no chain\n"), r.stdout);
+  assert.ok(r.stdout.includes("stale:\n  none"), r.stdout);
+});
+
+test("STALE_REASON_ORDER is the schema's stale reason enum, in order", () => {
+  const declared = (((loadSchema().$defs as Record<string, Record<string, unknown>>).stale as Record<string, Record<string, unknown>>).properties.reason as { enum: StaleReason[] }).enum;
+  assert.deepEqual([...STALE_REASON_ORDER], declared);
+});
+
+test("SKILL.md's precedence sentence names the stale reasons in STALE_REASON_ORDER's order", () => {
+  const line = skill.split("\n").find((l) => l.includes("the order of the stale reason set v2"));
+  assert.ok(line, "SKILL.md states the precedence order");
+  const named = [...line.matchAll(/`([a-z-]+)`/g)].map((m) => m[1]).filter((x) => (STALE_REASON_ORDER as readonly string[]).includes(x));
+  assert.deepEqual(named, [...STALE_REASON_ORDER]);
+});
+
+/** flowDoc with flow-1 grounded in a non-catalog source, so a --check of a users change cannot also trip flow-sources-lost. */
+function groundedFlowDoc(): FmeaDocument {
+  const doc = flowDoc();
+  flowOf(doc, "flow-1").sources = [{ kind: "document", ref: "flow notes" }];
+  return doc;
+}
+
+test("stale-reason: a row reached by a flow change accepts flow-changed and every reason above it, and refuses the ones below", () => {
+  for (const [reason, status] of [["element-changed", 0], ["function-changed", 0], ["flow-changed", 0], ["control-removed", 2], ["scales-version", 2]] as const) {
+    const copy = groundedFlowDoc();
+    const draft = bumped(copy);
+    chainOf(draft, "ch-1").stale = { flag: true, reason, since_version: draft.meta.version };
+    flowOf(draft, "flow-1").users = { population: "internal only: operators" };
+    assert.equal(runCheck(copy, draft, "--check").status, status, reason);
+  }
+});
+
+test("stale-reason: a row reached by both an element change and a flow change keeps element-changed, and stating it is accepted", () => {
+  const copy = groundedFlowDoc();
+  const draft = bumped(copy);
+  draft.elements[0].kind = "datastore";
+  flowOf(draft, "flow-1").users = { population: "internal only: operators" };
+  chainOf(draft, "ch-1").stale = { flag: true, reason: "element-changed", since_version: draft.meta.version };
+  assert.deepEqual(diffUpdate(copy, draft).reached.map((r) => [r.chainId, r.reason]), [["ch-1", "element-changed"]]);
+  assert.equal(runCheck(copy, draft, "--check").status, 0);
+});
+
+test("stale-reason: a row reached by an element change still refuses function-changed alone", () => {
+  const copy = storedCopy();
+  const draft = goodDraft(copy);
+  chainOf(draft, "ch-1").stale = { flag: true, reason: "function-changed", since_version: draft.meta.version };
+  const r = runCheck(copy, draft, "--check");
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stderr, /^error UPDATE_MISMATCH: stale-reason: chain ch-1 is reached by edge checkout to gw changed but its stale.reason is function-changed at \/chains\/0\/stale\/reason$/m);
+});
+
+test("update-check.ts --check refuses a row the partial-prefix reach leaves unflagged, in both directions, and accepts it flagged flow-changed", () => {
+  for (const [before, after, partial, rule] of [
+    [["fn-pay"], ["fn-pay", "fn-checkout"], true, "flow flow-1 changed steps, so its recorded steps are no longer a prefix without fn-checkout"],
+    [["fn-checkout"], ["fn-pay"], true, "flow flow-1 changed steps, so its recorded steps are now a prefix without fn-checkout"],
+  ] as const) {
+    const copy = groundedFlowDoc();
+    setSteps(flowOf(copy, "flow-1"), [...before], partial);
+    const draft = bumped(copy);
+    setSteps(flowOf(draft, "flow-1"), [...after], partial);
+    const unflagged = runCheck(copy, draft, "--check");
+    assert.equal(unflagged.status, 2, unflagged.stdout);
+    assert.ok(unflagged.stdout.includes(`stale:\n  ch-1: ${rule}\n`), unflagged.stdout);
+    assert.ok(unflagged.stderr.split("\n").includes(`error UPDATE_MISMATCH: stale-missing: chain ch-1 is reached by ${rule} but its stale.flag is false at /chains/0/stale/flag`), unflagged.stderr);
+    chainOf(draft, "ch-1").stale = { flag: true, reason: "flow-changed", since_version: draft.meta.version };
+    const flagged = runCheck(copy, draft, "--check");
+    assert.equal(flagged.status, 0, flagged.stderr);
+  }
+});
+
+test("update-check.ts: a flow's users.review change is reported as users.review and marks nothing stale", () => {
+  const copy = groundedFlowDoc();
+  flowOf(copy, "flow-1").users = { population: "internal only: operators" };
+  const draft = clone(copy);
+  flowOf(draft, "flow-1").users = { population: "internal only: operators", review: { status: "provisional" } };
+  assert.deepEqual(diffUpdate(copy, draft).flows, [{ change: "changed", id: "flow-1", fields: ["users.review"] }]);
+  assert.deepEqual(diffUpdate(copy, draft).reached, []);
+  const r = runCheck(copy, draft);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes("flows:\n  changed flow-1: users.review\n"), r.stdout);
+  assert.ok(r.stdout.includes("stale:\n  none"), r.stdout);
 });
 
 function chainOf(doc: FmeaDocument, id: string): Chain {
@@ -242,11 +499,11 @@ test("update-check.ts prints the diff on the first run and refuses nothing a dra
   const r = runCheck(copy, draft);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
-  assert.equal(r.stdout, "edges:\n  changed checkout to gw: strength\n" + NONE("elements") +
+  assert.equal(r.stdout, "edges:\n  changed checkout to gw: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") + NONE("flows removed") +
     "stale:\n  ch-1: edge checkout to gw changed\n  ch-2: link /chains/1/causes/0 into ch-1 across edge checkout to gw\n" +
     NONE("unmarked") + NONE("links into removed chains") + NONE("outside elements with no consumer") +
     "re-rating order:\n  ch-1, ch-2\n" +
-    "update-check: 1 edge change, 0 element changes, 2 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer\n");
+    "update-check: 1 edge change, 0 element changes, 2 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed\n");
 });
 
 test("update-check.ts --check accepts a draft whose flags the rules reach, and prints the changed-provider section and count", () => {
@@ -254,15 +511,15 @@ test("update-check.ts --check accepts a draft whose flags the rules reach, and p
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
   assert.ok(r.stdout.includes(NONE("outside elements with no consumer") + NONE("consumer causes whose linked chain changed") + "re-rating order:\n  ch-1, ch-2\n"), r.stdout);
-  assert.ok(r.stdout.endsWith(", 0 outside elements with no consumer, 0 changed providers\n"), r.stdout);
+  assert.ok(r.stdout.endsWith(", 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed, 0 changed providers\n"), r.stdout);
 });
 
 test("update-check.ts given one path as both copy and draft prints every section none, and --check refuses it at /meta/version", () => {
   const path = fixturePath("update", "before.fmea.json");
   const r = runCli("update-check.ts", [path, path]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, ["edges", "elements", "stale", "unmarked", "links into removed chains", "outside elements with no consumer", "re-rating order"].map(NONE).join("") +
-    "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer\n");
+  assert.equal(r.stdout, ["edges", "elements", "flows", "chains re-pointed", "flows removed", "stale", "unmarked", "links into removed chains", "outside elements with no consumer", "re-rating order"].map(NONE).join("") +
+    "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed\n");
   const c = runCli("update-check.ts", [path, path, "--check"]);
   assert.equal(c.status, 2);
   assert.equal(c.stderr, "error UPDATE_BASELINE: update-baseline: the draft's meta.version 1 is not 2 as the stored copy's meta.version 1 requires at /meta/version\n");
@@ -438,8 +695,8 @@ test("update-check.ts --check exits 0 on update/before.fmea.json against a draft
   const r = runCheck(copy, draft, "--check");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
-  assert.equal(r.stdout, "edges:\n  changed checkout to checkout.payment-gateway: strength\n" + NONE("elements") +
+  assert.equal(r.stdout, "edges:\n  changed checkout to checkout.payment-gateway: strength\n" + NONE("elements") + NONE("flows") + NONE("chains re-pointed") + NONE("flows removed") +
     "stale:\n  ch-1: edge checkout to checkout.payment-gateway changed\n" + NONE("unmarked") + NONE("links into removed chains") +
     NONE("outside elements with no consumer") + NONE("consumer causes whose linked chain changed") + "re-rating order:\n  ch-1, ch-2, ch-4\n" +
-    "update-check: 1 edge change, 0 element changes, 1 stale row, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 changed providers\n");
+    "update-check: 1 edge change, 0 element changes, 1 stale row, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed, 0 changed providers\n");
 });

@@ -7,9 +7,12 @@
 # ./report.html are not denied (Claude Code refuses writes under a --plugin-dir
 # tree), saves the CLI's message stream as transcript.jsonl and its final result
 # object as transcript.json, runs the validator on analysis.json into
-# validate.json, copies the finished run into build/evals/p<id>/<capability>/run<n>/,
+# validate.json, extracts the skill's script calls from the stream into
+# invocations.json (tools/eval-invocations.ts), records the run's context into
+# context.json (tools/eval-context.ts), copies the finished run into
+# build/evals/p<id>/<capability>/run<n>/,
 # and prints one summary line:
-#   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n>
+#   p<id> <capability> run<n>: model=<name> basis=<basis> effort=<effort> analysis=<present|missing> report=<present|missing> validate_exit=<n> invocations=<present|missing> context=<present|missing> final=<complete|cut|missing>
 #
 # Model capabilities, not model names (amended 2026-09-12 by the user's ruling
 # at the eval re-run: the eval axis is a capability level, and the model that
@@ -51,6 +54,23 @@
 # The copy is passed to --add-dir as well, so Bash calls into it (ls, cat, grep,
 # node <script>) are admitted; without it the file-access boundary denies them
 # whatever --allowedTools says — see the ALLOWED_TOOLS comment below.
+# The run's CLAUDE_CONFIG_DIR is a fresh directory under $TMPDIR, made beside
+# the plugin copy and removed by the EXIT trap with it. The harness copies
+# nothing into it; the /autocompact probe leaves the CLI's own state files there
+# before the run, which the dated preflight comment above its export names.
+#
+# The context window is set per model, never inherited (prose design 2026-10-14
+# §5.3). A table below gives each model it names a
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW, a CLAUDE_CODE_MAX_CONTEXT_TOKENS and the text
+# its probe must report; its one row is deepseek-flash, a gateway model the CLI
+# does not know. A model with no row runs with neither setting, whatever the
+# launcher's environment carries. Before every run, `claude -p "/autocompact"`
+# is asked for the window in the run's working directory, under its own
+# CLAUDE_CONFIG_DIR and window settings, and its whole reply, stdout and stderr,
+# is kept as autocompact.txt and published with the run. The run is refused
+# before it is launched when the reply has no auto-compact window line, when
+# that line says the window is capped, or, for a model with a row, when it is
+# not the row's window; the refusal prints the reply or its line.
 #
 # Finished runs are published under $FMEA_EVAL_PUBLISH_ROOT, which defaults to
 # $ROOT/build/evals, the tree the rest of the plan reads. The variable exists so
@@ -204,19 +224,65 @@ fi
 # loads from the filtered plugin copy built below, and that copy's reference
 # files and scripts stay readable and runnable by absolute path.
 
-# Both scratch directories are removed by the EXIT trap. The trap is installed
-# before the first mktemp, and cleanup skips a variable that is still empty, so a
-# second mktemp that fails under `set -e` takes the first directory with it
-# instead of leaking it.
+# All three scratch directories are removed by the EXIT trap. The trap is
+# installed before the first mktemp, and cleanup skips a variable that is still
+# empty, so a later mktemp that fails under `set -e` takes the earlier
+# directories with it instead of leaking them. SIGTERM, SIGINT and SIGHUP each
+# get a trap that exits with 128 plus the signal's number (143, 130, 129), and
+# that exit runs the EXIT trap (prose design 2026-10-14, §11.6, carried items).
+# Bash runs a signal's trap only once the foreground command has ended, so the
+# directories go after the claude session has ended, not under it. With the
+# EXIT trap alone, bash ran it at once on SIGTERM or SIGHUP and died of the
+# signal while the session ran on in the directories just removed, and on a
+# SIGINT that the session caught it went on with the run. tools/run-round.ts
+# stops a cell by sending SIGTERM to its process group, the session included,
+# and SIGKILL to what remains after its grace period; SIGKILL runs no trap. A
+# run stopped before its publish copy publishes nothing.
 WORK=""
 PLUGIN=""
+CONFIG=""
 cleanup() {
   if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
   if [ -n "$PLUGIN" ]; then rm -rf "$PLUGIN"; fi
+  if [ -n "$CONFIG" ]; then rm -rf "$CONFIG"; fi
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/fmea-eval-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
 PLUGIN="$(mktemp -d "${TMPDIR:-/tmp}/fmea-plugin-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
+CONFIG="$(mktemp -d "${TMPDIR:-/tmp}/fmea-config-p${PID}-${MODEL_CAPABILITY}-run${RUN}-XXXXXX")"
+# The user's own ~/.claude stays out of the run: CLAUDE_CONFIG_DIR is a fresh,
+# empty directory made for this run (prose design 2026-10-14 §5.1). Nothing is
+# copied into it. The plugin under test arrives through --plugin-dir, and the
+# gateway route is the launcher's ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN,
+# which this directory does not touch; a Claude-model run needs
+# ANTHROPIC_API_KEY in the environment instead. In the 0.7.0 round, run
+# without this, eleven of twelve transcripts quoted or applied ~/.claude/CLAUDE.md.
+# The CLI still lists the plugins it bundles (source *@builtin) and the skills
+# it bundles under no namespace; neither comes from ~/.claude.
+# preflight 2026-10-14 (CLI 2.1.299): a -p run under a fresh CLAUDE_CONFIG_DIR authenticated through the gateway (apiKeySource none), listed the non-builtin plugin failwise and the namespaced skill failwise:fmea-software alone beside the CLI's builtin plugins and bundled skills, and /autocompact reported the 786.4k window, leaving .claude.json, backups, projects and sessions in the fresh directory; CLAUDE_CONFIG_DIR kept per run
+# preflight 2026-10-14 (CLI 2.1.300): with DISABLE_AUTOUPDATER=1, a -p run under a fresh CLAUDE_CONFIG_DIR authenticated through the gateway (apiKeySource none), listed the non-builtin plugin failwise and the namespaced skill failwise:fmea-software alone beside the same builtin plugins and the same 18 bundled skills as 2.1.299, and /autocompact reported the 786.4k window, leaving .claude.json, backups, projects and sessions in the fresh directory, and .last-cleanup beside them after the run with the plugin; CLAUDE_CONFIG_DIR kept per run
+export CLAUDE_CONFIG_DIR="$CONFIG"
+# The CLI updated itself during the prose-0 round on 2026-10-14 (p1, p5 on 2.1.299; p6, p7 on 2.1.300); a round
+# must run on one version. Other sessions can still update the shared install, so context.json records cli_version.
+export DISABLE_AUTOUPDATER=1
+# The context window per model (prose design 2026-10-14 §5.3). The CLI does not
+# know a gateway model and takes a 200k window for it, which caps
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW: 13 of the capped round's 16 runs compacted
+# near 167k on 2026-10-13. A model with a row gets its two settings and the
+# text its probe must report; a model with no row gets neither setting, so the
+# launcher's environment never decides the window.
+unset CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_CODE_MAX_CONTEXT_TOKENS
+WINDOW_EXPECT=""
+case "$MODEL_NAME" in
+  deepseek-flash)
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432
+    export CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000
+    WINDOW_EXPECT="786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)"
+    ;;
+esac
 mkdir -p "$WORK/inputs"
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
@@ -260,6 +326,34 @@ fi
 VALIDATOR="$PLUGIN/skills/fmea-software/scripts/validate.ts"
 
 cd "$WORK"
+# The /autocompact probe (prose design 2026-10-14 §5.3), made before every run
+# in the run's working directory, with the model, the CLAUDE_CONFIG_DIR and the
+# window settings the run gets: the CLI reads project-level settings from the
+# working directory, so the probe sees what the run sees.
+# Its whole reply is kept as autocompact.txt, which the publish copy below
+# carries. The gate takes the first line naming the auto-compact window and
+# refuses the run, for every model, when there is no such line or the CLI caps
+# the window, and, for a model with a row, when the line is not the row's
+# window. A refusal prints the reply or its line, because the EXIT trap removes
+# $WORK before anything is published.
+set +e
+claude -p "/autocompact" --model "$MODEL_NAME" --max-turns 1 > "$WORK/autocompact.txt" 2>&1
+set -e
+WINDOW_LINE="$(grep -i -m1 "auto-compact window for" "$WORK/autocompact.txt" || true)"
+if [ -z "$WINDOW_LINE" ]; then
+  { echo "error: the CLI reported no auto-compact window line; its reply follows"; sed -n '1,20p' "$WORK/autocompact.txt"; } >&2
+  exit 1
+fi
+case "$WINDOW_LINE" in
+  *capped*) echo "error: the CLI caps the auto-compact window: $WINDOW_LINE" >&2; exit 1 ;;
+esac
+if [ -n "$WINDOW_EXPECT" ]; then
+  case "$WINDOW_LINE" in
+    *"$WINDOW_EXPECT"*) ;;
+    *) echo "error: the CLI did not report the window the table expects for $MODEL_NAME, $WINDOW_EXPECT: $WINDOW_LINE" >&2; exit 1 ;;
+  esac
+fi
+
 # The run may exhaust --max-turns or fail; the summary line is still printed,
 # so the CLI's exit status is reported rather than aborting the script.
 # stream-json is the only --print output format that records tool_use blocks,
@@ -302,10 +396,41 @@ node "$VALIDATOR" analysis.json > validate.json 2> validate.stderr
 VALIDATE_EXIT=$?
 set -e
 
+# The skill's script calls, extracted from the stream into invocations.json for
+# the judge, who scores c6 and c8 on them: a grep of transcript.jsonl for the
+# script names returns megabytes of file reads and thinking that merely name a
+# script. A failed extraction leaves no invocations.json, and the judge then
+# leaves those two criteria unscored, so the run is recorded unverified.
+set +e
+node "$ROOT/tools/eval-invocations.ts" "$WORK" 2> invocations.stderr
+INVOCATIONS_EXIT=$?
+set -e
+[ "$INVOCATIONS_EXIT" -eq 0 ] || echo "p$PID $MODEL_CAPABILITY run$RUN: tools/eval-invocations.ts exited $INVOCATIONS_EXIT (see invocations.stderr)" >&2
+
+# The run's context record (prose design 2026-10-14 §5.3): the window it ran
+# under, its compactions and peak, the init line's isolation facts, the denied
+# calls and the new lints' counts. A run with no context.json is unverified at
+# judging, never scored.
+set +e
+node "$ROOT/tools/eval-context.ts" "$WORK" --config-dir "$CONFIG" --lint edge-reliability-unstated --lint conversion-substitution-unrecorded 2> context.stderr
+CONTEXT_EXIT=$?
+set -e
+[ "$CONTEXT_EXIT" -eq 0 ] || echo "p$PID $MODEL_CAPABILITY run$RUN: tools/eval-context.ts exited $CONTEXT_EXIT (see context.stderr)" >&2
+
 # Publish the run into the repository tree the rest of the plan reads.
 mkdir -p "$RUN_DIR"
 cp -R "$WORK/." "$RUN_DIR/"
 
-ANALYSIS=missing; [ -f analysis.json ] && ANALYSIS=present
-REPORT=missing;   [ -f report.html ]   && REPORT=present
-echo "p$PID $MODEL_CAPABILITY run$RUN: model=$MODEL_NAME basis=$MODELS_BASIS effort=$EFFORT analysis=$ANALYSIS report=$REPORT validate_exit=$VALIDATE_EXIT"
+ANALYSIS=missing;    [ -f analysis.json ]    && ANALYSIS=present
+REPORT=missing;      [ -f report.html ]      && REPORT=present
+INVOCATIONS=missing; [ -f invocations.json ] && INVOCATIONS=present
+CONTEXT=missing;     [ -f context.json ]     && CONTEXT=present
+# Whether the final message is complete, from the context.json just written
+# (prose design §8.1, dated 2026-10-15): final_message.complete true reads
+# complete, false reads cut, and an absent field, a null or no context.json
+# reads missing. A cut or missing run is unverified at judging.
+FINAL=missing;       [ -f context.json ]     && FINAL=$(node -e '
+  const c = JSON.parse(require("node:fs").readFileSync("context.json", "utf8")).final_message?.complete;
+  process.stdout.write(c === true ? "complete" : c === false ? "cut" : "missing");
+' 2> /dev/null) || FINAL=missing
+echo "p$PID $MODEL_CAPABILITY run$RUN: model=$MODEL_NAME basis=$MODELS_BASIS effort=$EFFORT analysis=$ANALYSIS report=$REPORT validate_exit=$VALIDATE_EXIT invocations=$INVOCATIONS context=$CONTEXT final=$FINAL"

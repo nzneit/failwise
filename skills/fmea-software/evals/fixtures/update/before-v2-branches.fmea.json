@@ -34,7 +34,7 @@
       }
     ],
     "scales": {
-      "version": 1,
+      "version": 2,
       "priority_table": "priority-fmea-software-v1"
     },
     "created": "2026-10-08",

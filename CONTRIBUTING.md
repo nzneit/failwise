@@ -36,6 +36,13 @@ into it and do not resolve here: finding ids of the form `F-WSn-NN`, in the desi
 the schema, and "plan reference §X" in code comments. A record id `Cnnn` does resolve, through
 the register.
 
+## Writing the skill's prose
+
+`SKILL.md` and the reference files are written to `docs/style.md`. That page covers two kinds of
+text, the shape of a procedure, the caps, one word for one thing, and the tag rules. It also covers
+the text no one changes, what a change to a sourced sentence needs, and the prose checker that
+`tools/check.ts` runs.
+
 ## Opening a pull request
 
 Open the body of a pull request with a line that links its diff in Revision City, a third-party
@@ -62,12 +69,22 @@ node tools/check.ts
 The first runs both test suites under `node --test`: every `*.test.ts` file under
 `skills/fmea-software/scripts/` and under `tools/`, subfolders included and `node_modules` left out.
 It fails when a suite has no test file, or when a folder of a suite cannot be listed; that suite
-then runs nothing. The second runs the static checks: the type check (`tsc`), the linter (`oxlint`)
-and the dead-code, duplication and complexity analysis (`fallow`), which the CI workflow also runs
-on every pull request. Both need Node.js 24.2 or later on PATH (`bun tools/run-tests.ts` and
-`bun tools/check.ts` also work and find Node through nvm). The commands are the same in bash and
-fish. If you call `node --test` directly, use the recursive glob form, such as
-`node --test "tools/**/*.test.ts"`; `node --test <directory>` is not the same on Node 24.
+then runs nothing. The second runs the static checks: the type check (`tsc`), the linter (`oxlint`),
+the dead-code, duplication and complexity analysis (`fallow`) and the prose ratchet
+(`tools/check-prose.ts`). The prose ratchet compares the counts of `SKILL.md` and the references
+with `dev/prose-baseline.json`. It fails when a count rises, when a reference file is added,
+renamed or removed, and when it cannot read or judge its input; `docs/style.md` gives each case.
+The CI workflow also runs both commands on every pull request. Both need Node.js 24.2 or later on
+PATH (`bun tools/run-tests.ts` and `bun tools/check.ts` also work and find Node through nvm). The
+commands are the same in bash and fish. If you call `node --test` directly, use the recursive
+glob form, such as `node --test "tools/**/*.test.ts"`; `node --test <directory>` is not the same
+on Node 24.
+A commit that improves the prose lowers the baseline in the same commit with
+`node tools/check-prose.ts --write-baseline`, run from the repository root; the test suite refuses a
+baseline above the measured counts and the writer refuses a count that would rise above its file's
+entry. When you add, rename or remove a reference file, run
+`node tools/check-prose.ts --write-baseline` in the same commit. It writes an entry for the new file
+and drops the entry of a file that is gone.
 
 The checkers are development tools declared in `dev/package.json`. Install them once with
 `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. Do not add
@@ -153,6 +170,7 @@ fonts, cannot fail the run and is named in a `## not asserted` line on every pas
 
 ```
 tools/run-eval.sh <1|5|6|7> <high|medium> <run-n>      # one unattended eval run into build/evals/
+node tools/run-round.ts <stage>                        # a prose round's sixteen runs, in parallel, into build/evals/prose-<stage>/
 node tools/eval-report.ts                              # build/evals/results.json → docs/specs/2026-09-07-eval-results.md
 ```
 
@@ -161,9 +179,87 @@ variable `FMEA_EVAL_MODELS`, as `high=<model>,medium=<model>`, names the model t
 capability for any provider, and defaults to the Anthropic table when unset. A full eval is
 sixteen runs, the four prompts at both capabilities twice each. After the sixteen runs, judge
 them with Claude Code's Workflow tool,
-`{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which writes
-`build/evals/results.json` for `eval-report.ts` to read.
+`{scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>"}}`, which returns the
+results object and writes no file. Write it to `build/evals/results.json` for `eval-report.ts` to
+read, as `JSON.stringify(result, null, 2)` of the `result` key of the Workflow task's output.
 
-Sixteen unattended runs and their judging spend real model time and money. An eval run loads the
-runner's global Claude Code configuration (bare mode is not used) and grants Read with no path
-restriction, so run it from a machine and login you are content to expose.
+From the prose round 1c on, `node tools/run-round.ts <stage>` (or `bun tools/run-round.ts
+<stage>`) runs the sixteen runs of a round on DeepSeek V4.1-Flash. The runs go into
+`build/evals/prose-<stage>/`, or into the folder `--publish-root <dir>` names. The launcher runs
+only that model, through DeepSeek's Anthropic-compatible gateway. It reads the gateway key with
+`secret-tool` (libsecret, on Linux) from the login keyring entry of service `goose`. That entry's
+secret is JSON with the field `DEEPSEEK_API_KEY`. To store the key, run
+`secret-tool store --label=deepseek service goose`. At its prompt, paste
+`{"DEEPSEEK_API_KEY": "<key>"}`. `FMEA_SECRET_TOOL` names another command to run in place of
+`secret-tool`. For another model, or on a machine without `secret-tool`, use `tools/run-eval.sh`
+with `FMEA_EVAL_MODELS`. The launcher smoke-tests the gateway first. It runs the first cell alone
+as a canary, then the other fifteen at most
+`--parallel <n>` at once (4 by default, more than 8 only with `--force-parallel`). Each cell's
+output is appended to its log in `logs/` in that folder, so a re-run keeps the earlier attempt's
+log. The cells and the smoke call do not inherit the launching session's `CLAUDE*` variables: the
+launcher drops every variable whose name starts with `CLAUDE` from their environment and lists the
+dropped names in `round.json` as `env_stripped`. The launcher prints the summary lines in roster
+order, writes `round.json`, and names the `--cells` command, with `--no-canary`, for any cell that
+needs a re-run. Judge a round with the same Workflow script and
+`args: {root: "<repository root>", evalsDir: "build/evals/prose-<stage>"}`. Write the result to
+`build/evals/prose-<stage>/results.json` in the same form. `eval-report.ts` prints a `Round method`
+line under the Harness table from the `round.json` beside the `--results` file only, so generate
+the round's note with `--results build/evals/prose-<stage>/results.json`.
+
+Sixteen unattended runs and their judging spend real model time and money. Each run gets a fresh
+`CLAUDE_CONFIG_DIR` under `$TMPDIR`, which the run removes when it ends, so the runner's
+`~/.claude` (its CLAUDE.md, memory, skills, settings and login) stays out of the run. A run on the
+default Anthropic table therefore needs `ANTHROPIC_API_KEY` in the environment; a model behind a
+gateway needs `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`. A run still grants Read with no path
+restriction, so run it from a machine and with keys you are content to expose.
+
+A run killed by SIGKILL runs no cleanup. When `tools/run-round.ts` stops a round, it sends SIGKILL
+to a cell that still runs 30 seconds after its SIGTERM. The killed run's `fmea-eval-*`,
+`fmea-plugin-*` and `fmea-config-*` folders stay under `$TMPDIR`. Remove them by hand.
+
+`tools/run-eval.sh` sets the context window per model from a table in the script. A model with a
+row gets its `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and a model
+with no row gets neither, whatever the launching shell exports. A gateway model the CLI does not
+know needs a row: without one the CLI takes a 200k window for it, its runs compact near 167k
+tokens, and the judging marks them unverified.
+
+Before every run the script asks the CLI for its window with `claude -p "/autocompact"`, in the
+run's working directory and with the run's config directory and window settings. It refuses to
+launch the run when the reply has no auto-compact window line, when that line says the window is
+capped, or, for a model with a row, when the line does not name the row's window.
+
+The script sets `DISABLE_AUTOUPDATER=1` for the probe and the run, because the CLI updated itself
+in the middle of a round on 2026-10-14 and a round must run on one CLI version. Another session on
+the machine can still update the shared install, so each run records its CLI version.
+
+After the run, `tools/eval-context.ts` writes `context.json` into the run's folder. The file records
+the CLI version, the run's `CLAUDE_CONFIG_DIR`, the two window settings, the window line, the
+compactions and the peak context. It records the number of top-level assistant lines and the number
+of those lines without usage figures. It also records the isolation facts, the denied script calls,
+the lint counts and whether the final message is complete. Both judging workflows read it before
+any judge. A run is unverified and gets no judge when:
+
+- the run has no `context.json`;
+- its `context.json` is not JSON;
+- its `context.json` lacks a field the workflows read, or holds one of the wrong type:
+  `compactions`, `peak_context_tokens`, `assistant_lines`, `assistant_lines_without_usage`,
+  `window_line` or `final_message`;
+- the run has a compaction;
+- the run has no top-level assistant line;
+- a top-level assistant line lacks its usage figures;
+- the final message is not recorded complete: it is cut off, or `tools/eval-context.ts` could not
+  check it (§8.1 of `docs/specs/2026-10-14-prose-design.md`);
+- the context agent returned nothing on three attempts.
+
+The context agent runs at the `medium` model capability, so `args.models`, when given, must name
+`medium` in both `tools/workflows/evals.js` and `tools/workflows/rejudge.js`. The report's Harness
+table shows each run's CLI version, and a line under the table names the versions when a round ran
+on more than one. From round 1c, `context.json` also records `message_counts`. The field holds the
+document's counts by priority before and after action. Of the counts that the final message states,
+the field holds only the pairs of a count and a priority value that two patterns read. One pattern
+reads a count before the value, as in `8 H`, `2 rows at H` or `4 rated priority M`. The other reads
+the value, a colon or an equals sign, and then the count, as in `H: 8`. The patterns do not read
+other forms, such as the table form `H — **8**` or a count in words. The Harness table's Counts
+column shows whether those pairs match. When the patterns read no pair, the column shows
+`none stated`, even when the message states counts in another form. `match` and `mismatch` cover
+only the pairs that the patterns read. A wrong count is reported and never makes a run unverified.

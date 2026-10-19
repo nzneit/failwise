@@ -9,9 +9,10 @@ import { escapeHtml } from "./lib/escape.ts";
 import { buildReportModel } from "./lib/report-model.ts";
 import { checkTableShape, computePriority, loadTable } from "./lib/table.ts";
 import { loadVocabulary } from "./lib/vocabulary.ts";
+import { PLUGIN_VERSION } from "./lib/version.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { applyPriorities } from "./priority.ts";
-import { SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
+import { DF3_READINGS, SKILL_ROOT, bandTable, fixturePath, graphDoc, loadFixture, minimalDoc, minimalDocOn, rating, readingDoc, runCli, withTempDir, withoutTracker, writeTable } from "./test-helpers.ts";
 import { LEGACY_TRIGGERS, V2_TRIGGERS, assertLegacyRefused, writeLegacy } from "./test-helpers.ts";
 import type { FmeaDocument, Lint, Severity, TrackerLink } from "./lib/types.ts";
 
@@ -53,6 +54,7 @@ const FREE_TEXT_KEYS = new Set([
   "name", "scope", "security", "outcome", "description", "statement", "for_whom", "failure_mode",
   "local", "next_level", "end", "text", "rationale", "owner", "trigger", "message", "reason",
   "adversary_cause", "ref", "sla", "limits", "evidence_ref", "by", "change", "source_incident", "repo", "path",
+  "population", "share", "selecting_condition",
 ]);
 const FREE_TEXT_ARRAYS = new Set(["ground_rules", "included", "excluded", "reviewers", "conditions"]);
 
@@ -77,6 +79,9 @@ function poisonedDocument(): FmeaDocument {
   const doc = golden();
   doc.chains[0].history.push({ version: 1, date: "2026-09-07", change: "seed" });
   doc.meta.codebases![0].path = "services/checkout";
+  // The golden flows record a population only; these two give the sweep the record's other free-text lines.
+  doc.flows![0].users!.selecting_condition = "a session at expiry";
+  doc.flows![0].users!.share = "4% of checkout sessions, per the incident record";
   return poison(doc, null, next) as FmeaDocument;
 }
 
@@ -89,7 +94,7 @@ function dataBlock(html: string): string {
 }
 
 const MARK_TITLES = new Map<string, string>([
-  ["provisional", "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final."],
+  ["provisional", "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final. A Severity read over a flow population that no named reviewer has re-scored counts as provisional, whatever its own review."],
   ["stale", "The design or the scales changed after the row was rated; the row is due to be rated again."],
   ["handoff", "A cause is an attacker; the row is handed to threat modelling."],
   ["blocker", "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks."],
@@ -110,6 +115,10 @@ function withComputed(doc: FmeaDocument, lints: Lint[], quality_score = 0): Fmea
   doc.computed = { quality_score, lints, validated_at: "2026-09-12T11:00:00Z", validator_version: "0.1.0" };
   return doc;
 }
+// The "Needs attention" block's reason for its provisional item.
+const PROVISIONAL_WHY = "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. A Severity read over a flow population that no named reviewer has re-scored counts as provisional, whatever its own review. The priority of these rows is not final until one does.";
+// The stdout line of a successful render with n of m ratings provisional (the prose design's §6.4).
+const provisionalLine = (n: number, m: number): string => `provisional: ${n} of ${m} ratings are provisional. This line is an instruction to you, not a finding to fix. Copy none of it into the document. In your final message, each priority on a row with a provisional rating says in the same sentence that it rests on provisional ratings. An RPN, a ranking and a count of rows by priority each name a priority. Give the next step in these words: a named person re-scores each provisional rating against the anchors, one rating at a time. Name no person the inputs do not name.\n`;
 // One item of the "Needs attention" block, as the markup contract fixes it.
 const attnItem = (what: string, list: string, why: string): string =>
   `<div class="attn-item"><div class="what">${what}</div><div>${list} <span class="why">${why}</span></div></div>`;
@@ -172,7 +181,7 @@ function everyPart(): FmeaDocument {
 
 test("the report carries every section id, in the order section 9 fixes", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
-  const ids = ["header", "ground-rules", "assumptions", "reviews", "structure", "chains", "actions", "lints", "provenance", "fmea-data"];
+  const ids = ["header", "ground-rules", "assumptions", "reviews", "structure", "flows", "chains", "actions", "lints", "provenance", "fmea-data"];
   const positions = ids.map((id) => {
     const at = html.indexOf(`id="${id}"`);
     assert.notEqual(at, -1, `section id ${id} is missing`);
@@ -180,6 +189,185 @@ test("the report carries every section id, in the order section 9 fixes", () => 
   });
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
 });
+
+const flowsSection = (html: string): string => html.slice(html.indexOf('id="flows"'), html.indexOf('id="chains"'));
+
+/** One flow's record of the Flows section, by the flow's id. */
+function flowRecord(html: string, id: string): string {
+  const at = html.indexOf(`<article class="flow" id="flow-${id}">`);
+  assert.notEqual(at, -1, `no record for ${id}`);
+  return html.slice(at, html.indexOf("</article>", at));
+}
+
+const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
+const FLOWS_FIRST_ENTRY = `<dt><b>Tier</b></dt><dd>${escapeHtml(
+  "The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
+  "Flows are listed High first, then by id, a presentational order that ranks nothing. " +
+  "The run copies a tier the inputs give. A flow the inputs leave untiered takes the first tier below whose test it meets.")}</dd>`;
+
+/** The tier tests of `references/design-inputs.md`, in its order, each as the Flows key's entry: the tier's badge and
+ *  the test word for word, its first letter capitalised. Fails unless the reference states exactly Low, Medium, High. */
+function referenceTierEntries(): string[] {
+  const reference = readFileSync(join(SKILL_ROOT, "references", "design-inputs.md"), "utf8");
+  const tests = [...reference.matchAll(/^ {2}- \*\*(Low|Medium|High)\*\* — (.+) \[skill-authored\]$/gm)];
+  assert.deepEqual(tests.map((m) => m[1]), ["Low", "Medium", "High"], "design-inputs.md states the three tier tests, Low first");
+  const style: Record<string, string> = { High: "top", Medium: "mid", Low: "low" };
+  return tests.map(([, tier, words]) => `<dt><span class="pri pri-${style[tier]}">${tier}</span></dt><dd>${escapeHtml(words[0].toUpperCase() + words.slice(1))}</dd>`);
+}
+const FLOWS_CHAINS_ENTRY = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. " +
+  "A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. " +
+  "A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. " +
+  "A chain on one of the flow's steps that does not name the flow is not listed.";
+
+test("the Flows section prints one record per flow, High first then by id, with the key's disclaimer verbatim and the reference's tier tests", () => {
+  const section = flowsSection(renderHtml(golden(), table, template, vocabulary));
+  assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the key prints DF4's sentence verbatim");
+  assert.ok(section.includes("a presentational order that ranks nothing"), "the key states the order");
+  const chainsEntry = `<dt><b>Chains</b></dt><dd>${escapeHtml(FLOWS_CHAINS_ENTRY)}</dd>`;
+  assert.ok(section.includes(FLOWS_FIRST_ENTRY), "the first entry, labelled Tier, reads the disclaimer, the order and how a tier is set");
+  assert.ok(!section.includes("<b>Priority</b>"), "no key entry calls the tier a priority");
+  assert.ok(section.includes(chainsEntry), "the Chains entry reads the badge, the one-flow and several-flow readings with their floor, and the steps not listed");
+  const at = [FLOWS_FIRST_ENTRY, ...referenceTierEntries(), chainsEntry].map((entry) => section.indexOf(entry));
+  assert.ok(at.every((i) => i !== -1), "each tier entry prints its badge alone and the reference's test word for word");
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "the tier entries come after the first entry and before the Chains entry, Low, Medium, High, in the tests' order");
+  const ids = [...section.matchAll(/<article class="flow" id="flow-(flow-[a-z-]+)">/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
+  assert.ok(!section.includes("a starting point only; the recorded steps are a prefix"), "the golden fixture's flows are not partial");
+});
+
+test("a flow record lists the chains that name it, in the index order, each linked with its priority badge", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  assert.ok(flowRecord(html, "flow-checkout").includes('<dt>Chains</dt><dd><span class="chain-list"><a class="chain-ref" href="#row-ch-9"><span class="pri pri-top">H</span><code>ch-9</code></a></span></dd>'), "the chain is linked with its badge");
+  assert.ok(flowRecord(html, "flow-resume").includes('href="#row-ch-5"'), "the flow one chain names lists that chain");
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "Low" }];
+  assert.ok(flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1").includes('<dt>Chains</dt><dd><span class="empty">none</span></dd>'), "a flow no chain names says so");
+});
+
+test("a flow's steps print the function's element and statement in order, and an unresolved step keeps its id", () => {
+  const doc = golden();
+  const flow = (doc.flows ?? []).find((f) => f.id === "flow-checkout");
+  const first = doc.functions.find((f) => f.id === flow?.steps?.[0]);
+  assert.ok(flow !== undefined && first !== undefined, "the golden flow-checkout has a resolvable first step");
+  const record = flowRecord(renderHtml(doc, table, template, vocabulary), "flow-checkout");
+  assert.ok(record.includes(`<dt>Steps</dt><dd><ol class="steps"><li><code>${first.element}</code>: ${escapeHtml(first.statement)}</li>`), "the first step names its element and statement");
+  assert.ok(!record.includes(`<code>${first.id}</code>`), "the function id leaves the page");
+  const min = minimalDoc();
+  min.flows = [{ id: "flow-1", name: "One", value_priority: "Low", steps: ["fn-1", "fn-missing"] }];
+  assert.ok(flowRecord(renderHtml(min, table, template, vocabulary), "flow-1").includes("<li><code>svc</code>: serve requests</li><li><code>fn-missing</code></li>"), "an unresolved step prints its id alone");
+});
+
+test("a flow record with every field prints its tier badge and name as the head and every labelled line, and a re-scored flow carries no provisional mark", () => {
+  const doc = minimalDoc();
+  doc.flows = [{
+    id: "flow-1",
+    name: "A shopper submits a cart",
+    value_priority: "High",
+    sources: [{ kind: "document", ref: "inputs.md#critical-flows" }, { kind: "incident", ref: "INC-7" }],
+    users: {
+      population: "all shoppers at checkout",
+      selecting_condition: "a session at expiry",
+      share: "4% of checkout sessions, per INC-7",
+      review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" },
+    },
+    steps: ["fn-1"],
+  }];
+  doc.chains[0].flows = ["flow-1"];
+  const record = flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1");
+  assert.ok(record.includes('<div class="flow-head"><span class="pri pri-top">High</span><h3 class="flow-name">A shopper submits a cart</h3></div><code class="flow-id">flow-1</code>'), "the head holds the High badge and the name as a heading");
+  assert.equal(record.slice(record.indexOf('<dl class="flow-what">')), '<dl class="flow-what">' +
+    "<dt>Population</dt><dd>all shoppers at checkout</dd>" +
+    "<dt>Selecting condition</dt><dd>a session at expiry</dd>" +
+    "<dt>Share</dt><dd>4% of checkout sessions, per INC-7</dd>" +
+    '<dt>Sources</dt><dd><span class="muted">document</span> <code>inputs.md#critical-flows</code><br><span class="muted">incident</span> <code>INC-7</code></dd>' +
+    '<dt>Chains</dt><dd><span class="chain-list"><a class="chain-ref" href="#row-ch-1"><span class="pri pri-mid">M</span><code>ch-1</code></a></span></dd>' +
+    '<dt>Steps</dt><dd><ol class="steps"><li><code>svc</code>: serve requests</li></ol></dd>' +
+    "</dl>");
+  assert.ok(!record.includes("mark-provisional"), "a re-scored population is not marked provisional");
+});
+
+test("the Flows section has its empty state without the key, and a partial flow renders its phrase", () => {
+  const doc = minimalDoc();
+  const empty = flowsSection(renderHtml(doc, table, template, vocabulary));
+  assert.ok(empty.includes('<p class="empty">No flows recorded.</p>'));
+  assert.ok(!empty.includes("How to read this section"), "an empty section prints no key");
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "Low", steps: ["fn-1"], steps_partial: true, users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } }];
+  assert.ok(renderHtml(doc, table, template, vocabulary).includes("a starting point only; the recorded steps are a prefix"));
+});
+
+test("a chain-named flow whose population is not re-scored is marked beside the population, and the key says so", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } }];
+  doc.chains[0].flows = ["flow-1"];
+  const html = renderHtml(doc, table, template, vocabulary);
+  assert.ok(flowRecord(html, "flow-1").includes(`<dt>Population</dt><dd>all shoppers <span class="mark mark-provisional" title="${FLOW_PROVISIONAL_NOTE}">provisional</span></dd>`), "the mark sits beside the population with the flow's own sentence");
+  assert.ok(flowsSection(html).includes(`<dd>${FLOW_PROVISIONAL_NOTE}</dd>`), "the key explains the mark");
+  doc.chains[0].flows = [];
+  assert.ok(!flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1").includes("mark-provisional"), "a flow no chain names is not marked");
+});
+
+test("the chain annotation links every flow it breaks to its record, marks the first as the author's band flow, and notes the disjointness assumption with the floor", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const row = rowSection(html, "ch-9");
+  assert.ok(row.includes("breaks:"), "the row names the flows");
+  assert.ok(row.includes('<a href="#flow-flow-checkout"><code>flow-checkout</code></a>'), "the first named flow links to its record");
+  assert.ok(row.includes('<a href="#flow-flow-retry"><code>flow-retry</code></a>'), "the second named flow links to its record");
+  assert.ok(row.includes('<code>flow-checkout</code></a> <span class="mark mark-chosen">named first as the band flow</span>'), "the first named flow carries the author's claim");
+  assert.equal(occurrences(row, 'class="mark mark-chosen"'), 1, "only the first named flow is marked");
+  assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+  assert.ok(row.includes(escapeHtml("the band is the highest of the single flows' classes, and never below the function's own class.")), "the note states the floor");
+});
+
+test("a chain naming one flow prints no band mark and no disjointness note, and a chain naming none prints no annotation", () => {
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const single = rowSection(html, "ch-5");
+  assert.ok(single.includes("breaks:") && single.includes('<a href="#flow-flow-resume"><code>flow-resume</code></a>'), "the single named flow is still annotated");
+  assert.ok(!single.includes("mark-chosen") && !single.includes("named first as the band flow"), "one named flow carries no band mark");
+  assert.ok(!single.includes("treated as disjoint"), "one named flow prints no disjointness note");
+  assert.ok(!renderHtml(minimalDoc(), table, template, vocabulary).includes("breaks:"));
+});
+
+test("the annotation marks the first named flow by position, whichever id it carries, never every named flow", () => {
+  // The row carries a finding so the annotation's position within the row is pinned, not only its text.
+  const doc = withComputed(minimalDoc(), [lint("blocker", "detection-1-without-evidenced-control", "/chains/0/ratings/D", "Detection is 1 with no existing detection control carrying evidence")]);
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "Low", users: { population: "internal only: operators" } },
+  ];
+  const rowFor = (order: string[]): string => {
+    doc.chains[0].flows = order;
+    return rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+  };
+  // Both entries name a flow, so a renderer that marked every named flow would print two mark-chosen
+  // spans; exactly one proves the annotation reads position, not the presence of a name.
+  const leading = rowFor(["flow-a", "flow-b"]);
+  assert.equal(leading.match(/<code>flow-[ab]<\/code><\/a> <span class="mark mark-chosen">/)?.[0], '<code>flow-a</code></a> <span class="mark mark-chosen">', "the first entry is marked when it leads");
+  assert.equal(occurrences(leading, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when it leads, never every named flow");
+  assert.ok(leading.indexOf("breaks:") < leading.indexOf('<p class="finding'), "the annotation reads before the row's findings");
+  const later = rowFor(["flow-b", "flow-a"]);
+  assert.equal(later.match(/<code>flow-[ab]<\/code><\/a> <span class="mark mark-chosen">/)?.[0], '<code>flow-b</code></a> <span class="mark mark-chosen">', "the first entry is marked when the later entry is the other flow");
+  assert.equal(occurrences(later, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when the later entry is the other flow, never every named flow");
+});
+
+// One case per DF3 reading that names flows (§8.2): the annotation links the first entry, and marks
+// it only when the chain names more than one flow. A reading that named more than one flow would also
+// carry the disjointness note, and the loop asserts both whenever that happens; a one-flow reading
+// carries neither.
+for (const reading of DF3_READINGS) {
+  const doc = readingDoc();
+  reading.build(doc);
+  const named = doc.chains[0].flows ?? [];
+  if (named.length === 0) continue;
+  test(`the DF3 reading ${reading.name} prints the first flow at band ${reading.band}, marked only beside another`, () => {
+    const row = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+    assert.ok(row.includes("breaks:"), "the row names the flows it breaks");
+    assert.ok(row.includes(`<a href="#flow-${named[0]}"><code>${named[0]}</code></a>`), "the first named flow is linked");
+    if (named.length > 1) {
+      assert.ok(row.includes(`<code>${named[0]}</code></a> <span class="mark mark-chosen">`), "the first named flow is the one marked");
+      assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+    } else assert.ok(!row.includes("mark-chosen") && !row.includes("treated as disjoint"), "a chain that names one flow carries no mark and no note");
+  });
+}
 
 test("the ground-rules, assumptions and review-record sections carry the document's content", () => {
   const doc = golden();
@@ -215,19 +403,19 @@ test("the automated checks section explains the checks, states the score and gro
   assert.ok(text.includes(escapeHtml("Each time the analysis is saved, a validator script checks it against the skill's rules and records what it finds here. A blocker must be fixed before the row it names, or the analysis as a whole, can be relied on. A warning is for a reviewer to judge and may be acceptable as it stands.")));
   assert.ok(text.includes(escapeHtml("Quality score: 89 of 100 — the share of chain rows with no blocker, or 0 when a blocker concerns the analysis as a whole rather than a row, or the analysis has no rows. The weighting is the skill's own.")));
   assert.ok(checks.includes("<strong>Quality score: 89 of 100</strong>"));
-  // the intro's two marks, then one per group: one blocker group and three warning groups
+  // the intro's two marks, then one per group: one blocker group and six warning groups
   assert.equal(occurrences(checks, 'class="mark mark-blocker"'), 2);
-  assert.equal(occurrences(checks, 'class="mark mark-warning"'), 4);
+  assert.equal(occurrences(checks, 'class="mark mark-warning"'), 7);
   assert.ok(checks.includes('<p class="caption" id="checks-caption">Blockers first. Findings with the same rule and message share a line; each row location links to its row.</p>'));
   assert.ok(checks.includes("<thead><tr><th>Severity</th><th>Rule</th><th>Where</th><th>Finding</th></tr></thead>"));
-  assert.equal(occurrences(checks, "<tr>"), 5, "a head row and four groups");
+  assert.equal(occurrences(checks, "<tr>"), 8, "a head row and seven groups");
   const order = ["detection-1-without-evidenced-control", "occurrence-estimate-without-trigger", "rating-provisional", "seeded-action-without-incident"]
     .map((rule) => checks.indexOf(`<code>${rule}</code>`));
   assert.ok(order.every((at) => at !== -1));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×11</span>'));
+  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×12</span>'));
   assert.equal(occurrences(checks, "×"), 1, "a group of one finding shows no count");
-  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D<br><a href="#row-ch-9"><code>ch-9</code></a> S, O, D'));
+  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-5"><code>ch-5</code></a> S<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D<br><a href="#row-ch-9"><code>ch-9</code></a> S, O, D'));
   assert.ok(checks.includes("<td>The rating is still provisional and needs re-scoring</td>"));
   assert.ok(checks.includes('<a href="#row-ch-7"><code>ch-7</code></a> D</td><td>Detection is 1 with no existing detection control carrying evidence</td>'));
   assert.ok(checks.includes('<a href="#row-ch-8"><code>ch-8</code></a> act-2</td>'));
@@ -271,12 +459,12 @@ test("the header carries every field section 9 requires, and the provisional cou
     "<dt>Branch</dt><dd>DFMEA</dd>",
     `<dt>Scope</dt><dd>${escapeHtml(doc.meta.scope)}</dd>`,
     `<dt>Security boundary</dt><dd>${escapeHtml(doc.meta.boundary.security)}</dd>`,
-    "<dt>Scales version</dt><dd>1</dd>",
+    "<dt>Scales version</dt><dd>2</dd>",
     "<dt>Priority table</dt><dd><code>priority-fmea-software-v1</code></dd>",
   ]) {
     assert.ok(header.includes(pair), `the header is missing ${pair}`);
   }
-  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span>'), "the header is missing the provisional tile");
+  assert.ok(header.includes('<span class="lbl">Ratings not yet reviewed</span><span class="big">12 <small>of 30</small></span><span class="sub">provisional, in 5 rows</span>'), "the header is missing the provisional tile");
   assert.ok(!header.includes("ratings provisional"), "the old provisional line is still printed");
 });
 
@@ -297,9 +485,9 @@ test("the header shows the five tiles, each linking to its section", () => {
   const header = headerOf(golden());
   assert.equal(occurrences(header, '<a class="tile'), 5);
   for (const tile of [
-    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>5</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
-    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">11 <small>of 30</small></span><span class="sub">provisional, in 4 rows</span></a>',
-    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">13 warnings</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>4</span><span class="pcount"><span class="pri pri-mid">M</span>5</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">12 <small>of 30</small></span><span class="sub">provisional, in 5 rows</span></a>',
+    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">17 warnings</span></a>',
     '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
     '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">89 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
   ]) {
@@ -337,9 +525,9 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
     attnItem(`1 row fails an automated check<br>${mark("blocker")}`,
       '<a href="#row-ch-7"><code>ch-7</code></a> D &mdash; Detection is 1 with no existing detection control carrying evidence',
       "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again."),
-    attnItem(`11 ratings not yet reviewed<br>${mark("provisional")}`,
-      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
-      "A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. The priority of these rows is not final until one does."),
+    attnItem(`12 ratings not yet reviewed<br>${mark("provisional")}`,
+      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-5"><code>ch-5</code></a> S &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
+      PROVISIONAL_WHY),
     attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
       "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure."),
@@ -399,7 +587,7 @@ test("a document without a computed block shows an em dash in the quality score 
 
 test("the header ends with the contents line, after the metadata, the tiles and the block", () => {
   const header = headerOf(golden());
-  const toc = '<p class="toc"><b>Contents</b> <a href="#ground-rules">Ground rules</a> <a href="#assumptions">Assumptions</a> <a href="#reviews">Review record</a> <a href="#structure">Structure</a> <a href="#chains">Failure chains</a> <a href="#actions">Actions</a> <a href="#lints">Automated checks</a> <a href="#provenance">Provenance</a></p>';
+  const toc = '<p class="toc"><b>Contents</b> <a href="#ground-rules">Ground rules</a> <a href="#assumptions">Assumptions</a> <a href="#reviews">Review record</a> <a href="#structure">Structure</a> <a href="#flows">Flows</a> <a href="#chains">Failure chains</a> <a href="#actions">Actions</a> <a href="#lints">Automated checks</a> <a href="#provenance">Provenance</a></p>';
   const at = ['<dl class="header">', '<div class="strip">', '<div class="attn">', toc].map((s) => header.indexOf(s));
   assert.ok(at.every((i) => i !== -1), `a header part is missing: ${at.join(", ")}`);
   assert.deepEqual(at, [...at].sort((a, b) => a - b));
@@ -411,11 +599,48 @@ test("the contents line wraps between its links, and each link is at least 24 px
   assert.ok(!template.includes(".toc a { margin-right"));
 });
 
-test("row marks: one handoff, four provisional rows, no stale row", () => {
+test("row marks: one handoff, five provisional rows, no stale row", () => {
   const index = indexTable(renderHtml(golden(), table, template, vocabulary));
   assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
-  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 4);
+  assert.equal(occurrences(index, 'class="mark mark-provisional"'), 5);
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
+  const ch5 = `<a href="#row-ch-5"><code>ch-5</code></a><br>${mark("handoff")} ${mark("provisional")}</td>`;
+  assert.ok(index.includes(ch5), "ch-5's re-read Severity is provisional");
+  // The fixture's ch-5 Severity is provisional since its re-read under the population rules; this
+  // copy restores its re-score, so the mark then comes from flow-resume's population alone.
+  const rescored = golden();
+  const s = rescored.chains.find((c) => c.id === "ch-5")!.ratings.S;
+  s.review = { status: "rescored", by: "A. Reviewer", date: "2026-09-03" };
+  assert.ok(indexTable(renderHtml(rescored, table, template, vocabulary)).includes(ch5),
+    "ch-5's re-scored Severity is read over flow-resume, whose population is not re-scored");
+});
+
+test("a re-scored Severity over a flow whose population is not re-scored is marked, counted and printed: update/before.fmea.json's ch-2", () => {
+  withTempDir((dir) => {
+    // The fixture's ch-2 Severity is provisional since its re-read under the population rules; the
+    // copy restores its re-score, so the copy's mark comes from flow-resume's population alone. Both
+    // print the same marks and counts.
+    const doc = loadFixture<FmeaDocument>("update", "before.fmea.json");
+    doc.chains.find((c) => c.id === "ch-2")!.ratings.S.review = { status: "rescored", by: "A. Reviewer", date: "2026-09-03" };
+    const copy = join(dir, "rescored.json");
+    writeFileSync(copy, JSON.stringify(doc, null, 2) + "\n");
+    assert.equal(runCli("validate.ts", [copy, "--write"]).status, 0);
+    for (const [input, name] of [[fixturePath("update", "before.fmea.json"), "fixture"], [copy, "rescored"]] as const) {
+      const out = join(dir, `${name}.html`);
+      const r = runCli("render.ts", [input, "--out", out]);
+      assert.equal(r.status, 0, name);
+      assert.equal(r.stderr, "", name);
+      assert.equal(r.stdout, provisionalLine(1, 15), name);
+      const html = readFileSync(out, "utf8");
+      const header = sectionOf(html, "header", "ground-rules");
+      assert.ok(header.includes('<span class="big">1 <small>of 15</small></span><span class="sub">provisional, in 1 row</span>'), `${name}: the tile counts ch-2's Severity`);
+      assert.ok(header.includes(attnItem(`1 rating not yet reviewed<br>${mark("provisional")}`, '<a href="#row-ch-2"><code>ch-2</code></a> S',
+        PROVISIONAL_WHY)), `${name}: the Needs attention block lists ch-2's Severity`);
+      assert.ok(!header.includes("attn-none"), `${name}: the nothing-needs-attention sentence`);
+      assert.ok(indexTable(html).includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("provisional")}</td>`), `${name}: the index marks ch-2`);
+      assert.ok(rowSection(html, "ch-2").includes(`<span class="muted">RPN 96</span> &middot; ${mark("provisional")}`), `${name}: the row header marks ch-2`);
+    }
+  });
 });
 
 test("a flagged row carries the stale mark; a cleared row carries none", () => {
@@ -427,10 +652,10 @@ test("a flagged row carries the stale mark; a cleared row carries none", () => {
 });
 
 test("chains sort by priority, then by severity descending, then by id", () => {
-  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"]);
   const html = renderHtml(golden(), table, template, vocabulary);
   const table_start = html.indexOf('id="chains"');
-  const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
+  const order = ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
@@ -443,7 +668,7 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
     "By top-level element", "Dependencies", "Index of failure chains",
-    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
+    ...["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);
   assert.equal(new Set(labels).size, labels.length);
@@ -479,7 +704,9 @@ test("the template lets a frame scroll sideways, keeps a framed table's shape, a
 });
 
 test("the key lists the loaded table's vocabulary and all five marks; a document with no chains has no key and no index", () => {
-  const key = between(renderHtml(golden(), table, template, vocabulary), '<div class="key">', "</div>");
+  // The chains key is the one after the Flows section's.
+  const html = renderHtml(golden(), table, template, vocabulary);
+  const key = between(html.slice(html.indexOf('id="chains"')), '<div class="key">', "</div>");
   const entries = [
     '<h3 class="key-title">How to read this table</h3><dl>',
     `<dt><b>S</b>, <b>O</b>, <b>D</b></dt><dd>${escapeHtml(SOD_TEXT)}</dd>`,
@@ -651,9 +878,9 @@ test("a post_priority does not move a row in the sort order", () => {
   const ch3 = doc.chains.find((c) => c.id === "ch-3");
   assert.ok(ch3 && ch3.post_ratings, "ch-3 is the fixture's one post-action row");
   ch3.post_priority = computePriority(table, ch3.post_ratings);
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"]);
   ch3.post_priority = { value: table.vocabulary[0], table: table.id, rpn: 1000 };
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
 });
 
 test("the provenance appendix names the catalog row, its tag, and the record the tag carries", () => {
@@ -709,9 +936,10 @@ test("the template carries print rules for landscape pages and page breaks", () 
     "body { padding:0; font-size:11px; }",
     ".back { display:none; }",
     "h2, h3, article.row > header { break-after: avoid; }",
-    "article.row, tr, .attn-item, .tile-group, .key, .el { break-inside: avoid; }",
+    "article.row, tr, .attn-item, .tile-group, .key, .el, .flow { break-inside: avoid; }",
     "thead { display: table-header-group; }",
     "a { color:inherit; text-decoration:none; }",
+    ".chain-ref code { text-decoration:none; }",
     ".frame { overflow-x:visible; }",
   ]) {
     assert.ok(print.includes(rule), `the print block is missing: ${rule}`);
@@ -719,7 +947,7 @@ test("the template carries print rules for landscape pages and page breaks", () 
   assert.ok(!print.includes(".group"), "no group rule in the print block");
 });
 
-test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the structure's name column", () => {
+test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frames, and, at every width, set only in the index's code cells and the name columns of the structure and the flows, and the flows' value column", () => {
   const start = template.indexOf("@media (max-width: 767px) {");
   assert.notEqual(start, -1);
   const end = template.indexOf("\n}\n", start);
@@ -729,9 +957,11 @@ test("overflow-wrap:anywhere is set on main below the breakpoint, reset in frame
   // anywhere in a cell lets the table squeeze its columns until words split.
   assert.ok(inside.includes("main { overflow-wrap:anywhere; }"));
   assert.ok(inside.includes(".frame { overflow-wrap:normal; }"));
-  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 2);
+  assert.equal(occurrences(outside, "overflow-wrap:anywhere"), 4);
   assert.ok(outside.includes("table.index code { overflow-wrap:anywhere; }"));
   assert.ok(outside.includes(".el-who { min-width:0; overflow-wrap:anywhere; }"));
+  assert.ok(outside.includes(".flow-who { min-width:0; overflow-wrap:anywhere; }"));
+  assert.ok(outside.includes(".flow-what dd { margin:0; max-width:84ch; overflow-wrap:anywhere; }"));
 });
 
 test("the template styles the stale notice and shrinks the post-action badge in a row header", () => {
@@ -750,7 +980,8 @@ test("the CLI writes the report and exits 0", () => {
     const r = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out]);
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
+    assert.equal(r.stdout, provisionalLine(12, 30));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">12 <small>of 30</small></span>'));
   });
 });
 
@@ -786,7 +1017,7 @@ test("an existing output needs --force", () => {
     assert.equal(readFileSync(out, "utf8"), "old report\n");
     const forced = runCli("render.ts", [fixturePath("checkout-service.fmea.json"), "--out", out, "--force"]);
     assert.equal(forced.status, 0);
-    assert.ok(readFileSync(out, "utf8").includes('<span class="big">11 <small>of 30</small></span>'));
+    assert.ok(readFileSync(out, "utf8").includes('<span class="big">12 <small>of 30</small></span>'));
   });
 });
 
@@ -844,12 +1075,13 @@ test("a computed block left stale by priority.ts --write is refused with COMPUTE
   withTempDir((dir) => {
     const doc = golden();
     doc.chains[6].ratings.D.value = 5;
+    doc.computed = { ...doc.computed!, validator_version: "0.0.1" };
     const { render, path, out } = renderAndValidate(dir, applyPriorities(doc, table));
     assert.equal(render.status, 2);
     assert.equal(render.stdout, "");
     assert.equal(render.stderr,
       "error COMPUTED_STALE: computed-stale: computed.quality_score is 89 but validate.ts now gives 100; run validate.ts --write, then render.ts again at /computed/quality_score\n" +
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n");
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.0.1, first differs at finding 1: stored detection-1-without-evidenced-control at /chains/6/ratings/D, validate.ts now finds rating-provisional at /chains/1/ratings/S; run validate.ts --write, then render.ts again at /computed/lints/1\n`);
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -922,7 +1154,7 @@ test("a computed block whose lints hold the right findings in another order is r
     const { render, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 0: stored seeded-action-without-incident at /chains/7/actions/1, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n");
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator ${PLUGIN_VERSION}, first differs at finding 0: stored flow-users-provisional at /flows/2/users/review, validate.ts now finds occurrence-estimate-without-trigger at /chains/5/ratings/O; run validate.ts --write, then render.ts again at /computed/lints/0\n`);
     assert.equal(existsSync(out), false);
   });
 });
@@ -935,7 +1167,7 @@ test("a stored lint whose message alone differs from the validator's is refused,
     const { render, path, out } = renderAndValidate(dir, doc);
     assert.equal(render.status, 2);
     assert.equal(render.stderr,
-      "error COMPUTED_STALE: computed-stale: computed.lints, written by validator 0.4.1, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n");
+      `error COMPUTED_STALE: computed-stale: computed.lints, written by validator ${PLUGIN_VERSION}, first differs at finding 2: stored rating-provisional at /chains/1/ratings/S, validate.ts now finds rating-provisional at /chains/1/ratings/S with another severity or message; run validate.ts --write, then render.ts again at /computed/lints/2\n`);
     assert.equal(existsSync(out), false);
     assertCureRenders(path, out);
   });
@@ -1156,13 +1388,13 @@ test("the header lists the codebases after Security boundary, each with its repo
   doc.meta.codebases![1].path = "packages/auth";
   assert.ok(headerOf(doc).includes(
     `<dt>Security boundary</dt><dd>${escapeHtml(doc.meta.boundary.security)}</dd><dt>Codebases</dt><dd>Checkout service, <code>acme/checkout</code><br>` +
-    "Session authentication library, <code>acme/session-auth</code>, <code>packages/auth</code></dd><dt>Scales version</dt><dd>1</dd>"));
+    "Session authentication library, <code>acme/session-auth</code>, <code>packages/auth</code></dd><dt>Scales version</dt><dd>2</dd>"));
 });
 
 test("the top-level table rolls up each root, links a name to its group, and heads its count with the table's first value", () => {
   const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   assert.ok(structure.includes(`<table aria-labelledby="roots-caption">${ROOTS_HEAD}<tbody>` +
-    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">5</td><td class="num">4</td><td class="num">7</td></tr>' +
+    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">4</td><td class="num">5</td><td class="num">7</td></tr>' +
     '<tr><td><a href="#group-pricing">Pricing service</a></td><td>owned outside</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr></tbody></table>'));
   const idle = sectionOf(renderHtml(idleRoot(), table, template, vocabulary), "structure", "chains");
   assert.ok(idle.includes("<tr><td>Idle</td>"), "a root with no chains is not linked");
@@ -1174,7 +1406,7 @@ test("the Dependencies table lists every edge in order, an absent SLA or limits 
   assert.ok(structure.includes(`<table aria-labelledby="dependencies-caption">${DEPENDENCIES_HEAD}<tbody>` +
     "<tr><td><code>checkout</code></td><td><code>checkout.payment-gateway</code></td><td>strong</td><td>99.95% monthly</td><td>50 rps per merchant</td></tr>" +
     "<tr><td><code>checkout</code></td><td><code>pricing</code></td><td>weak</td><td>99.9% monthly</td><td></td></tr>" +
-    "<tr><td><code>checkout</code></td><td><code>checkout.order-store</code></td><td>strong</td><td>99.99% monthly</td><td></td></tr></tbody></table>"));
+    "<tr><td><code>checkout</code></td><td><code>checkout.order-store</code></td><td>strong</td><td>99.99% monthly</td><td>no published request ceiling</td></tr></tbody></table>"));
   const doc = minimalDoc();
   doc.dependencies = [{ from: "gh<o>st", to: "svc", strength: "weak" }];
   const escaped = sectionOf(renderHtml(doc, table, template, vocabulary), "structure", "chains");
@@ -1359,6 +1591,7 @@ test("a document validated under a --table-file that breaks a priority property 
     const r = runCli("render.ts", [path, "--out", out, "--table-file", tableFile]);
     assert.equal(r.status, 0, r.stderr);
     assert.equal(r.stderr, "");
+    assert.equal(r.stdout, "");
     const checks = sectionOf(readFileSync(out, "utf8"), "lints", "provenance");
     assert.ok(checks.includes(escapeHtml('table priority-test-properties breaks "S of 1 is always L" at 1-3-3 (M)')), checks);
   });
@@ -1369,7 +1602,7 @@ test("group sections: one per top-level element with chains, each an h3 with nam
   assert.equal(occurrences(chains, '<section class="group"'), 2);
   assert.ok(chains.includes('<section class="group" id="group-checkout"><h3>Checkout service <code>checkout</code></h3><article class="row" id="row-ch-2">'));
   assert.ok(chains.includes('</article></section><section class="group" id="group-pricing"><h3>Pricing service <code>pricing</code></h3><article class="row" id="row-ch-3">'));
-  const at = ["group-checkout", "row-ch-2", "row-ch-1", "row-ch-5", "row-ch-7", "row-ch-9", "row-ch-4", "row-ch-8", "row-ch-6", "group-pricing", "row-ch-3"]
+  const at = ["group-checkout", "row-ch-2", "row-ch-1", "row-ch-7", "row-ch-9", "row-ch-4", "row-ch-5", "row-ch-8", "row-ch-6", "group-pricing", "row-ch-3"]
     .map((id) => chains.indexOf(`id="${id}"`));
   assert.ok(at.every((i) => i !== -1), JSON.stringify(at));
   assert.deepEqual(at, [...at].sort((a, b) => a - b));

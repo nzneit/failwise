@@ -34,16 +34,16 @@ const chainsWithPriorities = (values: string[]): FmeaDocument =>
   docOf(...values.map((value) => ({ priority: { value, table: table.id, rpn: 96 } })));
 
 test("sortChains, moved to the model, sorts the checkout fixture and is the function render.ts exports", () => {
-  assert.deepEqual(sortChains(fixture(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(fixture(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"]);
   assert.equal(renderSortChains, sortChains);
 });
 
 test("the tiles for the checkout fixture", () => {
   assert.deepEqual(modelOf(fixture()).tiles, {
-    priorities: [{ value: "H", style: "top", count: 5 }, { value: "M", style: "mid", count: 4 }, { value: "L", style: "low", count: 0 }],
+    priorities: [{ value: "H", style: "top", count: 4 }, { value: "M", style: "mid", count: 5 }, { value: "L", style: "low", count: 0 }],
     chainsLine: "9 failure chains",
-    ratings: { provisional: 11, total: 30, line: "provisional, in 4 rows" },
-    checks: { blockers: "1 blocker", warnings: "13 warnings", alert: true },
+    ratings: { provisional: 12, total: 30, line: "provisional, in 5 rows" },
+    checks: { blockers: "1 blocker", warnings: "17 warnings", alert: true },
     actions: { headline: "8 open", of: "of 9", line: "next due 2026-10-09" },
     qualityScore: 89,
   });
@@ -163,7 +163,7 @@ test("a row finding is labelled by where its pointer lies within the row", () =>
   ]);
 });
 
-test("the fixture's findings form four groups, blockers first, rating-provisional as one group over four rows", () => {
+test("the fixture's findings form seven groups, blockers first, rating-provisional as one group over five rows", () => {
   const S = { text: "S", raw: false };
   const O = { text: "O", raw: false };
   const D = { text: "D", raw: false };
@@ -172,14 +172,21 @@ test("the fixture's findings form four groups, blockers first, rating-provisiona
       count: 1, locations: [{ kind: "row", chainId: "ch-7", labels: [D] }] },
     { severity: "warning", rule: "occurrence-estimate-without-trigger", message: "Occurrence is 7 or more on an estimate with no trigger recorded",
       count: 1, locations: [{ kind: "row", chainId: "ch-6", labels: [O] }] },
-    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 11, locations: [
+    { severity: "warning", rule: "rating-provisional", message: PROVISIONAL, count: 12, locations: [
       { kind: "row", chainId: "ch-2", labels: [S, O, D] },
       { kind: "row", chainId: "ch-4", labels: [O, D] },
+      { kind: "row", chainId: "ch-5", labels: [S] },
       { kind: "row", chainId: "ch-8", labels: [S, O, D] },
       { kind: "row", chainId: "ch-9", labels: [S, O, D] },
     ] },
     { severity: "warning", rule: "seeded-action-without-incident", message: "action on a chain seeded from INC-2026-0314 carries no source_incident",
       count: 1, locations: [{ kind: "row", chainId: "ch-8", labels: [{ text: "act-2", raw: false }] }] },
+    { severity: "warning", rule: "flow-users-provisional", message: "flow flow-checkout is named by chain ch-9 and its population is not yet re-scored by a named person",
+      count: 1, locations: [{ kind: "document", pointer: "/flows/0/users/review" }] },
+    { severity: "warning", rule: "flow-users-provisional", message: "flow flow-retry is named by chain ch-9 and its population is not yet re-scored by a named person",
+      count: 1, locations: [{ kind: "document", pointer: "/flows/1/users/review" }] },
+    { severity: "warning", rule: "flow-users-provisional", message: "flow flow-resume is named by chain ch-5 and its population is not yet re-scored by a named person",
+      count: 1, locations: [{ kind: "document", pointer: "/flows/2/users/review" }] },
   ]);
 });
 
@@ -209,10 +216,10 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.deepEqual(rows.map((r) => [r.chain.id, r.element, r.style, r.postStyle]), [
     ["ch-2", "checkout", "top", null],
     ["ch-1", "checkout.payment-gateway", "top", null],
-    ["ch-5", "checkout.session-auth", "top", null],
     ["ch-7", "checkout", "top", null],
     ["ch-9", "checkout", "top", null],
     ["ch-4", "checkout.order-store", "mid", null],
+    ["ch-5", "checkout.session-auth", "mid", null],
     ["ch-8", "checkout.payment-gateway", "mid", null],
     ["ch-6", "checkout.api", "mid", null],
     ["ch-3", "pricing", "mid", "mid"],
@@ -220,10 +227,10 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
 });
 
-test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-8, handoff on ch-5, blocker on ch-7", () => {
+test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-5, ch-8, handoff on ch-5, blocker on ch-7", () => {
   assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
-    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-5", ["handoff"]], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
-    ["ch-4", ["provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
+    ["ch-4", ["provisional"]], ["ch-5", ["handoff", "provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
   ]);
 });
 
@@ -341,16 +348,18 @@ test("trigger: equal to two causes after trimming, empty after trimming, and tri
   ]);
 });
 
-test("stale notice: the four reasons in words", () => {
+test("stale notice: the five reasons in words", () => {
   const model = modelOf(docOf(
     { stale: { flag: true, reason: "element-changed", since_version: 2 } },
     { stale: { flag: true, reason: "function-changed", since_version: 3 } },
+    { stale: { flag: true, reason: "flow-changed", since_version: 2 } },
     { stale: { flag: true, reason: "control-removed", since_version: 2 } },
     { stale: { flag: true, reason: "scales-version", since_version: 2 } },
   ));
   assert.deepEqual(model.rows.map((r) => r.staleNotice), [
     "Stale since version 2: its element changed.",
     "Stale since version 3: its function changed.",
+    "Stale since version 2: a flow it names changed.",
     "Stale since version 2: a control it relied on was removed.",
     "Stale since version 2: the scales changed.",
   ]);
@@ -504,10 +513,10 @@ test("attention: the checkout fixture's block", () => {
   });
   assert.equal(a.stale, null);
   assert.deepEqual(a.provisional, {
-    label: "11 ratings not yet reviewed",
+    label: "12 ratings not yet reviewed",
     rows: [
       { chainId: "ch-2", factors: ["S", "O", "D"] }, { chainId: "ch-9", factors: ["S", "O", "D"] },
-      { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-8", factors: ["S", "O", "D"] },
+      { chainId: "ch-4", factors: ["O", "D"] }, { chainId: "ch-5", factors: ["S"] }, { chainId: "ch-8", factors: ["S", "O", "D"] },
     ],
   });
   assert.deepEqual(a.handoffs, {
@@ -562,7 +571,7 @@ const CH1_MODE = "The authorization call exceeds its timeout budget and returns 
 
 test("roots: the checkout fixture's two top-level elements, every count rolling up the subtree", () => {
   assert.deepEqual(modelOf(fixture()).roots, [
-    { id: "checkout", name: "Checkout service", codebase: "Checkout service", chains: 8, top: { value: "H", count: 5 }, provisional: 4, openActions: 7 },
+    { id: "checkout", name: "Checkout service", codebase: "Checkout service", chains: 8, top: { value: "H", count: 4 }, provisional: 5, openActions: 7 },
     { id: "pricing", name: "Pricing service", codebase: "owned outside", chains: 1, top: { value: "H", count: 0 }, provisional: 0, openActions: 1 },
   ]);
 });
@@ -588,7 +597,7 @@ test("roots: two top-level elements sharing an id give one row and one section, 
 
 test("sections: one per root with chains in the roots' order, rows in index order, then the rootless tail", () => {
   assert.deepEqual(modelOf(fixture()).sections.map((s) => [s.root?.id ?? null, s.rows.map((r) => r.chain.id)]), [
-    ["checkout", ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6"]],
+    ["checkout", ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6"]],
     ["pricing", ["ch-3"]],
   ]);
   const doc = graphDoc({
@@ -651,7 +660,7 @@ test("roots: the provisional count counts chains, not ratings, post-action ratin
 
 test("roots: the top count is taken against the first value of the table the report is rendered with", () => {
   assert.deepEqual(buildReportModel(fixture(), withVocabulary(["M", "H", "L"])).roots.map((r) => [r.id, r.top]), [
-    ["checkout", { value: "M", count: 3 }],
+    ["checkout", { value: "M", count: 4 }],
     ["pricing", { value: "M", count: 1 }],
   ]);
 });
@@ -693,4 +702,100 @@ test("propagates to: each consumer once, in index order, on the first chain of t
     [{ chainId: "ch-a", element: "a" }, { chainId: "ch-b", element: "ghost" }, { chainId: "ch-c", element: "" }],
     [],
   ]);
+});
+
+test("a Severity rating counts as provisional, whatever its own status, while its chain names a flow whose population is not re-scored", () => {
+  // Every rating is re-scored. ch-1 names flow-a, whose users carry no review; ch-2 names flow-b,
+  // re-scored; ch-3 names no flow.
+  const doc = docOf({}, {}, {});
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "High", users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } },
+  ];
+  doc.chains[0].flows = ["flow-a"];
+  doc.chains[1].flows = ["flow-b"];
+  const model = modelOf(doc);
+  assert.deepEqual(model.tiles.ratings, { provisional: 1, total: 9, line: "provisional, in 1 row" });
+  assert.deepEqual(model.rows.map((r) => [r.chain.id, r.marks]), [["ch-1", ["provisional"]], ["ch-2", []], ["ch-3", []]]);
+  assert.deepEqual(model.attention.provisional, { label: "1 rating not yet reviewed", rows: [{ chainId: "ch-1", factors: ["S"] }] });
+  assert.deepEqual(model.roots.map((r) => r.provisional), [1]);
+
+  // A provisional review of the population counts the same way, and so does the post-action S; a
+  // Severity provisional on its own is counted once.
+  doc.flows[0].users!.review = { status: "provisional" };
+  doc.chains[0].ratings.S = rating(8, "provisional");
+  doc.chains[0].actions = [action("act-1", "Completed", "2026-10-01")];
+  doc.chains[0].post_ratings = { S: rating(6), O: rating(2), D: rating(4) };
+  assert.deepEqual(modelOf(doc).attention.provisional, { label: "2 ratings not yet reviewed", rows: [{ chainId: "ch-1", factors: ["S", "post-action S"] }] });
+
+  // Once a named person re-scores the population, only the ratings' own status counts.
+  doc.flows[0].users!.review = { status: "rescored", by: "R. Viewer", date: "2026-10-12" };
+  assert.deepEqual(modelOf(doc).tiles.ratings, { provisional: 1, total: 12, line: "provisional, in 1 row" });
+  doc.chains[0].ratings.S = rating(8);
+  assert.deepEqual(modelOf(doc).tiles.ratings, { provisional: 0, total: 12, line: "all reviewed" });
+  assert.equal(modelOf(doc).attention.provisional, null);
+});
+
+test("model.flows is in the presentational order and marks provisional only a chain-named flow whose population is not re-scored", () => {
+  const doc = docOf({}, {}, {});
+  doc.flows = [
+    { id: "flow-b", name: "B", value_priority: "Low" },
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers", review: { status: "provisional" } } },
+    { id: "flow-c", name: "C", value_priority: "High", users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-10-12" } } },
+  ];
+  // The chain names flow-a, provisional, and flow-c, re-scored; flow-b no chain names.
+  doc.chains[0].flows = ["flow-a", "flow-c"];
+  const model = modelOf(doc);
+  assert.deepEqual(model.flows.map((f) => f.id), ["flow-a", "flow-c", "flow-b"]);
+  assert.deepEqual(model.flows.map((f) => f.provisional), [true, false, false]);
+});
+
+test("a flow's steps resolve to the function's element and statement, and an unresolved step keeps its id", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-1", name: "One", value_priority: "High", steps: ["fn-1", "fn-missing"] }];
+  const [flow] = modelOf(doc).flows;
+  assert.deepEqual(flow.steps, [
+    { id: "fn-1", element: "svc", statement: "serve requests" },
+    { id: "fn-missing", element: null, statement: null },
+  ]);
+});
+
+test("a flow carries the chains that name it in the index order, each with its priority and badge style", () => {
+  // ch-1 M, ch-2 H, ch-3 L at one severity, so the index order is ch-2, ch-1, ch-3.
+  const doc = chainsWithPriorities(["M", "H", "L"]);
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "Low" },
+    { id: "flow-c", name: "C", value_priority: "Low" },
+  ];
+  doc.chains[0].flows = ["flow-a"];
+  doc.chains[1].flows = ["flow-a"];
+  doc.chains[2].flows = ["flow-b", "flow-a"];
+  const flows = modelOf(doc).flows;
+  assert.deepEqual(flows.map((f) => f.chains), [
+    [{ id: "ch-2", priority: "H", style: "top" }, { id: "ch-1", priority: "M", style: "mid" }, { id: "ch-3", priority: "L", style: "low" }],
+    [{ id: "ch-3", priority: "L", style: "low" }],
+    [],
+  ]);
+});
+
+test("a chain that names flows carries them, the first as the one the author names as the band flow, and the disjointness flag", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-2", name: "Two", value_priority: "Low", users: { population: "internal only: operators" } },
+  ];
+  doc.chains[0].flows = ["flow-1", "flow-2"];
+  const [row] = modelOf(doc).rows;
+  assert.deepEqual([row.flows, row.chosenFlow, row.disjoint], [["flow-1", "flow-2"], "flow-1", true]);
+});
+
+test("the chosen flow is the first entry by position, whichever id it carries", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-a", name: "A", value_priority: "High", users: { population: "all shoppers" } },
+    { id: "flow-b", name: "B", value_priority: "Low", users: { population: "internal only: operators" } },
+  ];
+  doc.chains[0].flows = ["flow-b", "flow-a"];
+  assert.equal(modelOf(doc).rows[0].chosenFlow, "flow-b");
 });

@@ -4,9 +4,17 @@
 // the markdown summary docs/specs/2026-09-07-eval-results.md: one table per
 // prompt (model, run, total/max, musts at 2, pass), a stability table, an
 // overall table per (prompt, model), and the completeness critic's lists.
-// Two optional sections come before the critic when the results file carries
-// their fields: the session checks (session_checks) and the prompts not re-run
-// (not_rerun).
+// Under the header, one paragraph names the model each capability ran on, read
+// from each run's models.json, beside the judging tiers of results.json's
+// models table and the Fable agents.
+// A Harness table follows the overall table when the runs carry the context
+// the judging copied from each run's context.json, and reads the rest of each
+// run's context.json itself; when a round.json written by tools/run-round.ts
+// lies beside the results file, one line under that table names the round's
+// method, concurrency, canary and elapsed time, and how many CLAUDE* variables
+// the launcher kept from its children. Two optional sections come before the critic when
+// the results file carries their fields: the session checks (session_checks)
+// and the prompts not re-run (not_rerun).
 //
 // Usage: node tools/eval-report.ts [--results build/evals/results.json] [--out docs/specs/2026-09-07-eval-results.md] [--title "Eval results, v1"]
 //
@@ -17,8 +25,12 @@
 // scores rather than trusting the judge's arithmetic.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { isEntry } from "./lib/entry.ts";
+import { isObject } from "./lib/is-object.ts";
+import { readRoundRecord, roundMethodLine } from "./lib/round-record.ts";
+import type { EvalContext } from "./eval-context.ts";
+import type { FlowComparison } from "./eval-stability.ts";
 
 /** The repository root. Judge text quotes paths absolute under it; `oneLine` strips the prefix. */
 const ROOT = join(import.meta.dirname, "..");
@@ -37,9 +49,10 @@ const ROOT_AT_BOUNDARY = new RegExp(
 export interface Criterion { id: string; must: boolean; prompts: number[]; rubric?: number }
 
 /**
- * The fifteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
+ * The sixteen rubric criteria (plan reference §I). c5 does not apply to prompt 6,
  * c11 applies to prompt 6 only, c12 to prompt 7 only, c13 to prompts 1 and 6
- * from rubric 2, and c14 to prompts 1 and 6 and c15 to prompt 1 from rubric 3.
+ * from rubric 2, c14 to prompts 1 and 6 and c15 to prompt 1 from rubric 3, and
+ * c16 to prompt 1 from rubric 4.
  */
 export const CRITERIA: Criterion[] = [
   { id: "c1-missing-inputs-asked", must: true, prompts: [1, 5, 6, 7] },
@@ -57,6 +70,7 @@ export const CRITERIA: Criterion[] = [
   { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 },
   { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 },
   { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 },
+  { id: "c16-flows", must: false, prompts: [1], rubric: 4 },
 ];
 
 /** Short titles for the four prompts, in the words of spec §10. */
@@ -479,6 +493,13 @@ export interface RunResult {
   scores: RunScore[]; total: number; max: number; musts_at_2: number; notes: string;
   /** True when the judge never returned: the run is unjudged, neither a pass nor a measured failure. */
   unverified?: boolean;
+  /**
+   * The run's window line, compactions and peak context, copied by the judging
+   * workflow from its context.json (tools/eval-context.ts): absent on a file
+   * written before 2026-10-14, null when the judging could not read the run's
+   * context.json.
+   */
+  context?: { window: string; compactions: number; peak_context_tokens: number } | null;
 }
 export interface StabilityResult {
   prompt: number; model_capability: string;
@@ -487,6 +508,10 @@ export interface StabilityResult {
   unverified?: boolean;
   /** Of the element ids both runs carry, how many agree on role and boundary (eval-stability.ts). */
   typing?: { shared: number; agreeing: number; pass: boolean };
+  /** The two runs' flow id sets at the 0.8 floor, tri-state plus not_applicable: pass, fail, unverified or not_applicable (eval-stability.ts). */
+  flows?: FlowComparison;
+  /** False when a stability predicate could not run; the workflow sets unverified from it (eval-stability.ts). */
+  verified?: boolean;
 }
 export interface CriticResult { missing: { area: string; detail: string }[]; blocking_candidates: string[] }
 /** A judge, stability pair, or critic whose agent never returned (plan reference §C). */
@@ -751,8 +776,12 @@ function stabilityFor(results: EvalResults, prompt: number, capability: string):
   return results.stability.find((s) => s.prompt === prompt && s.model_capability === capability);
 }
 
-/** The document's title and how its header names the results file. */
-interface ReportOptions { title: string; resultsLabel: string }
+/**
+ * The document's title, how its header names the results file, and the
+ * round.json the Harness section reads its Round method line from, beside the
+ * results file when the CLI runs; absent, no line is printed.
+ */
+interface ReportOptions { title: string; resultsLabel: string; roundFile?: string }
 
 /** The options the v1 document was generated with, and the CLI's defaults. */
 const V1_OPTIONS: ReportOptions = { title: "Eval results, v1", resultsLabel: "build/evals/results.json" };
@@ -765,16 +794,87 @@ export function renderReport(results: EvalResults, options: ReportOptions = V1_O
     "",
     `Generated by \`node tools/eval-report.ts\` from \`${options.resultsLabel}\`. Scores follow \`skills/fmea-software/evals/rubric.md\`; every criterion is 0 to 2. A run passes when every must scores 2 and the total is at least 80% of the maximum. A (prompt, model capability) pair passes when both runs pass and the stability check passes.`,
     "",
+    runModelParagraph(results),
+    "",
     ...preRulingScoresSection(results),
     ...scoresPerPromptSection(results, prompts),
     ...stabilitySection(results, prompts, capabilities),
     ...overallSection(results, prompts, capabilities),
+    ...harnessSection(results, options.roundFile),
     ...unverifiedUnitsSection(results),
     ...unevaluatedChecksSection(results),
     ...sessionChecksSection(results),
     ...notRerunSection(results),
     ...criticSection(results),
   ].join("\n");
+}
+
+/** The parts of a run's models.json (tools/run-eval.sh) the run-model paragraph reads. */
+interface ModelsFile { basis?: unknown; models: Record<string, unknown>; effort?: unknown }
+
+/** One run with its models.json as read, or null when it could not be. */
+interface ModelsRun { r: RunResult; file: ModelsFile | null }
+
+/**
+ * The paragraph under the header (decision 9 of the prose stage-0 gate): the
+ * model each capability's runs ran on, from each run's own models.json, with the
+ * basis and the effort the readable files record; then the judging tiers, the
+ * high and medium models of results.json's models table; then the Fable agents,
+ * 0. It is read from the run directories, so a results file of any date renders
+ * it.
+ */
+function runModelParagraph(results: EvalResults): string {
+  return `${runModelText(inTableOrder(results.runs))}. Judging tiers (results.json models): high=${recorded(results.models.high)}, medium=${recorded(results.models.medium)}. Fable agents: 0.`;
+}
+
+/**
+ * `Run model: …`: one entry per capability the runs were made at, each run read
+ * at its own capability, a dash for a run whose file is unreadable or names no
+ * model there; then the basis and the effort over the readable files. With no
+ * file readable, the run model is unknown.
+ */
+function runModelText(runs: RunResult[]): string {
+  const read: ModelsRun[] = runs.map((r) => ({ r, file: readModelsFile(r.dir) }));
+  const readable = read.filter((x): x is { r: RunResult; file: ModelsFile } => x.file !== null);
+  if (readable.length === 0) return "Run model: unknown (no models.json readable)";
+  const capabilities = [...new Set(runs.map((r) => r.model_capability))];
+  const entries = capabilities.map((c) => agreedEntry(c, read.filter(({ r }) => r.model_capability === c).map(({ r, file }) => [recorded(file?.models[c]), harnessRunLabel(r)])));
+  const basis = agreedEntry("basis", readable.map(({ r, file }) => [recorded(file.basis), harnessRunLabel(r)]));
+  const effort = agreedEntry("effort", readable.map(({ r, file }) => [recorded(file.effort), harnessRunLabel(r)]));
+  return `Run model: ${[...entries, basis, effort].join(", ")}`;
+}
+
+/** A run's models.json, or null when it is missing, does not parse or holds no models object. */
+function readModelsFile(dir: string): ModelsFile | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(runFileOf(dir, "models.json"), "utf8"));
+    return isObject(parsed) && isObject(parsed.models) ? { basis: parsed.basis, models: parsed.models, effort: parsed.effort } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A recorded value as the paragraph prints it: a non-empty string, else a dash. */
+function recorded(value: unknown): string {
+  return typeof value === "string" && value !== "" ? value : "—";
+}
+
+/** `<name>=<value>` when every run gives one value, else `<name> differs across runs (<value> on <runs>; …)` in first-seen order. */
+function agreedEntry(name: string, values: [string, string][]): string {
+  const runsByValue = groupedLabels(values);
+  return runsByValue.size === 1 ? `${name}=${[...runsByValue.keys()][0]}` : `${name} differs across runs (${valuesWithRuns([...runsByValue])})`;
+}
+
+/** Run labels grouped by the value each pair gives, values in first-seen order. */
+function groupedLabels(pairs: [string, string][]): Map<string, string[]> {
+  const grouped = new Map<string, string[]>();
+  for (const [value, label] of pairs) grouped.set(value, [...(grouped.get(value) ?? []), label]);
+  return grouped;
+}
+
+/** `<value> on <run>, <run>; <value> on <run>`. */
+function valuesWithRuns(groups: [string, string[]][]): string {
+  return groups.map(([value, labels]) => `${value} on ${labels.join(", ")}`).join("; ");
 }
 
 /** `## Scores recorded before …`, or no lines when no ruling's scores are stale. */
@@ -864,24 +964,26 @@ function promptScores(results: EvalResults, p: number): string[] {
 
 /** `## Stability between runs`: one row per (prompt, model capability) pair. */
 function stabilitySection(results: EvalResults, prompts: number[], capabilities: string[]): string[] {
-  // The Typing column appears only when some entry carries typing, so a results
-  // file written before eval-stability.ts reported it renders as it always did.
+  // The Typing and Flows columns each appear only when some entry carries the
+  // field, so a results file written before eval-stability.ts reported them
+  // renders as it always did.
   const typed = results.stability.some((s) => s.typing !== undefined);
+  const flowed = results.stability.some((s) => s.flows !== undefined);
   const lines: string[] = [];
   lines.push("## Stability between runs");
   lines.push("");
-  lines.push(`| Prompt | Model capability | Jaccard | Max rows | Bound | Count diffs |${typingCell(typed, "Typing")} Pass |`);
-  lines.push(`|---|---|---|---|---|---|${typed ? "---|" : ""}---|`);
+  lines.push(`| Prompt | Model capability | Jaccard | Max rows | Bound | Count diffs |${typingCell(typed, "Typing")}${flowsCell(flowed, "Flows")} Pass |`);
+  lines.push(`|---|---|---|---|---|---|${typed ? "---|" : ""}${flowed ? "---|" : ""}---|`);
   for (const p of prompts) {
     for (const m of capabilities) {
       const s = stabilityFor(results, p, m);
       if (!s) {
-        lines.push(`| ${p} | ${m} | — | — | — | — |${typingCell(typed, "—")} FAIL (no result) |`);
+        lines.push(`| ${p} | ${m} | — | — | — | — |${typingCell(typed, "—")}${flowsCell(flowed, "—")} FAIL (no result) |`);
         continue;
       }
       const diffs = Object.entries(s.countDiffs).map(([k, v]) => `${k}: ${v}`).join(", ");
       const verdict = s.unverified ? "UNVERIFIED" : yesNo(s.pass);
-      lines.push(`| ${p} | ${m} | ${fmt(s.jaccard)} | ${s.maxRows} | ${fmt(s.bound)} | ${diffs} |${typingCell(typed, typingText(s))} ${verdict} |`);
+      lines.push(`| ${p} | ${m} | ${fmt(s.jaccard)} | ${s.maxRows} | ${fmt(s.bound)} | ${diffs} |${typingCell(typed, typingText(s))}${flowsCell(flowed, flowsText(s))} ${verdict} |`);
     }
   }
   lines.push("");
@@ -896,6 +998,16 @@ function typingCell(typed: boolean, text: string): string {
 /** A stability entry's typing as `agreeing/shared pass`, or a dash when the entry carries none. */
 function typingText(s: StabilityResult): string {
   return s.typing === undefined ? "—" : `${s.typing.agreeing}/${s.typing.shared} ${yesNo(s.typing.pass)}`;
+}
+
+/** The Flows column's cell, with its leading space and closing bar, or nothing when the table has no such column. */
+function flowsCell(flowed: boolean, text: string): string {
+  return flowed ? ` ${text} |` : "";
+}
+
+/** A stability entry's flows as `<jaccard> <tri-state>`, or a dash when the entry carries none. */
+function flowsText(s: StabilityResult): string {
+  return s.flows === undefined ? "—" : `${fmt(s.flows.jaccard)} ${s.flows.pass}`;
 }
 
 /** `## Overall per prompt and model capability`: one row per pair. */
@@ -919,6 +1031,254 @@ function overallRow(results: EvalResults, p: number, m: string): string {
   const c2 = o.r2?.unverified ? "UNVERIFIED" : yesNo(o.p2);
   const cs = o.s?.unverified ? "UNVERIFIED" : yesNo(o.st);
   return `| ${p} | ${m} | ${c1} | ${c2} | ${cs} | ${o.unver ? "UNVERIFIED" : yesNo(o.p1 && o.p2 && o.st)} |`;
+}
+
+/**
+ * A run's context.json as the Harness table reads it, or why it could not:
+ * `missing` when there is no file, `unreadable` when the read failed otherwise,
+ * the text is not JSON, or the JSON lacks a part the table reads.
+ */
+type ContextRead = EvalContext | "missing" | "unreadable";
+
+/** One run of the Harness table with its context.json as read. */
+interface HarnessRun { r: RunResult; ctx: ContextRead }
+
+/**
+ * `## Harness`: one row per run, or no lines when no run carries a context
+ * field, so a results file written before 2026-10-14 renders as it always did
+ * (prose design §5.3). Window, compactions and peak are the copies the judging
+ * wrote into results.json; the CLI version, the lines without usage (the count
+ * the context gate closes on, a dash for a file written before it), the final
+ * message's completeness (prose design §8.1, which the gate also closes on, a
+ * dash for a file written before 2026-10-15) and the other cells are read from
+ * the run's own context.json, and so are the counts by priority the final
+ * message states against the document's (§8.1, §11.6 ruling 4: reported, never
+ * gated, a dash for a file written before them). Directly under the table, a
+ * round run by tools/run-round.ts gets one line from its round.json: the method,
+ * the concurrency, the canary and the elapsed time (prose design §11.5 ruling
+ * 10), and how many CLAUDE* variables the launcher stripped when the file
+ * records them (§11.6, carried items); a round with no round.json gets none.
+ * The lines after it name the CLI versions when the readable files carry more
+ * than one, each file that could not be read, and each copy its file does not
+ * bear out.
+ */
+function harnessSection(results: EvalResults, roundFile?: string): string[] {
+  if (!results.runs.some((r) => r.context !== undefined)) return [];
+  const rows: HarnessRun[] = inTableOrder(results.runs).map((r) => ({ r, ctx: readContextFile(r.dir) }));
+  const firstFile = rows.map((x) => x.ctx).find((ctx): ctx is EvalContext => typeof ctx !== "string");
+  const lintIds = firstFile === undefined ? [] : firstFile.lints.map((l) => l.id);
+  const lintHeads = lintIds.map((id) => ` ${id} fired / final |`).join("");
+  const lines = [
+    "## Harness",
+    "",
+    `| Prompt | Model capability | Run | CLI | Window | Compactions | Peak context | Lines without usage | Final message | Counts | Isolated | Unnamespaced skills | Denied (bun / other) |${lintHeads}`,
+    `|${"---|".repeat(13 + lintIds.length)}`,
+  ];
+  for (const { r, ctx } of rows) lines.push(harnessRow(r, ctx, lintIds));
+  lines.push("");
+  const method = roundFile === undefined ? null : roundMethodLine(readRoundRecord(roundFile), relative(ROOT, roundFile));
+  if (method !== null) lines.push(method, "");
+  const notes = [versionsLine(rows), ...rows.flatMap(({ r, ctx }) => [unreadableLine(r, ctx), disagreementLine(r, ctx)])].filter((l): l is string => l !== null);
+  if (notes.length > 0) lines.push(...notes, "");
+  return lines;
+}
+
+/** The runs in prompt, capability, run order, as the Harness table and the run-model paragraph list them. */
+function inTableOrder(runs: RunResult[]): RunResult[] {
+  return [...runs].sort((a, b) => a.prompt - b.prompt || a.model_capability.localeCompare(b.model_capability) || a.run - b.run);
+}
+
+/** Where a file of a run's directory lies: a relative run directory resolves against the repository root. */
+function runFileOf(dir: string, name: string): string {
+  return join(resolve(ROOT, dir), name);
+}
+
+/** A run's context.json, read and parsed in code, or why it could not be. */
+function readContextFile(dir: string): ContextRead {
+  let text: string;
+  try {
+    text = readFileSync(runFileOf(dir, "context.json"), "utf8");
+  } catch (err) {
+    return isObject(err) && err.code === "ENOENT" ? "missing" : "unreadable";
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isContextFile(parsed) ? parsed : "unreadable";
+  } catch {
+    return "unreadable";
+  }
+}
+
+/** Whether a parsed context.json holds every part the Harness table reads, as tools/eval-context.ts writes them. */
+function isContextFile(v: unknown): v is EvalContext {
+  return isObject(v) && typeof v.compactions === "number" && typeof v.peak_context_tokens === "number" &&
+    isObject(v.init) && Array.isArray(v.init.plugins) && Array.isArray(v.init.skills_namespaced) &&
+    Array.isArray(v.init.skills_unnamespaced) && isObject(v.denied) && Array.isArray(v.lints);
+}
+
+/** A run as the lines under the Harness table name it. */
+function harnessRunLabel(r: RunResult): string {
+  return `p${r.prompt} ${r.model_capability} run ${r.run}`;
+}
+
+/** One row of the Harness table: the CLI version, the three copied cells, the lines without usage, the final message, its counts, then the cells read from context.json, dashes when it could not be read. */
+function harnessRow(r: RunResult, ctx: ContextRead, lintIds: string[]): string {
+  const read = typeof ctx === "string"
+    ? Array<string>(3 + lintIds.length).fill("—")
+    : [cell(isolationText(ctx)), String(ctx.init.skills_unnamespaced.length), deniedText(ctx), ...lintIds.map((id) => lintCell(ctx.lints.find((l) => l.id === id)))];
+  return `| ${[String(r.prompt), r.model_capability, String(r.run), cell(cliVersionOf(ctx) ?? "—"), ...copiedCells(r.context), withoutUsageCell(ctx), finalMessageCell(ctx), countsCell(ctx), ...read].join(" | ")} |`;
+}
+
+/** The count of top-level assistant lines without usage a run's context.json records, or a dash when the file could not be read or holds no integer count. */
+function withoutUsageCell(ctx: ContextRead): string {
+  return typeof ctx !== "string" && Number.isInteger(ctx.assistant_lines_without_usage) ? String(ctx.assistant_lines_without_usage) : "—";
+}
+
+/**
+ * Whether a run's final message is complete, as its context.json records it (prose design §8.1): `complete`,
+ * `cut (<reason>)`, `cut (no reason recorded)` when the file gives none, or a dash when the file could not be read, was
+ * written before the field, or could not check the message, whose reason the gate's unverified unit carries.
+ */
+function finalMessageCell(ctx: ContextRead): string {
+  const final: unknown = typeof ctx === "string" ? undefined : ctx.final_message;
+  if (!isObject(final)) return "—";
+  if (final.complete === true) return "complete";
+  const reason = typeof final.reason === "string" ? final.reason : "no reason recorded";
+  return final.complete === false ? cell(`cut (${reason})`) : "—";
+}
+
+type MessageCounts = EvalContext["message_counts"];
+
+/** Whether a context.json's message_counts has the parts the Counts cell reads. */
+function isMessageCounts(v: unknown): v is MessageCounts {
+  return isObject(v) && typeof v.checked === "boolean" && isObject(v.document) && Array.isArray(v.stated);
+}
+
+/**
+ * The counts by priority a run's final message states, against the document's, as its context.json records them
+ * (prose design §8.1, §11.6 ruling 4): `match (<n>)` when every one of the n pairs matches; `mismatch: ` and each pair
+ * that does not, with the document's count of the value before action and, when the document has chains at it after
+ * action, that count too; `none stated` when the message states no pair; `— (<reason>)` when the counts could not be
+ * checked; and a dash when the file could not be read, was written before the field, or says it was checked while
+ * holding no pair.
+ */
+function countsCell(ctx: ContextRead): string {
+  const counts: unknown = typeof ctx === "string" ? undefined : ctx.message_counts;
+  if (!isMessageCounts(counts)) return "—";
+  if (counts.checked) return counts.stated.length > 0 ? cell(statedText(counts)) : "—";
+  if (counts.reason === "no count stated") return "none stated";
+  return typeof counts.reason === "string" ? cell(`— (${counts.reason})`) : "—";
+}
+
+/** A checked record's verdict: every pair matches, or the list of those that do not. */
+function statedText(counts: MessageCounts): string {
+  const wrong = counts.stated.filter((p) => p.matches !== true);
+  if (wrong.length === 0) return `match (${counts.stated.length})`;
+  return `mismatch: ${wrong.map((p) => `${p.count} ${p.value} (${documentText(counts.document[p.value])})`).join(", ")}`;
+}
+
+/** The document's counts of one value, `document <before>` and `, after <after>` when chains are at it after action. */
+function documentText(row: { before: number; after: number } | undefined): string {
+  if (row === undefined) return "document 0";
+  return row.after > 0 ? `document ${row.before}, after ${row.after}` : `document ${row.before}`;
+}
+
+/** The CLI version a run's context.json records, or null when the file could not be read or records none. */
+function cliVersionOf(ctx: ContextRead): string | null {
+  return typeof ctx !== "string" && typeof ctx.cli_version === "string" ? ctx.cli_version : null;
+}
+
+/** The line naming each CLI version the readable files carry, versions sorted, with its runs; null unless there are two or more. */
+function versionsLine(rows: HarnessRun[]): string | null {
+  const pairs = rows.flatMap(({ r, ctx }): [string, string][] => {
+    const version = cliVersionOf(ctx);
+    return version === null ? [] : [[version, harnessRunLabel(r)]];
+  });
+  const runsByVersion = groupedLabels(pairs);
+  if (runsByVersion.size < 2) return null;
+  const sorted = [...runsByVersion].sort(([a], [b]) => a.localeCompare(b, "en", { numeric: true }));
+  return `- CLI versions differ across the round: ${valuesWithRuns(sorted)}`;
+}
+
+/** The Window, Compactions and Peak context cells, from the copy in results.json; UNVERIFIED in all three when the run has none. */
+function copiedCells(context: RunResult["context"]): string[] {
+  if (!context) return ["UNVERIFIED", "UNVERIFIED", "UNVERIFIED"];
+  return [cell(windowText(context.window)), String(context.compactions), context.peak_context_tokens.toLocaleString("en-US")];
+}
+
+/** The probe's window line after its first `: ` (`786.4k tokens (from …)`), or the whole line when it holds none. */
+function windowText(line: string): string {
+  const at = line.indexOf(": ");
+  return at === -1 ? line : line.slice(at + 2);
+}
+
+/**
+ * Whether the run was isolated (prose design §5.1): beside the CLI's own
+ * `@builtin` plugins its init line lists exactly the plugin under test, its
+ * namespaced skills are exactly the skill under test, and its auto memory lies
+ * under the run's CLAUDE_CONFIG_DIR. Otherwise `no` with each reason that
+ * applies. With no init line nothing else is read: an absent line is never
+ * isolation.
+ */
+function isolationText(ctx: EvalContext): string {
+  const init = ctx.init;
+  if (init.present !== true) return "no (no init line)";
+  const plugins = init.plugins.filter((p) => !p.source.endsWith("@builtin")).map((p) => p.name);
+  const reasons: string[] = [];
+  if (!isExactly(plugins, "failwise")) reasons.push(`plugins: ${listOrNone(plugins)}`);
+  if (!isExactly(init.skills_namespaced, "failwise:fmea-software")) reasons.push(`skills: ${listOrNone(init.skills_namespaced)}`);
+  if (init.memory_under_config_dir !== true) reasons.push("memory outside the config dir");
+  return reasons.length === 0 ? "yes" : `no (${reasons.join("; ")})`;
+}
+
+/** Whether a list holds the one value and nothing else. */
+function isExactly(list: string[], value: string): boolean {
+  return list.length === 1 && list[0] === value;
+}
+
+/** A list joined by commas, or `none` when it is empty. */
+function listOrNone(list: string[]): string {
+  return list.length === 0 ? "none" : list.join(", ");
+}
+
+/** The denied script calls as `<bun> / <other>`, or `missing` when the run has no invocations.json to count them from. */
+function deniedText(ctx: EvalContext): string {
+  return ctx.invocations === "missing" ? "missing" : `${ctx.denied.bun} / ${ctx.denied.other}`;
+}
+
+/** One lint id's cell: how many validate.ts calls carried it, then whether the final document does; a dash for what the run could not give. */
+function lintCell(entry: EvalContext["lints"][number] | undefined): string {
+  if (entry === undefined) return "—";
+  const fired = entry.fired === null ? "—" : String(entry.fired);
+  const final = entry.final === null ? "—" : entry.final ? "yes" : "no";
+  return `${fired} / ${final}`;
+}
+
+/** The line naming a run whose context.json could not be read, or null. */
+function unreadableLine(r: RunResult, ctx: ContextRead): string | null {
+  return typeof ctx === "string" ? `- ${harnessRunLabel(r)}: context.json unreadable at ${relative(ROOT, resolve(ROOT, r.dir))}` : null;
+}
+
+/**
+ * The line naming a run whose copied context its context.json does not bear
+ * out, or null: the file missing or unreadable while the copy is not null, or
+ * the file's window line, compactions or peak differing from the copy. A run
+ * with no copy makes no claim, so it never disagrees.
+ */
+function disagreementLine(r: RunResult, ctx: ContextRead): string | null {
+  const copy = r.context;
+  if (!copy) return null;
+  const lead = `- ${harnessRunLabel(r)}: results.json context disagrees with context.json`;
+  if (typeof ctx === "string") return `${lead} (file ${ctx})`;
+  const compared: [string, string | number, string | number][] = [
+    ["window", copy.window, ctx.window_line],
+    ["compactions", copy.compactions, ctx.compactions],
+    ["peak_context_tokens", copy.peak_context_tokens, ctx.peak_context_tokens],
+  ];
+  const differing = compared
+    .filter(([, copied, file]) => copied !== file)
+    .map(([field, copied, file]) => `${field}: ${copied} vs ${file}`);
+  return differing.length === 0 ? null : `${lead} (${differing.join("; ")})`;
 }
 
 /** `## Unverified units`: every unit whose agent never returned, or `None.` */
@@ -1109,10 +1469,6 @@ function fail(code: "USAGE" | "IO_READ", message: string): void {
 
 const NOT_A_RESULTS_FILE = "is not a {models, runs, stability, critic} results file";
 
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 /** What shapeProblem proves of a results file before its parts are read. */
 type ResultsShape = {
   models: unknown;
@@ -1166,7 +1522,19 @@ function runProblem(r: unknown, i: number): string | null {
     if (problem !== null) return problem;
   }
   if (r.notes !== undefined && typeof r.notes !== "string") return `has a run whose notes is not a string ${at}`;
-  return null;
+  return runContextProblem(r.context, at);
+}
+
+/** A run's context: absent (a file written before 2026-10-14), null (context.json unread), or the three fields evals.js copies. */
+function runContextProblem(context: unknown, at: string): string | null {
+  if (context === undefined || context === null) return null;
+  if (
+    isObject(context) && typeof context.window === "string" &&
+    Number.isInteger(context.compactions) && Number.isInteger(context.peak_context_tokens)
+  ) {
+    return null;
+  }
+  return `has a run context that is not {window, compactions, peak_context_tokens} ${at}`;
 }
 
 function runsProblem(runs: unknown[]): string | null {
@@ -1189,12 +1557,19 @@ function stabilityEntryProblem(s: unknown, i: number): string | null {
   if (!isObject(s.countDiffs)) return `has a stability entry with no countDiffs object ${at}`;
   if (typeof s.pass !== "boolean") return `has a stability entry whose pass is not a boolean ${at}`;
   if (s.typing !== undefined && !isTyping(s.typing)) return `has a stability entry whose typing is not {shared, agreeing, pass} ${at}`;
+  if (s.flows !== undefined && !isFlows(s.flows)) return `has a stability flows that is not {jaccard, pass} ${at}`;
+  if (s.verified !== undefined && typeof s.verified !== "boolean") return `has a stability entry whose verified is not a boolean ${at}`;
   return null;
 }
 
 /** A stability entry's typing as eval-stability.ts writes it: two counts and a verdict. */
 function isTyping(t: unknown): boolean {
   return isObject(t) && typeof t.shared === "number" && typeof t.agreeing === "number" && typeof t.pass === "boolean";
+}
+
+/** A stability entry's flows as eval-stability.ts writes it: the id-set overlap and its tri-state or not_applicable. */
+function isFlows(f: unknown): boolean {
+  return isObject(f) && typeof f.jaccard === "number" && (f.pass === "pass" || f.pass === "fail" || f.pass === "unverified" || f.pass === "not_applicable");
 }
 
 /** The top-level rubric version: absent (rubric 1), or a whole number of at least 1. */
@@ -1363,7 +1738,8 @@ function main(argv: string[]): number {
     fail("IO_READ", `${resultsPath} ${problem}`);
     return 3;
   }
-  writeFileSync(outPath, renderReport(parsed as EvalResults, { title, resultsLabel: resultsLabel(resultsPath) }));
+  const roundFile = join(dirname(resolve(resultsPath)), "round.json");
+  writeFileSync(outPath, renderReport(parsed as EvalResults, { title, resultsLabel: resultsLabel(resultsPath), roundFile }));
   process.stdout.write(`wrote ${outPath}\n`);
   return 0;
 }

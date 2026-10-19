@@ -262,15 +262,44 @@ test("a chain may carry post_priority beside post_ratings, in the shape of prior
   assert.deepEqual(checkSchema(extra).map((i) => i.pointer), ["/chains/0/post_priority/weight"]);
 });
 
-test("the top level is five authored parts in order, with dependencies required between functions and chains and computed after them", () => {
+test("the top level is six authored parts in order, with flows optional between chains and computed", () => {
   const schema = loadSchema();
   assert.deepEqual(schema.required, ["meta", "elements", "functions", "dependencies", "chains"]);
-  assert.deepEqual(Object.keys(schema.properties as object), ["meta", "elements", "functions", "dependencies", "chains", "computed"]);
+  assert.deepEqual(Object.keys(schema.properties as object), ["meta", "elements", "functions", "dependencies", "chains", "flows", "computed"]);
   const doc = minimalDoc() as unknown as Record<string, unknown>;
-  delete doc.dependencies;
+  doc.flows = [];
   const issues = checkSchema(doc);
-  assert.deepEqual(issues.map((i) => i.pointer), [""]);
-  assert.match(issues[0].message, /missing required property "dependencies"/);
+  assert.deepEqual(issues.map((i) => i.pointer), ["/flows"]);
+  assert.equal(issues[0].message, "array has 0 item(s), fewer than the minimum 1");
+});
+
+test("a flow carries id, name and value_priority, rejects an undeclared key, and takes users, steps and steps_partial", () => {
+  const flow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: "flow-checkout", name: "Checkout submission", value_priority: "High", ...over });
+  const withFlows = (f: Record<string, unknown>): Record<string, unknown> => {
+    const doc = minimalDoc() as unknown as Record<string, unknown>;
+    doc.flows = [f];
+    return doc;
+  };
+  assert.deepEqual(checkSchema(withFlows(flow())), []);
+  assert.deepEqual(
+    checkSchema(withFlows(flow({ value_priority: "Critical" }))).map((i) => [i.pointer, i.message]),
+    [["/flows/0/value_priority", 'value "Critical" is not one of "High", "Medium", "Low"']],
+  );
+  assert.deepEqual(checkSchema(withFlows(flow({ steps: ["fn-1"], steps_partial: true, users: { population: "all shoppers at checkout", share: "a majority of checkouts in the incident", selecting_condition: "a locale", review: { status: "provisional" } }, sources: [{ kind: "document", ref: "checkout-inputs.md" }] }))), []);
+  assert.deepEqual(checkSchema(withFlows(flow({ users: { population: "all shoppers" }, extra: 1 }))).map((i) => i.message), ['unexpected property "extra"']);
+  assert.deepEqual(checkSchema(withFlows(flow({ value_priority: "High", users: { share: 0.4 } }))).map((i) => [i.pointer, i.message]), [["/flows/0/users", 'missing required property "population"'], ["/flows/0/users/share", "expected type string, got number"]]);
+  assert.deepEqual(checkSchema(withFlows({ id: "flow-x", name: "X" })).map((i) => i.message), ['missing required property "value_priority"']);
+});
+
+test("chains[].flows is an array of ids and is optional on every chain", () => {
+  const withChainFlows = (flows: unknown): Record<string, unknown> => {
+    const doc = minimalDoc() as unknown as Record<string, unknown>;
+    (doc.chains as Record<string, unknown>[])[0].flows = flows;
+    return doc;
+  };
+  assert.deepEqual(checkSchema(withChainFlows(["flow-checkout"])), []);
+  assert.deepEqual(checkSchema(withChainFlows([])), []);
+  assert.deepEqual(checkSchema(withChainFlows("flow-checkout")).map((i) => [i.pointer, i.message]), [["/chains/0/flows", "expected type array, got string"]]);
 });
 
 test("an element that carries a dependency key is refused at the key", () => {
@@ -383,8 +412,27 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(!text(defs.dependencyEdge).includes("analysed system"));
   assert.ok(text(defs.elementBoundary).endsWith("An element whose boundary is not in_scope is the `to` of at least one edge in dependencies[] (invariant element-dependency-required)."));
   assert.ok(text(props("element").parent).endsWith("Derivable from id; the report's tree and the ancestor walk of the lints read it."));
-  assert.ok(text(schema).includes("Five parts are authored (meta, elements, functions, dependencies, chains)"));
+  assert.ok(text(schema).includes("Six parts are authored (meta, elements, functions, dependencies, chains, flows)"));
   assert.ok(!text(schema).includes("fifth part"));
+  assert.ok(text(schema).includes("the contract runs one way: the 0.6.0 scripts refuse a document that carries flows or the stale reason flow-changed"));
+  assert.ok(text(schema).endsWith("a document that carries neither validates under 0.6.0 and under this schema."));
+  assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
+  assert.ok(text(props("flow").value_priority).endsWith("Read for the report's order of flows only; that order is presentational and ranks nothing."), "the tier's one use is the report's order of flows, and no filter reads it");
+});
+
+test("the sla, limits, rationale and history.change descriptions carry the stage-1 rules", () => {
+  const schema = loadSchema();
+  const defs = schema.$defs as Record<string, SchemaNode>;
+  const props = (def: string): Record<string, SchemaNode> => defs[def].properties as Record<string, SchemaNode>;
+  const text = (node: SchemaNode): string => String(node.description);
+  for (const field of ["sla", "limits"]) {
+    assert.ok(text(props("dependencyEdge")[field]).includes("leave the field out"), field);
+    assert.ok(text(props("dependencyEdge")[field]).includes("Record an open assumption owned by user that names the provider and the field"), field);
+    assert.ok(text(props("dependencyEdge")[field]).includes("Never write a placeholder"), field);
+    assert.ok(!text(props("dependencyEdge")[field]).includes("Nothing computes on it."), field);
+  }
+  assert.ok(text(props("rating").rationale).endsWith("each such row included; an open assumption does not record it."));
+  assert.ok(text(props("historyEntry").change).includes("every field it substituted with its count. Empty cells and element-level, function-level, control and effect defaults"));
 });
 
 // `minimalDoc()` plus a tracker target and one action carrying a link, in the shapes of the
@@ -595,6 +643,12 @@ function derivationDoc(): Record<string, unknown> {
   (doc.meta as unknown as Record<string, unknown>).codebases = [{ id: "svc-repo", name: "Service repository", repo: "acme/svc", path: "services/svc" }];
   doc.elements[0].codebase = "svc-repo";
   Object.assign(doc.chains[0].causes[0], { chain: "ch-2", cited_o: { value: 6, evidence_kind: "observed_incident", evidence_ref: "INC-1" } });
+  (doc as unknown as Record<string, unknown>).flows = [
+    { id: "flow-1", name: "Derived flow", value_priority: "Low", steps: ["fn-1"], steps_partial: true,
+      sources: [{ kind: "interview", ref: "the operations lead" }],
+      users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-09-07" } } },
+  ];
+  doc.chains[0].flows = ["flow-1"];
   return doc as unknown as Record<string, unknown>;
 }
 
@@ -739,8 +793,18 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // of step 3 adds 111 derivations: 12 from the two `meta.codebases` entries, 2 from the two
   // element `codebase` ids, 6 from the order-store edge, 70 from `ch-9` and 21 from its three
   // `rating-provisional` findings in `computed`. 20 of them are `minLength` (2 from the codebase
-  // names, 12 from `ch-9`, 6 from the findings). The total is 1,472, so the floor is 1,416.
-  assert.ok(derived >= 1416, `expected at least 1416 derived violations, ran ${derived}`);
+  // names, 12 from `ch-9`, 6 from the findings). The flow model's `flows[]` and `chains[].flows`
+  // add 18 from the derivation document, which instantiates one flow carrying `sources`, `steps`,
+  // `users` and a `review`. The golden then gained 79: 43 from its three flows, 3 from the flow
+  // lists of `ch-5` and `ch-9`, 12 from its two added assumptions and 21 from its three
+  // `flow-users-provisional` findings in `computed`. Its order-store edge's new `limits` adds none,
+  // because that field carries no constraint. The total is 1,569 (1,336 from the golden, 233 from
+  // the derivation document), so the floor is 1,513. The population rules moved the golden by 19:
+  // 12 from its two added share assumptions, 2 from the selecting conditions of flow-retry and
+  // flow-resume and 7 from ch-5's `rating-provisional` finding in `computed`, less 2 for the `by`
+  // and `date` that ch-5's Severity review no longer carries. The total is 1,588 (1,355 from the
+  // golden, 233 from the derivation document), so the floor is 1,532.
+  assert.ok(derived >= 1532, `expected at least 1532 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -755,6 +819,15 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // `meta.codebases` entries, 2 from the two element `codebase` ids, 6 from the order-store edge,
   // 70 from `ch-9` and 21 from its three `rating-provisional` findings in `computed`. 20 of them
   // are `minLength` (2 from the codebase names, 12 from `ch-9`, 6 from the findings), so the total
-  // and the floor are 291.
-  assert.ok(minLengthDerived >= 291, `expected at least 291 derived minLength violations, ran ${minLengthDerived}`);
+  // and the floor are 291. The flow model adds four from the derivation document: the derived
+  // flow's name, its source ref, its users population and its review author. The golden then
+  // gained 19: 9 from its three flows (each one's name, source ref and users population), 4 from
+  // its two added assumptions (each one's text and owner) and 6 from its three
+  // `flow-users-provisional` findings (each one's rule and message). The total and the floor are
+  // 314 (270 from the golden, 44 from the derivation document). The population rules add 7 from
+  // the golden: 4 from its two added share assumptions (each one's text and owner), 2 from the two
+  // selecting conditions and 2 from ch-5's `rating-provisional` finding (its rule and message),
+  // less 1 for the `by` that ch-5's Severity review no longer carries. The total and the floor are
+  // 321 (277 from the golden, 44 from the derivation document).
+  assert.ok(minLengthDerived >= 321, `expected at least 321 derived minLength violations, ran ${minLengthDerived}`);
 });

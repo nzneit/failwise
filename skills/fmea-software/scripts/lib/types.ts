@@ -4,6 +4,7 @@
 export type ElementKind = "service" | "datastore" | "event_stream" | "interface" | "component";
 export type ElementBoundary = "in_scope" | "owned_outside" | "third_party";
 export type SourceKind = "document" | "repo" | "interview" | "incident" | "contract" | "catalog";
+export type ValuePriority = "High" | "Medium" | "Low";
 export type ControlKind = "prevention" | "detection" | "compensating";
 export type ControlStatus = "existing" | "planned";
 export type ControlEvidenceKind = "observed_incident" | "test_result" | "estimate" | "none";
@@ -11,7 +12,7 @@ export type RatingEvidenceKind = "observed_incident" | "test_result" | "estimate
 export type ReviewStatus = "provisional" | "rescored" | "authored";
 export type ActionStatus = "Open" | "Decision pending" | "Implementation pending" | "Completed" | "Not Implemented";
 export type CauseOrigin = "specification" | "design" | "code";
-export type StaleReason = "element-changed" | "function-changed" | "control-removed" | "scales-version";
+export type StaleReason = "element-changed" | "function-changed" | "flow-changed" | "control-removed" | "scales-version";
 export type AssumptionStatus = "open" | "closed";
 export type Strength = "strong" | "weak";
 export type Factor = "S" | "O" | "D";
@@ -51,11 +52,13 @@ export interface Handoff { to: "threat-model"; reason: string; adversary_cause: 
 export interface CatalogRef { id: string; provenance: string }
 export interface Stale { flag: boolean; reason?: StaleReason; since_version?: number }
 export interface Effects { local: string; next_level: string; end: string }
+export interface FlowUsers { population: string; share?: string; selecting_condition?: string; review?: RatingReview }
+export interface Flow { id: string; name: string; value_priority: ValuePriority; sources?: Source[]; users?: FlowUsers; steps?: string[]; steps_partial?: boolean }
 export interface Chain {
-  id: string; function: string; failure_mode: string; effects: Effects; causes: Cause[]; trigger?: string;
+  id: string; function: string; flows?: string[]; failure_mode: string; effects: Effects; causes: Cause[]; trigger?: string;
   controls: Control[]; ratings: Ratings; priority: Priority; actions: Action[]; post_ratings?: Ratings; post_priority?: Priority;
   handoff?: Handoff; source_incident?: string; catalog_refs: CatalogRef[]; stale: Stale; history: HistoryEntry[];
 }
 export interface Lint { rule: string; severity: Severity; pointer: string; message: string }
 export interface Computed { quality_score: number; lints: Lint[]; validated_at: string; validator_version: string }
-export interface FmeaDocument { meta: Meta; elements: Element[]; functions: Fn[]; dependencies: DependencyEdge[]; chains: Chain[]; computed?: Computed }
+export interface FmeaDocument { meta: Meta; elements: Element[]; functions: Fn[]; dependencies: DependencyEdge[]; chains: Chain[]; flows?: Flow[]; computed?: Computed }

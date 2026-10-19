@@ -1,9 +1,15 @@
 # Provenance: tags, permissions and the source register
 
-Every sourced statement in a reference file cites a record id; every unsourced statement is tagged `skill-authored`. [skill-authored]
-An untagged sentence is a defect, and so is a tag the cited record's source status does not permit. [skill-authored]
-This file is the rule the rest of the build is checked against: the tag vocabulary, the permission table keyed on source status, and the register that gives each of the 39 sources, in 44 rows, its status. [skill-authored]
-Records are cited, never findings: a record id `C###` is verified evidence, a finding id `F-WSn-NN` is the research report's synthesis and is not a citable unit. [skill-authored]
+- Every sourced statement in a reference file cites a record id. [skill-authored]
+- Every unsourced statement is tagged `skill-authored`. [skill-authored]
+- An untagged sentence is a defect. [skill-authored]
+- A tag the cited record's source status does not permit is also a defect. [skill-authored]
+- This file is the rule the rest of the build is checked against. [skill-authored]
+- It holds the tag vocabulary, the permission table keyed on source status, and the register. [skill-authored]
+- The register gives each of the 59 sources, in 64 rows, its status. [skill-authored]
+- Records are cited, never findings. [skill-authored]
+- A record id `C###` is verified evidence. [skill-authored]
+- A finding id `F-WSn-NN` is the research report's synthesis and is not a citable unit. [skill-authored]
 
 ## Tag vocabulary
 
@@ -22,8 +28,10 @@ The analysis JSON carries the same grammar: a chain's catalog reference stores t
 
 A tag sits in square brackets at the end of the sentence, bullet or table cell it covers. [skill-authored]
 A statement resting on several records carries several brackets, one per record. [skill-authored]
-A table row's tag sits in its last column, headed `Provenance`; every table in every reference file carries that column, with one exemption named below. [skill-authored]
-Every sentence of prose belongs to exactly one tagged statement; a sentence with no tag is reported by the checker as untagged. [skill-authored]
+A table row's tag sits in its last column, headed `Provenance`. [skill-authored]
+Every table in every reference file carries that column, with one exemption named below. [skill-authored]
+Every sentence of prose belongs to exactly one tagged statement. [skill-authored]
+The checker reports a sentence with no tag as untagged. [skill-authored]
 
 ## Tag-permission rule
 
@@ -31,26 +39,35 @@ Each source has one status, and that status decides which tags a statement citin
 
 | Source status | Permitted tags | Barred tags | Condition on use | Provenance |
 |---|---|---|---|---|
-| reproduce | `sourced:` `paraphrased:` `adapted-from:` `cites:` | none | Anything tagged `sourced:`, `paraphrased:` or `adapted-from:` carries the attribution elements the license requires, held in the citing file's attribution block or in the source's entry in the skill's `licenses/NOTICES.md`, and changed text also indicates the changes. | [skill-authored] |
-| paraphrase-only | `paraphrased:` `adapted-from:` `cites:` | `sourced:` | No passage of the source's prose is reproduced; its names, titles, terms of art and short lists of labels may be carried word for word, with citation. | [skill-authored] |
-| cite-only | `cites:` | `sourced:` `paraphrased:` `adapted-from:` | Name the record for the concept; take no passage of the source's prose and no arrangement of it, beyond the names, titles, terms of art and short lists of labels the rule below allows word for word with the citation. | [skill-authored] |
+| reproduce | `sourced:` `paraphrased:` `adapted-from:` `cites:` | none | Anything tagged `sourced:`, `paraphrased:` or `adapted-from:` carries the attribution elements the license requires. Those elements are held in the citing file's attribution block or in the source's entry in the skill's `licenses/NOTICES.md`. Changed text also indicates the changes. | [skill-authored] |
+| paraphrase-only | `paraphrased:` `adapted-from:` `cites:` | `sourced:` | No passage of the source's prose is reproduced. Its names, titles, terms of art and short lists of labels may be carried word for word, with citation. | [skill-authored] |
+| cite-only | `cites:` | `sourced:` `paraphrased:` `adapted-from:` | Name the record for the concept. Take no passage of the source's prose and no arrangement of it. The exceptions are the names, titles, terms of art and short lists of labels. The rule below allows them word for word with the citation. | [skill-authored] |
 | public domain | `sourced:` `paraphrased:` `adapted-from:` `cites:` | none | Anything reproduced carries the government-work note, which names the document and the basis of its public-domain status. | [skill-authored] |
 | unknown | `cites:` `adapted-from:` | `sourced:` `paraphrased:` | Facts and category labels only, with attribution; the register marks the source unchecked. | [skill-authored] |
 
-Reading a status: in the 26 bibliography rows, the register's License status cell holds the research report's own words, and the Treatment cell holds the operative treatment those words resolve to in v1; the 18 element-kinds rows take their status from the records of their range, as the element-kinds design §6.2 and Appendix A record. [skill-authored]
-Where the two differ, the Treatment cell governs, and the Permitted tags cell is derived from it, not from the License status wording. [skill-authored]
-Each bracket is checked against the status of its own record's source; a statement resting on several records carries one bracket per record, each within what that record's source permits. [skill-authored]
-A statement whose source status is `unknown` names the source in the sentence itself, because attribution is the condition on which the fact is usable at all. [skill-authored]
-A source's names, titles, terms of art and short lists of labels may appear word for word under any status, with the citation the statement already carries, and they do not make a statement `sourced:`. [skill-authored]
-A clause or sentence of a source's prose is wording, and the rule above applies to it in full. [skill-authored]
-Generic industry terms, such as Failure Mode and Effects Analysis, belong to no source and need no citation. [skill-authored]
-The source register may quote a source's copyright or license notice, because there the notice states that source's license. [skill-authored]
+- Reading a status: in the 26 bibliography rows, the register's License status cell holds the research report's own words. [skill-authored]
+- In those rows, the Treatment cell holds the operative treatment those words resolve to in v1. [skill-authored]
+- The 18 element-kinds rows take their status from the records of their range, as the element-kinds design §6.2 and Appendix A record. [skill-authored]
+- Where the two differ, the Treatment cell governs. [skill-authored]
+- The Permitted tags cell is derived from it, not from the License status wording. [skill-authored]
+- Each bracket is checked against the status of its own record's source. [skill-authored]
+- A statement resting on several records carries one bracket per record, each within what that record's source permits. [skill-authored]
+- A statement whose source status is `unknown` names the source in the sentence itself. [skill-authored]
+- That is because attribution is the condition on which the fact is usable at all. [skill-authored]
+- A source's names, titles, terms of art and short lists of labels may appear word for word under any status. [skill-authored]
+- They keep the citation the statement already carries. [skill-authored]
+- They do not make a statement `sourced:`. [skill-authored]
+- A clause or sentence of a source's prose is wording, and the rule above applies to it in full. [skill-authored]
+- Generic industry terms, such as Failure Mode and Effects Analysis, belong to no source and need no citation. [skill-authored]
+- The source register may quote a source's copyright or license notice, because there the notice states that source's license. [skill-authored]
 
 ## Refuted records
 
 Every record carries a verification of confirmed or refuted. [skill-authored]
-A refuted record may be named only as a claim that failed verification, never as a fact about the world; citing one as fact is the defect kind `refuted-cited-as-fact`. [skill-authored]
-The tag on such a statement is still `cites:`, and the sentence says the record was refuted. [skill-authored]
+A refuted record may be named only as a claim that failed verification, never as a fact about the world. [skill-authored]
+Citing one as fact is the defect kind `refuted-cited-as-fact`. [skill-authored]
+The tag on such a statement is still `cites:`. [skill-authored]
+The sentence says the record was refuted. [skill-authored]
 
 ## The source register
 
@@ -88,7 +105,7 @@ The Address column carries the web address the source's records share, so a reco
 | Neufelder, Effective Application of Software FMEA, 2nd ed., Quanterion Solutions (C116–C120) | https://www.quanterion.com/product/publications/effective-application-of-software-failure-modes-effects-analysis/ | proprietary-paraphrase-only. The page states verbatim: "This publication is protected by U.S. Copyright Law and may not be copied, automated, re-sold, or re-distributed in part or in whole, without the express written permission of Ann Marie Neufelder." Hardcopy only, 256 pages, SKU 1-933904-80-1, $125. | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
 | APIS IQ-Software 8.0 release notes, MSR FMEA exchange format (C121–C125) | https://www.apis.de/en/info/service-packs/8-0 | proprietary-paraphrase-only. The page carries a 2026 APIS copyright notice. | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
 | NASA Software Engineering Handbook, SWEHB Ver C, topic 8.05 (C126–C130) | https://swehb.nasa.gov/display/SWEHBVC/8.05+-+SW+Failure+Modes+and+Effects+Analysis | public domain (the NASA page; the IEEE Std 610.12-1990 clause it quotes stays IEEE-owned, as the verifiers record). | Reproduce with the government-work note; the quoted IEEE clause stays paraphrase-only. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
-| MIL-STD-1629A, Procedures for Performing a Failure Mode, Effects and Criticality Analysis, the standard's body, NASA KSC copy (C131–C134) | https://extapps.ksc.nasa.gov/reliability/Documents/milstd1629_FMEA.pdf | public domain. A US Government work, read from the copy hosted by NASA Kennedy Space Center. | Reproduce with the government-work note, as the licence permits; nothing from the range is reproduced in this version, by the user's ruling of 2026-10-07. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
+| MIL-STD-1629A, Procedures for Performing a Failure Mode, Effects and Criticality Analysis, the standard's body, NASA KSC copy (C131–C134) and the nde-ed.org copy (C166–C177) | https://extapps.ksc.nasa.gov/reliability/Documents/milstd1629_FMEA.pdf (NASA KSC) and https://www.nde-ed.org/NDEEngineering/SafeDesign/MIL-STD-1629A-1.pdf (nde-ed.org) | public domain. A US Government work (17 U.S.C. §105), read from the copies hosted by NASA Kennedy Space Center and nde-ed.org; the base edition carries no copyright, licence or distribution statement. | Reproduce with the government-work note, as the licence permits; nothing from the range is reproduced in this version. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
 | NASA Software Engineering Handbook, SWEHB Ver D, topic 8.05 (C135) | https://swehb.nasa.gov/display/SWEHBVD/8.05+-+SW+Failure+Modes+and+Effects+Analysis | public domain. | Reproduce with the government-work note, as the licence permits; nothing from the range is reproduced in this version, by the user's ruling of 2026-10-07. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
 | NASA-GB-8719.13, NASA Software Safety Guidebook, Appendix D, Software FMEA (C136–C138) | https://standards.nasa.gov/sites/default/files/standards/NASA/Baseline/0/nasa-gb-871913.pdf | public domain. A US Government work, hosted at standards.nasa.gov. | Reproduce with the government-work note, as the licence permits; nothing from the range is reproduced in this version, by the user's ruling of 2026-10-07. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
 | Neufelder, Effective Application of Software FMEA, 2nd ed., Quanterion product page (C139) | https://www.quanterion.com/?p=3511 | proprietary-paraphrase-only, the status the row for C116–C120 records for the same book, whose page there states that the publication is protected by U.S. copyright. | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
@@ -106,6 +123,26 @@ The Address column carries the web address the source's records share, so a reco
 | Common Criteria for Information Technology Security Evaluation, Part 1, v3.1 Rev. 5 (C158) | https://www.commoncriteriaportal.org/files/ccfiles/CCPART1V3.1R5.pdf | unknown (not in evidence). | Unchecked. Cite findings and category labels as facts with attribution; reproduce nothing. | `cites:` `adapted-from:` |
 | Chockalingam et al., Integrated Safety and Security Risk Assessment Methods: A Survey, arXiv 1707.02140 (C159) | https://arxiv.org/pdf/1707.02140 | unknown (not in evidence). | Unchecked. Cite findings and category labels as facts with attribution; reproduce nothing. | `cites:` `adapted-from:` |
 | NIST CSRC Glossary, system element (C160) | https://csrc.nist.gov/glossary/term/system_element | public domain (the NIST page; the definition it gives is ISO/IEC/IEEE 15288's, whose status is unknown, not in evidence). | Unchecked for the definition. The NIST page is public domain by its record, but the definition it quotes is ISO/IEC/IEEE 15288's, of unknown status, so nothing from it is paraphrased: cite facts and category labels with attribution, naming ISO/IEC/IEEE 15288; nothing from the range is reproduced in this version, by the user's ruling of 2026-10-07. | `cites:` `adapted-from:` |
+| Conforti, de Leoni, La Rosa & van der Aalst, *Supporting Risk-Informed Decisions during Business Process Execution*, CAiSE 2013 (LNCS 7908) (C161–C162) | https://doi.org/10.1007/978-3-642-38709-8_8 (read through the author manuscript, https://eprints.qut.edu.au/55979/13/55979.pdf) | proprietary-paraphrase-only (Springer LNCS chapter; the QUT author accepted manuscript is under "(c) 2013 Springer-Verlag", personal-use terms). | Paraphrase with citation; short attributed quotations only. | `paraphrased:` `adapted-from:` `cites:` |
+| Deji, *Derivation of FMEA Table from UML Software Model by Epsilon Model Transformation*, MA Sc thesis, Carleton University, 2016 (C163) | https://carleton.scholaris.ca/bitstreams/db66fcf4-2a89-4123-b708-d606f8ae0661/download (DOI 10.22215/etd/2016-11559) | unknown (institutional repository; no open licence located; thesis "© 2016, Paul David Deji"). | Unchecked; facts and category labels with attribution, reproduce nothing. | `cites:` `adapted-from:` |
+| Oveisi & Farsi, *Software Safety Analysis with UML-Based SRBD and Fuzzy VIKOR-Based FMEA*, IJRRS, 2018 (C164) | https://doi.org/10.30699/ijrrs.1.35 | open (CC BY, per Semantic Scholar and Crossref). | Reproduce with the CC BY attribution elements. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
+| Takahashi, Anang & Watanabe, *A Safety Analysis Method for Control Software in Coordination with FMEA and FTA*, Information 12(2):79, 2021 (C165) | https://doi.org/10.3390/info12020079 | open (CC BY 4.0). | Reproduce with the CC BY 4.0 attribution elements. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
+| ECSS (European Cooperation for Space Standardization) — Glossary of terms ECSS-S-ST-00-01C Rev.1 (2023-10-11); ECSS-Q-ST-30-02C (2009-03-06); ECSS-Q-ST-30C Rev.1 (2017-02-15); ECSS-M-ST-10C (2008-07-31); ECSS-E-ST-10-02C (2009-03-06) (C178–C185) | https://ecss.nl/ | proprietary-paraphrase-only (Copyright "2023/2009/2008 © by the European Space Agency for the members of ECSS"; PDFs are freely downloadable from ecss.nl without registration, but the documents are ESA-copyright and carry no open licence). | Paraphrase with citation; short quoted phrases only, no table content. | `paraphrased:` `adapted-from:` `cites:` |
+| ISO 26262-9:2018, ASIL-oriented and safety-oriented analyses (C186) | https://www.iso.org/standard/68391.html | proprietary-paraphrase-only (ISO copyright; only the free catalogue abstract is openly readable, no reuse grant). | Cite-only in v1; the abstract is the standard's own scope text. | `cites:` |
+| ISO 26262 Academy DFA concept guide (C187) | https://iso26262.academy/features/concepts/dependent-failure-analysis | proprietary-paraphrase-only (training site; no open licence located). | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
+| Lorit Consultancy, "Quantifying ISO 26262 Dependent Failures Analysis" (C188) | https://lorit-consultancy.com/en/2020/06/quantifying-iso-26262-dependent-failures-analysis/ | proprietary-paraphrase-only (consultancy blog; no open licence located). | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
+| DVCon proceedings, ISO 26262 DFA presentation (C189) | https://dvcon-proceedings.org/wp-content/uploads/iso-26262-dependent-failure-analysis-using-pss-presentation.pdf | unknown (conference deck; no licence notice on the file). | Unchecked: cite facts and category labels with attribution; reproduce nothing. | `cites:` `adapted-from:` |
+| ESA PSS-01-40 Issue 2, System safety requirements for ESA space systems, 1988 (C190–C191) | https://ecss.nl/wp-content/uploads/2019/04/ESA-PSS-01-40_Issue2(Sep1988).pdf | proprietary-paraphrase-only (page carries "Copyright © 1988 by European Space Agency"; free download, no openness grant). | Paraphrase with citation; short attributed quotation only. | `paraphrased:` `adapted-from:` `cites:` |
+| Sullivan & Artino, Analyzing and Interpreting Data From Likert-Type Scales, J Grad Med Educ 5(4), 2013 (C192) | https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3886444/ | proprietary-paraphrase-only (Accreditation Council for Graduate Medical Education holds the copyright; the article is free to read on PMC but carries no open licence — PMC marks it open-access: no, and no Creative Commons licence is present). | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
+| Briand, Morasca & Basili, Property-Based Software Engineering Measurement, IEEE TSE 22(1), 1996 (C193) | https://drum.lib.umd.edu/bitstreams/fbff8172-a7d0-4c3f-9b72-0fe9ab800364/download | proprietary-paraphrase-only (IEEE-copyright paper, read via an author deposit on the University of Maryland DRUM institutional repository). | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
+| Wikipedia, Level of measurement (C194) | https://en.wikipedia.org/wiki/Level_of_measurement | open (CC BY-SA 4.0). | Cite-only, until a reading of ShareAlike is recorded. | `cites:` |
+| Wikipedia, Cohen's kappa (C195) | https://en.wikipedia.org/wiki/Cohen%27s_kappa | open (CC BY-SA 4.0). | Cite-only, until a reading of ShareAlike is recorded. | `cites:` |
+| NERC CIP-002-5.1a, Cyber Security — BES Cyber System Categorization, Attachment 1 (C196) | https://www.nerc.com/pa/Stand/Reliability%20Standards/CIP-002-5.1a.pdf | proprietary-paraphrase-only (NERC copyright; the standard is a free download from nerc.com but carries no open reuse grant). | Paraphrase with citation. | `paraphrased:` `adapted-from:` `cites:` |
+| NIST SP 800-60 Vol I Rev 1, Guide for Mapping Types of Information and Information Systems to Security Categories (C197) | https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-60v1r1.pdf | public domain. A US Government work (17 U.S.C. §105). | Reproduce with the government-work note. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
+| FIPS PUB 199, Standards for Security Categorization of Federal Information and Information Systems (C198) | https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.199.pdf | public domain. A US Government work (17 U.S.C. §105). | Reproduce with the government-work note. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
+| US Army FM 7-0, Training the Force, 22 October 2002, via a globalsecurity.org mirror (C199) | https://www.globalsecurity.org/military/library/policy/army/fm/7-0/index.html | public domain (the FM 7-0 document is a US Government work, US Army doctrine, 17 U.S.C. §105); the record reads it through a globalsecurity.org mirror, whose own terms are not in evidence. | Reproduce with the government-work note, for FM 7-0's own text; treat any globalsecurity.org-added text as unchecked; nothing from the range is reproduced in this version. | `sourced:` `paraphrased:` `adapted-from:` `cites:` |
+| Wikipedia, Service blueprint (C200) | https://en.wikipedia.org/wiki/Service_blueprint | open (CC BY-SA 4.0). | Cite-only, until a reading of ShareAlike is recorded. | `cites:` |
+| Azure Well-Architected Framework, identify and rate user and system flows RE:02 (C201) | https://learn.microsoft.com/en-us/azure/well-architected/reliability/identify-flows | proprietary-paraphrase-only (Microsoft Learn conceptual documentation; the verifiers record it as Microsoft copyright and recommend paraphrase with citation), the status the rows for C011–C015 and C142–C144 record for the same documentation set. | Paraphrase with citation; the three tier names appear only as the label values of a priority field, and no tier description is carried. | `paraphrased:` `adapted-from:` `cites:` |
 
 ## IEC 60812:2018
 
@@ -121,8 +158,8 @@ A statement citing C051–C055 carries `cites:` and nothing else. [skill-authore
 MIL-STD-1629A is public domain under US government-work rules; the cancellation notice carries no distribution restriction, copyright or licensing statement, so its status rests on those rules rather than on anything the document says. [paraphrased:C045]
 Government-work note, the template attached to anything reproduced from any public-domain source in the register: *Reproduced from <document>, a work of the United States Government; public domain in the United States.* [skill-authored]
 `<document>` is that source's own name — MIL-STD-1629A, NASA-GB-8719.13, or the NASA Software Engineering Handbook (SWEHB Ver C) — so a `sourced:C110` or `sourced:C130` statement in another reference file carries the note with that name in it. [skill-authored]
-Records C131 to C134 are read from the standard's body, so MIL-STD-1629A content is citable through them; nothing is reproduced from it in this version, so no statement carries the note with that document's name. [skill-authored]
-The evidence base holds the cancellation notice, the base document's cover and foreword in verifier evidence, and, since the element-kinds research of 2026-10-07, the standard's body as records C131 to C134: the standard, dated 24 November 1980, was cancelled on 4 August 1998, and the notice names no successor, directing users generically to national and international FMECA documents. [paraphrased:C041] [paraphrased:C042] [paraphrased:C043] [paraphrased:C045] [cites:C131]
+Records C131 to C134 (the NASA KSC copy) and C166 to C177 (the nde-ed.org copy) are read from the standard's body, so MIL-STD-1629A content is citable through them; nothing is reproduced from it in this version, so no statement carries the note with that document's name. [skill-authored]
+The evidence base holds the cancellation notice, the base document's cover and foreword in verifier evidence, and the standard's body — as records C131 to C134 since the element-kinds research of 2026-10-07, and as records C166 to C177, the nde-ed.org copy, since the flow-model research of 2026-10-11: the standard, dated 24 November 1980, was cancelled on 4 August 1998, and the notice names no successor, directing users generically to national and international FMECA documents. [paraphrased:C041] [paraphrased:C042] [paraphrased:C043] [paraphrased:C045] [cites:C131]
 
 ## dora.dev, CC BY 4.0
 
@@ -149,13 +186,26 @@ No Google SRE Book text is reproduced, paraphrased or adapted anywhere in this p
 
 ## Sources with no license status in evidence
 
-Yuan et al. and Gunawi et al. carry no license status in evidence, so both are marked unchecked in the register. [cites:C026] [cites:C058]
-Seven sources of the element-kinds research are marked unchecked in the register for the same reason: the STUK report by Haapanen and Helminen, the sre.google-hosted PDF of The Calculus of Service Availability by Treynor et al., the AWS Well-Architected REL05-BP01 page, the MSDN Magazine article on the STRIDE approach, Osterman's STRIDE-per-Element post, Common Criteria Part 1 and the arXiv survey by Chockalingam et al. [skill-authored]
-Their findings and category labels are usable as facts, with the source named in the sentence; no text of theirs is reproduced. [skill-authored]
-The ISO/IEC/IEEE 15288 definition that the NIST CSRC Glossary quotes for system element is unchecked the same way, although the glossary page itself is public domain. [skill-authored]
-The user's ruling of 2026-10-07 withholds `sourced:` on records C131 to C160 in this version, even where a row's licence permits it, so the register keeps stating the licence and the ruling is enforced as a ruling. [skill-authored]
-arc42 and the OWASP Threat Modeling Cheat Sheet are licensed CC BY-SA 4.0, and by the user's ruling of 2026-10-07 both are cite-only, with no direct quotation on the public side, until a reading of ShareAlike is recorded. [skill-authored]
-If a license is later established for any unchecked source, its register row changes: a `cites:` tag already in use stays valid, because `cites:` is permitted under every status; an `adapted-from:` tag stays valid unless the status resolves to cite-only, in which case the statement is retagged or removed. [skill-authored]
+- Yuan et al. and Gunawi et al. carry no license status in evidence, so both are marked unchecked in the register. [cites:C026] [cites:C058]
+- Seven sources of the element-kinds research are marked unchecked in the register for the same reason. [skill-authored]
+- Two are the STUK report by Haapanen and Helminen, and the sre.google-hosted PDF of The Calculus of Service Availability by Treynor et al. [skill-authored]
+- Three are the AWS Well-Architected REL05-BP01 page, the MSDN Magazine article on the STRIDE approach and Osterman's STRIDE-per-Element post. [skill-authored]
+- The other two are Common Criteria Part 1 and the arXiv survey by Chockalingam et al. [skill-authored]
+- The findings and category labels of these sources are usable as facts, with the source named in the sentence. [skill-authored]
+- No text of these sources is reproduced. [skill-authored]
+- The NIST CSRC Glossary quotes the ISO/IEC/IEEE 15288 definition for system element. [cites:C160]
+- That definition is unchecked the same way, although the glossary page itself is public domain. [skill-authored]
+- The user's ruling of 2026-10-07 withholds `sourced:` on records C131 to C160 in this version, even where a row's licence permits it. [skill-authored]
+- The register therefore keeps stating the licence, and the ruling is enforced as a ruling. [skill-authored]
+- arc42 and the OWASP Threat Modeling Cheat Sheet are licensed CC BY-SA 4.0. [skill-authored]
+- By the user's ruling of 2026-10-07, both are cite-only, with no direct quotation on the public side, until a reading of ShareAlike is recorded. [skill-authored]
+- The register lists three Wikipedia pages as CC BY-SA 4.0: Level of measurement (C194), Cohen's kappa (C195) and Service blueprint (C200). [skill-authored]
+- No record yet carries their licence as fetched. [skill-authored]
+- By the user's ruling of 2026-10-18, all three are cite-only, until a reading of ShareAlike is recorded. [skill-authored]
+- If a license is later established for any unchecked source, its register row changes. [skill-authored]
+- In that case, a `cites:` tag already in use stays valid, because `cites:` is permitted under every status. [skill-authored]
+- In that case, an `adapted-from:` tag stays valid unless the status resolves to cite-only. [skill-authored]
+- On cite-only, the statement is retagged or removed. [skill-authored]
 
 ## Why record ids and not clause numbers
 

@@ -3,8 +3,11 @@
 // Judges the unattended eval runs under the evals directory (by default the 16
 // under build/evals/: 4 prompts × 2 model capabilities × 2 runs, produced by
 // tools/run-eval.sh), checks run-to-run stability per (prompt, model
-// capability), runs one completeness critic, and writes the result to
-// results.json in that directory. Run with the Workflow tool:
+// capability), and runs one completeness critic. The caller persists the
+// returned object (it writes <evalsDir>/results.json as
+// JSON.stringify(result, null, 2) from the Workflow task's output, which carries
+// the returned object under `result`), because a Sonnet agent handed 125 KB of
+// JSON inline wrote 9,498 bytes of it on 2026-10-14. Run with the Workflow tool:
 // {scriptPath: "tools/workflows/evals.js", args: {root: "<repository root>",
 // prompts: [1, 6, 7], capabilities: ["high"], evalsDir: "build/evals/element-kinds"}}.
 // args.root is required because a workflow script has no filesystem access and
@@ -13,7 +16,7 @@
 // [1, 5, 6, 7], default all four), args.capabilities (a non-empty subset of the
 // model table's keys, default ["high", "medium"]) and args.evalsDir (a path
 // relative to args.root, default "build/evals") are optional and choose the
-// roster this run judges and the directory it reads and writes; a value outside
+// roster this run judges and the directory it reads; a value outside
 // those refuses before any agent is called. Returns
 // {models, rubric, runs, stability, critic, unverified}: models is the
 // effective model table, rubric the rubric version the judges scored against.
@@ -26,25 +29,49 @@
 // rather than absorbing it. A judge that covered fewer of its prompt's criteria
 // than it has, or scored one of them twice, is recorded the same way, and so is
 // a stability pair whose eval-stability.ts call failed: neither measured a
-// failure of the skill, so neither may read as one.
+// failure of the skill, so neither may read as one. A run that left no
+// analysis.json or report.html is not scored at all (rubric reading paragraph,
+// amended 2026-10-13) and is recorded unverified with the judge's account of why.
+// On prompt 6, whose inputs name no flows, the stability command carries
+// --flows-not-applicable (ruling 4 of 2026-10-13): the flows predicate is
+// reported not_applicable and verified, and each prompt-6 pair is judged on the
+// element and count predicates.
+//
+// The context gate (prose design §5.3): before any judge is called, one agent
+// per run fetches the run's context.json, written beside invocations.json by
+// tools/eval-context.ts, and returns its text, which this file reads in code. A
+// run with no context.json, with one whose text is not JSON or lacks an integer
+// compactions, peak_context_tokens, assistant_lines or
+// assistant_lines_without_usage or a string window_line, with compactions above
+// 0, with no top-level assistant line (assistant_lines 0), or with a top-level
+// assistant line that lacks its usage figures (assistant_lines_without_usage not
+// 0: the compactions and the peak are inferred from what the stream carries, so
+// a stream that lost its usage would read as uncompacted), or whose final
+// message is not recorded complete (no final_message object, or its complete
+// not true: prose design §8.1, dated 2026-10-15, after a stage-1 run's final
+// message ended mid-word with no error signal) is recorded unverified
+// with no scores and no judge call, the rule 2fea11a set for a run with no
+// report; so is a run whose context agent returned nothing. Each run's entry
+// carries the window line, the compactions and the peak context as `context`,
+// null when context.json was not read.
 //
 // Model capabilities (spec D10, amended 2026-09-10 by the user's ruling, and
 // again 2026-09-12 by the user's ruling at the eval re-run): every agent names
 // a model capability, never a model — judging and the critic at high, the two
-// mechanical stages (running a command, writing a file) at medium — and the
-// model that fills each capability comes from the table below, so the same
-// judging runs on any provider's lineup. results.json carries the effective
-// table as its `models` field, and every run and pair below is keyed on the
-// capability alone.
+// mechanical stages (reading a run's context.json, running a command) at
+// medium — and the model that fills each capability comes from the
+// table below, so the same judging runs on any provider's lineup. results.json
+// carries the effective table as its `models` field, and every run and pair
+// below is keyed on the capability alone.
 
 export const meta = {
   name: 'fmea-evals',
   description: 'Judge the fmea-software eval runs of a roster, check stability, and list what is missing',
   phases: [
+    { title: 'Context', detail: 'one Sonnet agent per run reads context.json; a run with no file, with compactions above 0, with no top-level assistant line, with an assistant line without usage figures, or with a final message not recorded complete is unverified before any judge is called' },
     { title: 'Judge', detail: 'one judge per run directory, scoring by evals/rubric.md' },
     { title: 'Stability', detail: 'one agent per (prompt, model capability) running tools/eval-stability.ts' },
     { title: 'Critic', detail: 'one completeness critic over every score and stability result' },
-    { title: 'Persist', detail: 'one Sonnet agent writes the results object to results.json in the evals directory' },
   ],
 }
 
@@ -57,9 +84,11 @@ const DEFAULT_EVALS_DIR = 'build/evals'
 // the eval re-run). args.models replaces the whole table when given — the same
 // rule tools/run-eval.sh applies to FMEA_EVAL_MODELS, so a launch states every
 // capability it means to fill and no default survives unexamined beside an
-// override. A key that is not a model capability, an empty value, or a table
-// that names no model for a capability this run judges at refuses before any
-// agent is called; the refusal is returned, not logged away.
+// override. A key that is not a model capability, an empty value, a table that
+// names no model for a capability this run judges at, or a table that names no
+// model for the medium capability, which the context and stability agents run
+// at whatever capabilities the run judges, refuses before any agent
+// is called; the refusal is returned, not logged away.
 const DEFAULT_MODELS_BY_CAPABILITY = { high: 'opus', medium: 'sonnet', low: 'haiku' }
 
 // The roster (s13, 2026-10-07): args.prompts and args.capabilities choose which
@@ -112,6 +141,7 @@ if (argsModels !== null) {
     for (const capability of MODEL_CAPABILITIES) {
       if (!(capability in argsModels)) problems.push(`the table names no model for the ${capability} model capability this run judges at`)
     }
+    if (!('medium' in argsModels)) problems.push('the table names no model for the medium model capability the context and stability agents run at')
   }
   if (problems.length > 0) {
     const refused = `args.models refuses the run: ${problems.join('; ')}`
@@ -140,10 +170,10 @@ const RUNS = [1, 2]
 
 // The rubric version this file judges against, written into results.json as
 // `rubric`. A criterion without a `rubric` field belongs to version 1.
-const RUBRIC = 3
+const RUBRIC = 4
 
-// The fifteen rubric criteria (plan reference §I; c13 added by rubric 2, c14 and c15 by rubric 3).
-// c5 does not apply to prompt 6; c13 and c14 apply to prompts 1 and 6 only, c15 to prompt 1 only.
+// The sixteen rubric criteria (plan reference §I; c13 added by rubric 2, c14 and c15 by rubric 3, c16 by rubric 4).
+// c5 does not apply to prompt 6; c13 and c14 apply to prompts 1 and 6 only, c15 and c16 to prompt 1 only.
 // Kept in sync by hand with tools/eval-report.ts CRITERIA; workflow scripts
 // cannot import.
 const CRITERIA = [
@@ -162,6 +192,7 @@ const CRITERIA = [
   { id: 'c13-element-typing', must: false, prompts: [1, 6], rubric: 2 },
   { id: 'c14-edges-and-codebases', must: false, prompts: [1, 6], rubric: 3 },
   { id: 'c15-cross-service-trace', must: false, prompts: [1], rubric: 3 },
+  { id: 'c16-flows', must: false, prompts: [1], rubric: 4 },
 ]
 
 const EXPECTED_FILES = {
@@ -192,6 +223,8 @@ const SCORE_SCHEMA = {
   required: ['scores', 'total', 'max', 'musts_at_2', 'notes'],
 }
 
+const CONTEXT_SCHEMA = { type: 'object', properties: { exists: { type: 'boolean' }, text: { type: 'string' } }, required: ['exists', 'text'] }
+
 const STABILITY_SCHEMA = {
   type: 'object',
   properties: {
@@ -210,18 +243,14 @@ const STABILITY_SCHEMA = {
       properties: { shared: { type: 'integer' }, agreeing: { type: 'integer' }, pass: { type: 'boolean' } },
       required: ['shared', 'agreeing', 'pass'],
     },
+    flows: {
+      type: 'object',
+      properties: { jaccard: { type: 'number' }, pass: { enum: ['pass', 'fail', 'unverified', 'not_applicable'] } },
+      required: ['jaccard', 'pass'],
+    },
+    verified: { type: 'boolean' },
   },
-  required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass', 'typing'],
-}
-
-const PERSIST_SCHEMA = {
-  type: 'object',
-  properties: {
-    written: { type: 'boolean' },
-    bytes: { type: 'integer' },
-    parses: { type: 'boolean' },
-  },
-  required: ['written', 'bytes', 'parses'],
+  required: ['ok', 'jaccard', 'maxRows', 'countDiffs', 'bound', 'pass', 'typing', 'flows', 'verified'],
 }
 
 const CRITIC_SCHEMA = {
@@ -252,8 +281,7 @@ const unverified = []
 // and skips the stage that would have recorded it as unverified, and the null
 // then crashes the summary below, losing every result the run had earned. So
 // every failure mode is funnelled into the same null return that the callers
-// already handle, for the pipeline stages and for the Critic and Persist calls
-// alike.
+// already handle, for the pipeline stages and for the Critic call alike.
 async function tryAgent(prompt, options) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -286,6 +314,59 @@ function summarize(prompt, scores) {
   return { total, max, musts_at_2: mustsAt2, must_count: mustCount, pass: mustsAt2 === mustCount && 5 * total >= 4 * max }
 }
 
+// The context gate (prose design §5.3). A workflow script has no filesystem
+// access, so one agent fetches the run's context.json and returns its text
+// verbatim; the reading is here, in code, and the agent decides nothing.
+function contextPrompt(item) {
+  return `Read ${item.dir}/context.json with the Read tool. If the file does not exist, return exists false and text "". Otherwise return exists true and, as text, the file's whole content exactly as read: byte for byte, no reformatting, no summarising, no truncation. The Read tool shows each line behind a line number and a tab for display; those prefixes are not part of the file, so return the content without them. Return nothing else and change nothing.`
+}
+
+// null when the context agent returned nothing; present false when the run has
+// no context.json, or, with the problem named, when its text is not JSON or a
+// field the gate reads is missing or of the wrong type; otherwise the six
+// fields the gate reads, the first three of which results.json carries, with
+// final_message cut to its complete and its reason.
+function parseContext(reply) {
+  if (!reply) return null
+  if (reply.exists !== true) return { present: false }
+  let file
+  try {
+    file = JSON.parse(reply.text)
+  } catch {
+    return { present: false, problem: 'text is not JSON' }
+  }
+  for (const field of ['compactions', 'peak_context_tokens', 'assistant_lines', 'assistant_lines_without_usage']) {
+    if (!Number.isInteger(file?.[field])) return { present: false, problem: `${field} missing or not an integer` }
+  }
+  if (typeof file.window_line !== 'string') return { present: false, problem: 'window_line missing or not a string' }
+  if (typeof file.final_message !== 'object' || file.final_message === null) return { present: false, problem: 'final_message missing or not an object' }
+  return { present: true, compactions: file.compactions, peak_context_tokens: file.peak_context_tokens, window_line: file.window_line, assistant_lines: file.assistant_lines, assistant_lines_without_usage: file.assistant_lines_without_usage, final_message: { complete: file.final_message.complete, reason: file.final_message.reason } }
+}
+
+// A run is gated, unverified with no judge call, unless its context.json was
+// read and shows no compaction over at least one top-level assistant line, every
+// one of them with its usage figures, and a final message recorded complete
+// (prose design §8.1, dated 2026-10-15: final_message.complete true; a
+// context.json written before that date has no final_message and stays gated
+// until tools/eval-context.ts is run on the run directory again). The predicate
+// is spelled the same in evals.js and rejudge.js, and the sync test in
+// tools/eval-report.test.ts pins both.
+function gated(ctx) {
+  return !ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0 || ctx.final_message.complete !== true
+}
+
+// Why a gated run is unverified, one sentence per way the gate closes.
+function contextDetail(ctx) {
+  if (!ctx) return 'the context agent returned nothing on three attempts; context.json was not read, so the run is unverified and no judge was called'
+  if (ctx.problem) return `the run's context.json could not be read in code (${ctx.problem}); it is unverified and no judge was called`
+  if (ctx.present !== true) return 'the run has no context.json; it is unverified and no judge was called'
+  if (ctx.assistant_lines === 0) return `the run's transcript carries no top-level assistant line; it is unverified (prose design §5.3) and no judge was called`
+  if (ctx.assistant_lines_without_usage !== 0) return `the run has ${ctx.assistant_lines_without_usage} top-level assistant line(s) without usage figures, so its compaction count and peak cannot be trusted; it is unverified (prose design §5.3) and no judge was called`
+  if (ctx.compactions !== 0) return `the run compacted ${ctx.compactions} time(s) under the window ${ctx.window_line}; a compacted run is unverified (prose design §5.3) and no judge was called`
+  if (ctx.final_message.complete === false) return `the run's final message is cut off (${ctx.final_message.reason}); a cut-off run is unverified (prose design §8.1), its cell is re-run once, and no judge was called`
+  return `the run's final message could not be checked (${ctx.final_message.reason}); it is unverified (prose design §8.1) and no judge was called`
+}
+
 function judgePrompt(item) {
   const ids = criteriaFor(item.prompt).map((c) => `${c.id}${c.must ? ' (must)' : ''}`).join(', ')
   const expected = EXPECTED_FILES[item.prompt]
@@ -302,26 +383,31 @@ Read, in full, before scoring:
 - The rubric: ${SKILL}/evals/rubric.md (the scoring guide; every criterion states what earns 0, 1, 2).
 - The prompt and its preamble: ${SKILL}/evals/prompts.json, the entry with id ${item.prompt}.
 - The run's inputs: every file under ${item.dir}/inputs/.
-- The run's outputs: ${item.dir}/analysis.json, ${item.dir}/report.html, ${item.dir}/validate.json (the validator's stdout for analysis.json), the "result" field of ${item.dir}/transcript.json (the run's final message; one small JSON object, read it in full), and ${item.dir}/transcript.jsonl (the run's message stream, one JSON object per line). Do not read transcript.jsonl in full: it is large. Grep it for "priority.ts", "validate.ts" and "render.ts" and read only the matching lines. A match counts as an invocation only when it sits inside a tool_use block: a line of type "assistant" whose content holds {"type":"tool_use","name":"Bash","input":{"command":"..."}} with the script in the command. A match inside a text block, a tool_result, or a file the run was reading is narration or file content, not an invocation. Those tool_use blocks are the only record of which of the skill's scripts the run actually ran, and they are the evidence the rubric requires for c6-priority-by-script and c8-html-renders; transcript.json carries no tool call and is never evidence that a script ran. A criterion whose rubric text asks for a script invocation scores at most 1 when transcript.jsonl holds no matching tool_use block; say so in the evidence rather than inferring the invocation from the artifacts.
+- The run's outputs: ${item.dir}/analysis.json, ${item.dir}/report.html, ${item.dir}/validate.json (the validator's stdout for analysis.json), the "result" field of ${item.dir}/transcript.json (the run's final message; one small JSON object, read it in full), and ${item.dir}/invocations.json, read in full: every Bash tool_use block in the run's message stream ${item.dir}/transcript.jsonl whose command names one of the skill's scripts, extracted by tools/eval-invocations.ts, each with its line in transcript.jsonl, its command, its outcome (ran, error, denied or no_result) and the head of its result. Do not read or grep transcript.jsonl: it runs to megabytes, and almost every line of it that mentions a script is a file read or a thought, not a call. Those tool_use blocks are the only record of which of the skill's scripts the run actually ran, and they are the evidence the rubric requires for c6-priority-by-script and c8-html-renders; transcript.json carries no tool call and is never evidence that a script ran. A call invokes a script when its command runs it (node .../priority.ts ...), not when it only reads it (cat, sed, grep). A call whose outcome is denied was refused by the permission check and never ran, so it is not an invocation; a call whose outcome is error ran and failed, and its result head says how. A criterion whose rubric text asks for a script invocation scores at most 1 when invocations.json lists no call invoking that script; say so in the evidence rather than inferring the invocation from the artifacts. If invocations.json is missing or is not JSON, the run's script calls were never extracted: leave c6-priority-by-script and c8-html-renders out of your scores, score every other criterion, and say in notes that invocations.json was missing, so the run is recorded unverified rather than scored on a guess.
 - The catalog, for c9: ${SKILL}/references/design-failure-catalog.md (each row id and its provenance tag).${expected}${checker}
 
-Score exactly these criteria of rubric version ${RUBRIC}, by id: ${ids}. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json is missing or unparsable, score every criterion that reads it 0 and say so.
+Score exactly these criteria of rubric version ${RUBRIC}, by id: ${ids}, leaving out only the two the invocations.json clause above names when that file is missing, and every criterion when analysis.json or report.html is missing. Give each a score of 0, 1, or 2 per the rubric and one or two sentences of evidence naming the JSON pointer, file, or transcript text you relied on. Where analysis.json or report.html is missing, do not score the run: return an empty scores list, total 0, max 0 and musts_at_2 0, and say in notes which of the two files is missing and what the run's final message gives as the reason, so the run is recorded unverified and never scored 0, as the rubric says. Where analysis.json exists but is not JSON, score every criterion that reads it 0 and say so.
 
 Unattended runs cannot ask questions: the rubric says how c1 and, where it applies, c5 are judged in that setting (open assumptions with owner "user" in meta.assumptions[] plus the question in the final message; ratings written provisional with a re-scoring request in the final message). Expect rating-provisional lint warnings in validate.json; they count against nothing.
 
 Return: scores (one entry per criterion id above, no others), total (sum of scores), max (2 × number of criteria), musts_at_2 (how many must criteria scored 2), notes (anything a reader of the scores should know, or an empty string).`
 }
 
+// Ruling 4 of 2026-10-13: on a prompt whose inputs name no flows the flows
+// predicate is not applicable and the pair is judged on the element and count
+// predicates; the flag is per prompt, whatever the runs carry.
+const FLOWS_NOT_APPLICABLE_PROMPTS = [6]
+
 function stabilityPrompt(pair) {
   const a = `${ROOT}/${EVALS_DIR}/p${pair.prompt}/${pair.model_capability}/run1/analysis.json`
   const b = `${ROOT}/${EVALS_DIR}/p${pair.prompt}/${pair.model_capability}/run2/analysis.json`
   return `Run this command exactly, from ${ROOT}, and return the JSON it prints as your structured result:
 
-cd ${ROOT} && node tools/eval-stability.ts ${a} ${b}
+cd ${ROOT} && node tools/eval-stability.ts ${a} ${b}${FLOWS_NOT_APPLICABLE_PROMPTS.includes(pair.prompt) ? ' --flows-not-applicable' : ''}
 
 The command needs Node 24.2 or later on PATH. On a machine where Node is installed only through nvm, run \`source ~/.nvm/nvm.sh\` first, in the same shell call as the command, because PATH does not carry over from one call to the next.
 
-It prints {jaccard, maxRows, countDiffs, bound, pass, typing}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. Return those six fields verbatim, with countDiffs as an object with exactly the keys H, M and L and typing as an object with exactly the keys shared, agreeing and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one.`
+It prints {jaccard, maxRows, countDiffs, bound, pass, typing, flows, verified}; countDiffs has one integer per priority value, H, M and L, and typing is {shared, agreeing, pass}: how many element ids both runs carry, how many of those agree on kind and boundary, and whether they all do. flows is {jaccard, pass}: the Jaccard of the two runs' flow id sets and its verdict, pass, fail or unverified, where two runs that both carry no flows is unverified and one side carrying none is a fail; on prompt 6 the command carries --flows-not-applicable and flows.pass is not_applicable, which is verified and does not fail the pair; verified is false exactly when flows is unverified. Return those eight fields verbatim, with countDiffs as an object with exactly the keys H, M and L, typing as an object with exactly the keys shared, agreeing and pass, and flows as an object with exactly the keys jaccard and pass, plus ok: true. If the command fails or prints no such JSON (a missing analysis.json exits 3), return {ok: false, jaccard: 0, maxRows: 0, countDiffs: {H: 0, M: 0, L: 0}, bound: 0, pass: false, typing: {shared: 0, agreeing: 0, pass: false}, flows: {jaccard: 0, pass: 'unverified'}, verified: false} and nothing else. The ok field records whether the comparison happened at all: a comparison that never ran is not an unstable pair, and must not be reported as one. A flows comparison that never ran is unverified, not a failure.`
 }
 
 function criticPrompt(runs, stabilityResults, unverifiedUnits) {
@@ -355,13 +441,27 @@ for (const prompt of PROMPTS) {
 phase('Judge')
 const runs = await pipeline(
   runItems,
-  (_prev, item) => tryAgent(judgePrompt(item), { label: `judge p${item.prompt} ${item.model_capability} run${item.run}`, phase: 'Judge', model: MODELS_BY_CAPABILITY.high, schema: SCORE_SCHEMA }),
-  (judged, item) => {
+  (_prev, item) => tryAgent(contextPrompt(item), { label: `context p${item.prompt} ${item.model_capability} run${item.run}`, phase: 'Context', model: MODELS_BY_CAPABILITY.medium, schema: CONTEXT_SCHEMA }),
+  (reply, item) => {
+    const ctx = parseContext(reply)
+    return gated(ctx)
+      ? { ctx, judged: null }
+      : tryAgent(judgePrompt(item), { label: `judge p${item.prompt} ${item.model_capability} run${item.run}`, phase: 'Judge', model: MODELS_BY_CAPABILITY.high, schema: SCORE_SCHEMA }).then((judged) => ({ ctx, judged }))
+  },
+  ({ ctx, judged }, item) => {
     const key = `p${item.prompt} ${item.model_capability} run${item.run}`
+    const context = ctx && ctx.present ? { window: ctx.window_line, compactions: ctx.compactions, peak_context_tokens: ctx.peak_context_tokens } : null
+    // A gated run was never judged: no scores, unverified, never a 0 (§5.3).
+    if (gated(ctx)) {
+      const detail = contextDetail(ctx)
+      unverified.push({ unit: `context ${key}`, detail })
+      log(`${key}: ${detail}`)
+      return { ...item, context, scores: [], total: 0, max: 2 * criteriaFor(item.prompt).length, musts_at_2: 0, notes: detail, pass: false, unverified: true }
+    }
     if (!judged) {
       unverified.push({ unit: `judge ${key}`, detail: 'the judge agent returned nothing on three attempts; this run is unjudged, not a failed run and not a pass' })
       log(`judge for ${key} returned nothing on three attempts; recorded as unverified`)
-      return { ...item, scores: [], total: 0, max: 2 * criteriaFor(item.prompt).length, musts_at_2: 0, notes: 'judge returned no result on three attempts', pass: false, unverified: true }
+      return { ...item, context, scores: [], total: 0, max: 2 * criteriaFor(item.prompt).length, musts_at_2: 0, notes: 'judge returned no result on three attempts', pass: false, unverified: true }
     }
     const known = new Set(criteriaFor(item.prompt).map((c) => c.id))
     const scores = judged.scores.filter((s) => known.has(s.id))
@@ -370,6 +470,17 @@ const runs = await pipeline(
     // entries passed that as a complete judgment with a criterion still unjudged.
     const scored = new Set(scores.map((x) => x.id))
     const duplicated = [...new Set(scores.map((x) => x.id).filter((id, i, all) => all.indexOf(id) !== i))]
+    // A judge scores nothing when the run left no analysis.json or report.html (the
+    // rubric's reading paragraph, amended 2026-10-13): every criterion reads one of
+    // the two, so a row of zeros would measure only the absence. The run is recorded
+    // unverified with the judge's own account of which file is missing and why,
+    // never scored 0.
+    if (scored.size === 0) {
+      const detail = `the judge scored none of the prompt's ${known.size} criteria, as it does when the run left no analysis.json or report.html; its notes: ${judged.notes || '(none)'}; this run is recorded unverified, never scored 0`
+      unverified.push({ unit: `judge ${key}`, detail })
+      log(`${key}: ${detail}`)
+      return { ...item, context, scores: [], total: 0, max: 2 * known.size, musts_at_2: 0, notes: judged.notes, pass: false, unverified: true }
+    }
     const s = summarize(item.prompt, scores)
     // A judge that scored fewer of the prompt's criteria than it has did not judge
     // this run against the whole rubric. The criteria it left out score 0 in
@@ -388,7 +499,7 @@ const runs = await pipeline(
       const detail = `the judge returned ${judged.scores.length} scores covering ${scored.size} of the prompt's ${known.size} criteria: ${what.join(' and ')}; the rubric was not covered exactly once, so this run is neither a failed run nor a pass`
       unverified.push({ unit: `judge ${key}`, detail })
       log(`${key}: ${detail}; recorded as unverified`)
-      return { ...item, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: false, unverified: true }
+      return { ...item, context, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: false, unverified: true }
     }
     // Every applicable criterion was scored, so the run was judged against the
     // whole rubric even where the judge added its own scores up wrong. This file
@@ -397,7 +508,7 @@ const runs = await pipeline(
     if (s.total !== judged.total || s.musts_at_2 !== judged.musts_at_2) {
       log(`${key}: the judge reported total ${judged.total}, musts ${judged.musts_at_2} against the recomputed total ${s.total}, musts ${s.musts_at_2}; the recomputation stands`)
     }
-    return { ...item, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: s.pass, unverified: false }
+    return { ...item, context, scores, total: s.total, max: s.max, musts_at_2: s.musts_at_2, notes: judged.notes, pass: s.pass, unverified: false }
   },
 )
 
@@ -422,7 +533,11 @@ const stability = await pipeline(
       log(`stability for p${pair.prompt} ${pair.model_capability}: the eval-stability.ts call failed; recorded as unverified, not as an unstable pair`)
       return { ...pair, jaccard: 0, maxRows: 0, countDiffs: { H: 0, M: 0, L: 0 }, bound: 0, pass: false, typing: { shared: 0, agreeing: 0, pass: false }, unverified: true }
     }
-    return { ...pair, ...measured, unverified: false }
+    // The tool's verified flag is false only when a predicate could not run (the
+    // flows comparison, where both runs carried no flows). That is a hole in the
+    // evidence: the entry is marked unverified and is never counted as a measured
+    // failure by the note's unver computation.
+    return { ...pair, ...measured, unverified: measured.verified !== true }
   },
 )
 
@@ -452,35 +567,5 @@ const results = { models: MODELS_BY_CAPABILITY, rubric: RUBRIC, runs, stability,
 const failing = runs.filter((r) => !r.pass && !r.unverified).map((r) => `p${r.prompt} ${r.model_capability} run${r.run}`)
 const unstable = stability.filter((s) => !s.pass && !s.unverified).map((s) => `p${s.prompt} ${s.model_capability}`)
 log(`runs failing the per-run rule: ${failing.length ? failing.join(', ') : 'none'}; unstable pairs: ${unstable.length ? unstable.join(', ') : 'none'}; blocking candidates: ${critic.blocking_candidates.length}; unverified units: ${unverified.length ? unverified.map((u) => u.unit).join(', ') : 'none'}`)
-
-// The results object is several KB of JSON. Rather than have the executor
-// retype it, one Sonnet agent writes it to disk; the task's next step checks
-// the file and falls back to writing it by hand if this agent failed.
-phase('Persist')
-const resultsJson = JSON.stringify(results, null, 2)
-const persisted = await tryAgent(
-  `Write a file. Everything between the two marker lines below, excluding the marker lines themselves, is the exact content of ${ROOT}/${EVALS_DIR}/results.json.
-
-Create ${ROOT}/${EVALS_DIR}/ if it does not exist, then write that text to ${ROOT}/${EVALS_DIR}/results.json unchanged: byte for byte, no reformatting, no re-indenting, no summarising, no truncation, no added commentary. Then read the file back, count its bytes, and check that JSON.parse succeeds on it.
-
-Return: written (true only if the file now holds the whole text), bytes (the file's size in bytes as you read it back), parses (whether JSON.parse succeeded).
-
------ BEGIN results.json -----
-${resultsJson}
------ END results.json -----`,
-  { label: 'persist results.json', phase: 'Persist', schema: PERSIST_SCHEMA, model: MODELS_BY_CAPABILITY.medium },
-)
-log(`${EVALS_DIR}/results.json: written=${persisted ? persisted.written : false} bytes=${persisted ? persisted.bytes : 0} parses=${persisted ? persisted.parses : false} (expected ${resultsJson.length} characters)`)
-
-// A Persist agent that never returned, or that did not confirm a whole file, is
-// not a written deliverable (plan reference §C: a unit that did not run is never
-// a pass). `results.unverified` is this same array, so the entry reaches the
-// returned object, which is what the task reports and Task 33 harvests; the
-// on-disk copy was serialised before this outcome was known and cannot carry the
-// entry, which is exactly why the next step re-checks the file itself.
-if (!persisted || persisted.written !== true) {
-  unverified.push({ unit: 'persist results.json', detail: `the persist agent returned nothing on three attempts; ${EVALS_DIR}/results.json is missing or half written` })
-  log('the persist agent did not confirm a written results.json; recorded as unverified')
-}
 
 return results

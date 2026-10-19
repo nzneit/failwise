@@ -24,13 +24,14 @@ import {
   type SessionCheck,
   type SessionClause,
 } from "./eval-report.ts";
+import type { EvalContext } from "./eval-context.ts";
 
 function allTwo(prompt: number, except: Record<string, number> = {}, rubric = 1): RunScore[] {
   return criteriaFor(prompt, rubric).map((c) => ({ id: c.id, score: except[c.id] ?? 2, evidence: "ok" }));
 }
 
-test("fifteen criteria; under rubric 1 prompts 1, 5 and 6 have 10 applicable with 8 musts, prompt 7 has 11 with 9", () => {
-  assert.equal(CRITERIA.length, 15);
+test("sixteen criteria; under rubric 1 prompts 1, 5 and 6 have 10 applicable with 8 musts, prompt 7 has 11 with 9", () => {
+  assert.equal(CRITERIA.length, 16);
   for (const p of [1, 5, 6]) {
     assert.equal(criteriaFor(p).length, 10);
     assert.equal(criteriaFor(p).filter((c) => c.must).length, 8);
@@ -284,6 +285,335 @@ test("the stability table gains a Typing column only when an entry carries typin
   assert.match(renderReport(missing), /\| 1 \| medium \| — \| — \| — \| — \| — \| FAIL \(no result\) \|/);
 });
 
+test("the stability table gains a Flows column only when an entry carries flows, and reads the tri-state", () => {
+  const r = sampleResults();
+  assert.match(renderReport(r), /\| Prompt \| Model capability \| Jaccard \| Max rows \| Bound \| Count diffs \| Pass \|/);
+  r.stability[0] = { ...r.stability[0], flows: { jaccard: 1, pass: "pass" }, verified: true };
+  r.stability[1] = { ...r.stability[1], flows: { jaccard: 1, pass: "unverified" }, verified: false };
+  const md = renderReport(r);
+  assert.match(md, /\| Prompt \| Model capability \| Jaccard \| Max rows \| Bound \| Count diffs \| Flows \| Pass \|/);
+  assert.match(md, /1\.000 pass/);
+  assert.match(md, /unverified/);
+  r.stability[1] = { ...r.stability[1], flows: { jaccard: 1, pass: "not_applicable" }, verified: true, pass: true, unverified: false };
+  const applicable = renderReport(r);
+  assert.match(applicable, /\| 1 \| medium \| 0\.600 \| 7 \| 1\.400 \| H: 2, M: 0, L: 2 \| 1\.000 not_applicable \| pass \|/);
+  const run = reportOn(JSON.stringify(r), "eval-report-not-applicable-");
+  assert.equal(run.status, 0, run.stderr);
+});
+
+test("a stability flows that is not {jaccard, pass} is one coded IO_READ line", () => {
+  const r = sampleResults();
+  r.stability[1] = { ...r.stability[1], flows: { jaccard: "1", pass: "maybe" } } as unknown as (typeof r.stability)[number];
+  const run = reportOn(JSON.stringify(r), "eval-report-flows-");
+  assert.match(run.stderr, /^error IO_READ: .*has a stability flows that is not \{jaccard, pass\} at stability\[1\]/);
+});
+
+/** A context.json as tools/eval-context.ts writes it, for an isolated run that never compacted; `overrides` replaces whole fields. */
+function contextFile(overrides: Partial<EvalContext> = {}): EvalContext {
+  return {
+    config_dir: "/tmp/cfg",
+    cli_version: "2.1.296",
+    settings: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432", CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1000000" },
+    window_line: "Auto-compact window for deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)",
+    compactions: 0,
+    peak_context_tokens: 238429,
+    assistant_lines: 115,
+    assistant_lines_without_usage: 0,
+    init: {
+      present: true,
+      plugins: [{ name: "failwise", source: "failwise@inline" }, { name: "cc-plugin-telemetry", source: "cc-plugin-telemetry@builtin" }],
+      skills_namespaced: ["failwise:fmea-software"],
+      skills_unnamespaced: ["deep-research"],
+      memory_auto: "/tmp/cfg/projects/x/memory/",
+      memory_under_config_dir: true,
+    },
+    leak_grep: { "CLAUDE.md": 0, "~/.claude": 0 },
+    invocations: "present",
+    denied: { bun: 0, other: 1 },
+    lints: [
+      { id: "edge-reliability-unstated", fired: 2, final: true },
+      { id: "conversion-substitution-unrecorded", fired: 0, final: false },
+    ],
+    final_message: { complete: true, reason: null, length: 4579 },
+    message_counts: {
+      checked: true,
+      reason: null,
+      document: { H: { before: 9, after: 0 }, M: { before: 5, after: 0 } },
+      stated: [{ count: 9, value: "H", matches: true }, { count: 5, value: "M", matches: true }],
+    },
+    ...overrides,
+  };
+}
+
+test("a run that carries context prints the Harness table with its window, compactions and peak, reads the CLI version, the lines without usage, the final message, the counts it states, denials and lint counts from its context.json, and marks the gaps and the CLI versions when they differ", () => {
+  const r = sampleResults();
+  // Four absolute temp run directories: A holds a full context.json; B one that
+  // compacted twice (the copy below says once) under another window line than
+  // its copy's, with no init line, so no CLI version, no invocations.json and no
+  // validate.json, and written before the count of lines without usage, the
+  // final message's completeness and its counts; C none,
+  // while its copied context is non-null; D a full one like A, while its run
+  // entry has no context key.
+  const root = mkdtempSync(join(tmpdir(), "eval-report-harness-"));
+  const [A, B, C, D] = ["a", "b", "c", "d"].map((name) => join(root, name));
+  for (const dir of [A, B, C, D]) mkdirSync(dir);
+  writeFileSync(join(A, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.299" }), null, 2));
+  writeFileSync(join(B, "context.json"), JSON.stringify(contextFile({
+    cli_version: null,
+    assistant_lines_without_usage: undefined,
+    final_message: undefined,
+    message_counts: undefined,
+    compactions: 2,
+    peak_context_tokens: 170039,
+    init: { present: false, plugins: [], skills_namespaced: [], skills_unnamespaced: [], memory_auto: null, memory_under_config_dir: false },
+    invocations: "missing",
+    denied: { bun: 0, other: 0 },
+    lints: [{ id: "edge-reliability-unstated", fired: null, final: null }, { id: "conversion-substitution-unrecorded", fired: null, final: null }],
+  }), null, 2));
+  writeFileSync(join(D, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.299" }), null, 2));
+  try {
+    r.runs[0] = { ...r.runs[0], dir: A, context: { window: "Auto-compact window for deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", compactions: 0, peak_context_tokens: 238429 } };
+    r.runs[1] = { ...r.runs[1], dir: B, context: { window: "x: 200k tokens", compactions: 1, peak_context_tokens: 170039 } };
+    r.runs[2] = { ...r.runs[2], dir: C, context: { window: "x: 200k tokens", compactions: 0, peak_context_tokens: 1 } };
+    r.runs[3] = { ...r.runs[3], dir: D };
+    const md = renderReport(r);
+    assert.match(md, /^## Harness$/m);
+    assert.match(md, /\| Prompt \| Model capability \| Run \| CLI \| Window \| Compactions \| Peak context \| Lines without usage \| Final message \| Counts \| Isolated \| Unnamespaced skills \| Denied \(bun \/ other\) \| edge-reliability-unstated fired \/ final \| conversion-substitution-unrecorded fired \/ final \|\n\|(---\|){15}\n/);
+    assert.match(md, /\| 1 \| high \| 1 \| 2\.1\.299 \| 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\) \| 0 \| 238,429 \| 0 \| complete \| match \(2\) \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);
+    assert.match(md, /\| 1 \| high \| 2 \| — \| 200k tokens \| 1 \| 170,039 \| — \| — \| — \| no \(no init line\) \| 0 \| missing \| — \/ — \| — \/ — \|/);
+    assert.match(md, /^- p1 high run 2: results\.json context disagrees with context\.json \(window: x: 200k tokens vs Auto-compact window for deepseek-flash: 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\); compactions: 1 vs 2\)$/m);
+    assert.match(md, /\| 1 \| medium \| 1 \| — \| 200k tokens \| 0 \| 1 \| — \| — \| — \| — \| — \| — \| — \| — \|/);
+    assert.match(md, /^- p1 medium run 1: context\.json unreadable at [^/].*$/m);   // a repository-relative path, never /home
+    assert.match(md, /^- p1 medium run 1: results\.json context disagrees with context\.json \(file missing\)$/m);
+    assert.match(md, /\| 1 \| medium \| 2 \| 2\.1\.299 \| UNVERIFIED \| UNVERIFIED \| UNVERIFIED \| 0 \| complete \| match \(2\) \| yes \| 1 \| 0 \/ 1 \| 2 \/ yes \| 0 \/ no \|/);   // no context key while another run has one; the file still read
+    assert.ok(!md.includes("p1 medium run 2: results.json context disagrees"), "a run with no context key is never a disagreement");
+    assert.ok(!md.includes("CLI versions differ"), "the readable files carry one CLI version");
+
+    // A round whose readable files carry two CLI versions says so under the table.
+    writeFileSync(join(D, "context.json"), JSON.stringify(contextFile({ cli_version: "2.1.300" }), null, 2));
+    assert.match(renderReport(r), /^- CLI versions differ across the round: 2\.1\.299 on p1 high run 1; 2\.1\.300 on p1 medium run 2$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the Harness table's Final message column reads complete, cut with the reason or with none recorded, or a dash for a context.json written before the field and for one that could not check the message", () => {
+  const r = sampleResults();
+  const root = mkdtempSync(join(tmpdir(), "eval-report-final-"));
+  // In table order: complete, cut, written before the field, not checked; then cut with no reason, in the first run's place.
+  const finals: (EvalContext["final_message"] | undefined)[] = [
+    { complete: true, reason: null, length: 4579 },
+    { complete: false, reason: 'ends with "h"', length: 2433 },
+    undefined,
+    { complete: null, reason: "transcript.json missing", length: null },
+  ];
+  try {
+    r.runs = r.runs.map((run, i) => {
+      const dir = join(root, `run${i}`);
+      mkdirSync(dir);
+      writeFileSync(join(dir, "context.json"), JSON.stringify(contextFile({ final_message: finals[i] }), null, 2));
+      return { ...run, dir, context: { window: "x: 786.4k tokens", compactions: 0, peak_context_tokens: 238429 } };
+    });
+    const md = renderReport(r);
+    const row = (capability: string, run: number, final: string) => `| 1 | ${capability} | ${run} | 2.1.296 | 786.4k tokens | 0 | 238,429 | 0 | ${final} | match (2) | yes | 1 | 0 / 1 | 2 / yes | 0 / no |`;
+    for (const want of [row("high", 1, "complete"), row("high", 2, 'cut (ends with "h")'), row("medium", 1, "—"), row("medium", 2, "—")]) {
+      assert.ok(md.includes(`\n${want}\n`), `no row ${want} in\n${md}`);
+    }
+    writeFileSync(join(root, "run0", "context.json"), JSON.stringify(contextFile({ final_message: { complete: false, reason: null, length: 12 } }), null, 2));
+    const unreasoned = row("high", 1, "cut (no reason recorded)");
+    assert.ok(renderReport(r).includes(`\n${unreasoned}\n`), `no row ${unreasoned}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the Harness table's Counts column reads match with the number of pairs stated, each pair that does not match with the document's counts, none stated, a dash for a context.json written before the field, and a dash with the reason when the counts could not be checked", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-counts-"));
+  try {
+    const r = withHarness(root);
+    const before = { H: { before: 9, after: 0 }, M: { before: 5, after: 0 } };
+    const after = { H: { before: 9, after: 0 }, M: { before: 5, after: 2 } };
+    const stated = (...pairs: [number, string, boolean][]) => pairs.map(([count, value, matches]) => ({ count, value, matches }));
+    const cases: [EvalContext["message_counts"] | undefined, string][] = [
+      [{ checked: true, reason: null, document: after, stated: stated([9, "H", true], [2, "M", true]) }, "match (2)"],
+      [{ checked: true, reason: null, document: before, stated: stated([8, "H", false], [6, "M", false]) }, "mismatch: 8 H (document 9), 6 M (document 5)"],
+      [{ checked: true, reason: null, document: after, stated: stated([8, "H", false], [5, "M", true], [6, "M", false]) }, "mismatch: 8 H (document 9), 6 M (document 5, after 2)"],
+      [{ checked: false, reason: "no count stated", document: before, stated: [] }, "none stated"],
+      [undefined, "—"],
+      // A record that says it was checked but holds no pair is not read as a match of nothing.
+      [{ checked: true, reason: null, document: before, stated: [] }, "—"],
+      [{ checked: false, reason: "analysis.json missing", document: {}, stated: [] }, "— (analysis.json missing)"],
+      [{ checked: false, reason: "transcript.json missing", document: before, stated: [] }, "— (transcript.json missing)"],
+    ];
+    for (const [counts, want] of cases) {
+      writeFileSync(join(root, "run0", "context.json"), JSON.stringify(contextFile({ message_counts: counts }), null, 2));
+      const row = `| 1 | high | 1 | 2.1.296 | 786.4k tokens | 0 | 238,429 | 0 | complete | ${want} | yes | 1 | 0 / 1 | 2 / yes | 0 / no |`;
+      assert.ok(renderReport(r).includes(`\n${row}\n`), `no row ${row}`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a results file whose runs carry no context field renders exactly as before, with no Harness section, and the run model unknown when no run directory holds a models.json", () => {
+  const { r, root } = inRunDirs([null, null, null, null]);
+  try {
+    const md = renderReport(r);
+    assert.ok(!md.includes("## Harness"));
+    assert.match(md, /^Run model: unknown \(no models\.json readable\)\. Judging tiers \(results\.json models\): high=opus, medium=sonnet\. Fable agents: 0\.$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A round.json as tools/run-round.ts writes it, for a round of 21m 04s; `overrides` replaces whole fields. */
+function roundFile(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    method: "parallel", concurrency: 4, canary: "p1:high:1",
+    started: "2026-10-16T08:00:00.000Z", ended: "2026-10-16T08:21:04.000Z", cli_version: "2.1.300",
+    cells: [{ cell: "p1:high:1", started: "2026-10-16T08:00:00.000Z", ended: "2026-10-16T08:09:00.000Z", exit: 0, summary: "p1 high run1: model=deepseek-flash" }],
+    ...overrides,
+  }, null, 2);
+}
+
+/** sampleResults with each run carrying context and a full context.json in its own folder under root, which the caller removes. */
+function withHarness(root: string): EvalResults {
+  const r = sampleResults();
+  r.runs = r.runs.map((run, i) => {
+    const dir = join(root, `run${i}`);
+    mkdirSync(dir);
+    writeFileSync(join(dir, "context.json"), JSON.stringify(contextFile(), null, 2));
+    return { ...run, dir, context: { window: "x: 786.4k tokens", compactions: 0, peak_context_tokens: 238429 } };
+  });
+  return r;
+}
+
+test("a round.json gives one Round method line directly under the Harness table, with the concurrency, the canary and the elapsed time; a round without one gives none", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-round-"));
+  try {
+    const r = withHarness(root);
+    const file = join(root, "round.json");
+    const options = { ...V1_OPTIONS, roundFile: file };
+    assert.ok(!renderReport(r, options).includes("Round method"), "a round with no round.json printed a Round method line");
+    assert.ok(!renderReport(r).includes("Round method"));
+    writeFileSync(file, roundFile());
+    assert.match(renderReport(r, options), /\| 0 \/ no \|\n\nRound method: parallel, concurrency 4, canary p1 high run1, 21m 04s\n\n/);
+    writeFileSync(file, roundFile({ concurrency: 6, canary: null, ended: "2026-10-16T09:02:05.000Z" }));
+    assert.match(renderReport(r, options), /^Round method: parallel, concurrency 6, no canary, 1h 02m 05s$/m);
+    for (const text of ["{", JSON.stringify({ method: "parallel" }), roundFile({ ended: "yesterday" })]) {
+      writeFileSync(file, text);
+      assert.match(renderReport(r, options), /^Round method: round\.json unreadable at [^/][^\n]*round\.json$/m, text);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a round.json's env_stripped ends the Round method line with how many CLAUDE* variables the launcher stripped; a round.json written before the field reads without it", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-round-env-"));
+  try {
+    const r = withHarness(root);
+    const file = join(root, "round.json");
+    const options = { ...V1_OPTIONS, roundFile: file };
+    const cases: [unknown, string][] = [
+      [["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_EFFORT"], ", 3 CLAUDE* variables stripped"],
+      [["CLAUDE_EFFORT"], ", 1 CLAUDE* variable stripped"],
+      [[], ", 0 CLAUDE* variables stripped"],
+    ];
+    for (const [stripped, clause] of cases) {
+      writeFileSync(file, roundFile({ env_stripped: stripped }));
+      assert.match(renderReport(r, options), new RegExp(`^Round method: parallel, concurrency 4, canary p1 high run1, 21m 04s${clause.replace("*", "\\*")}$`, "m"), clause);
+    }
+    writeFileSync(file, roundFile());
+    assert.match(renderReport(r, options), /^Round method: parallel, concurrency 4, canary p1 high run1, 21m 04s$/m);
+    for (const stripped of ["CLAUDECODE", [1], null]) {
+      writeFileSync(file, roundFile({ env_stripped: stripped }));
+      assert.match(renderReport(r, options), /^Round method: round\.json unreadable at /m, JSON.stringify(stripped));
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the CLI reads round.json from the folder of the results file", () => {
+  const root = mkdtempSync(join(tmpdir(), "eval-report-round-cli-"));
+  try {
+    writeFileSync(join(root, "results.json"), JSON.stringify(withHarness(root)));
+    writeFileSync(join(root, "round.json"), roundFile());
+    const run = spawnSync(process.execPath, [join(import.meta.dirname, "eval-report.ts"), "--results", join(root, "results.json"), "--out", join(root, "out.md")], { encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(readFileSync(join(root, "out.md"), "utf8"), /^Round method: parallel, concurrency 4, canary p1 high run1, 21m 04s$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A models.json as tools/run-eval.sh writes it. */
+function modelsFile(high: string, medium: string): string {
+  return `{\n  "basis": "FMEA_EVAL_MODELS",\n  "models": { "high": "${high}", "medium": "${medium}", "low": "" },\n  "effort": "high"\n}\n`;
+}
+
+/** sampleResults with each run in its own temp directory, holding the given models.json text or none for null; the caller removes root. */
+function inRunDirs(files: (string | null)[]): { r: EvalResults; root: string } {
+  const r = sampleResults();
+  const root = mkdtempSync(join(tmpdir(), "eval-report-models-"));
+  r.runs = r.runs.map((run, i) => {
+    const dir = join(root, `run${i}`);
+    mkdirSync(dir);
+    const text = files[i];
+    if (typeof text === "string") writeFileSync(join(dir, "models.json"), text);
+    return { ...run, dir };
+  });
+  return { r, root };
+}
+
+test("the paragraph under the header names each capability's run model from the runs' models.json with the basis and the effort, then the judging tiers from results.json and no Fable agent", () => {
+  const { r, root } = inRunDirs(Array<string>(4).fill(modelsFile("deepseek-flash", "deepseek-flash")));
+  try {
+    assert.match(renderReport(r), /the stability check passes\.\n\nRun model: high=deepseek-flash, medium=deepseek-flash, basis=FMEA_EVAL_MODELS, effort=high\. Judging tiers \(results\.json models\): high=opus, medium=sonnet\. Fable agents: 0\.\n\n/);
+    r.models = { high: "opus" };
+    assert.match(renderReport(r), /^Run model: [^\n]*\. Judging tiers \(results\.json models\): high=opus, medium=—\. Fable agents: 0\.$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("runs that disagree on a capability's model print each model with its runs, and a run reads only its own capability's model", () => {
+  // p1 high run 2 ran on opus; the medium runs' files name opus for high too,
+  // which says nothing about the high runs.
+  const { r, root } = inRunDirs([modelsFile("deepseek-flash", "deepseek-flash"), modelsFile("opus", "deepseek-flash"), modelsFile("opus", "deepseek-flash"), modelsFile("opus", "deepseek-flash")]);
+  try {
+    assert.match(renderReport(r), /^Run model: high differs across runs \(deepseek-flash on p1 high run 1; opus on p1 high run 2\), medium=deepseek-flash, basis=FMEA_EVAL_MODELS, effort=high\. /m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable models.json reads as a dash for its run, and with none readable the run model is unknown", () => {
+  const { r, root } = inRunDirs([modelsFile("deepseek-flash", "deepseek-flash"), "not json", modelsFile("deepseek-flash", "deepseek-flash"), '{"models": "deepseek-flash"}']);
+  try {
+    assert.match(renderReport(r), /^Run model: high differs across runs \(deepseek-flash on p1 high run 1; — on p1 high run 2\), medium differs across runs \(deepseek-flash on p1 medium run 1; — on p1 medium run 2\), basis=FMEA_EVAL_MODELS, effort=high\. /m);
+    for (const run of r.runs) writeFileSync(join(run.dir, "models.json"), "not json");
+    assert.match(renderReport(r), /^Run model: unknown \(no models\.json readable\)\. Judging tiers \(results\.json models\): high=opus, medium=sonnet\. Fable agents: 0\.$/m);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a run context that is not {window, compactions, peak_context_tokens} or null is one coded IO_READ line naming the run", () => {
+  const r = JSON.parse(JSON.stringify(sampleResults()));
+  r.runs[0].context = { window: 1 };
+  const out = reportOn(JSON.stringify(r), "eval-report-context-");
+  assert.equal(out.status, 3, out.stderr);
+  assert.equal(out.stderr.trimEnd().split("\n").length, 1, out.stderr);
+  assert.match(out.stderr, /^error IO_READ: .*has a run context that is not \{window, compactions, peak_context_tokens\} at runs\[0\]/);
+  for (const context of [null, { window: "x: 200k tokens", compactions: 0, peak_context_tokens: 1 }]) {
+    r.runs[0].context = context;
+    const accepted = reportOn(JSON.stringify(r), "eval-report-context-");
+    assert.equal(accepted.status, 0, accepted.stderr);
+  }
+});
+
 test("CRITERIA matches the rubric: same ids in the same order, same must flags", () => {
   const rubric = readFileSync(
     join(import.meta.dirname, "..", "skills", "fmea-software", "evals", "rubric.md"),
@@ -299,8 +629,8 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /prompt 6 on c1 to c4 and c6 to c11 \(maximum 20, 8 musts\)/);
   assert.match(rubric, /prompt 7 on c1 to c10 and c12 \(maximum 22, 9 musts\)/);
   assert.match(rubric, /Under rubric 2, prompts 1 and 6 add c13 \(maximum 22, 8 musts\)\./);
-  assert.match(rubric, /^\*\*Rubric version\.\*\* This is rubric 3, dated 2026-10-09: it adds c14 and c15\./m);
-  assert.match(rubric, /rubric 2, dated 2026-10-07, which added c13, and is read without c14 and c15/);
+  assert.match(rubric, /^\*\*Rubric version\.\*\* This is rubric 4, dated 2026-10-12: it adds c16\./m);
+  assert.match(rubric, /a file carrying `rubric: 3` was judged under rubric 3, dated 2026-10-09, which added c14 and c15, and is read without c16/);
   assert.match(rubric, /^### c13-element-typing \(prompts 1 and 6; rubric 2\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c13-element-typing"), { id: "c13-element-typing", must: false, prompts: [1, 6], rubric: 2 });
   // c5 carries its applicability on its heading the way c11 and c12 do; the
@@ -308,19 +638,187 @@ test("CRITERIA matches the rubric: same ids in the same order, same must flags",
   assert.match(rubric, /^### c5-provisional-rescore \(must, not prompt 6\)$/m);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c5-provisional-rescore")?.prompts, [1, 5, 7]);
   assert.match(rubric, /Under rubric 3, prompt 1 adds c14 and c15 \(maximum 26, 8 musts\) and prompt 6 adds c14 \(maximum 24, 8 musts\); prompt 7 is unchanged \(maximum 22, 9 musts\)\./);
+  assert.match(rubric, /Under rubric 4, prompt 1 adds c16 \(maximum 28, 8 musts\); prompts 6 and 7 are unchanged \(prompt 6 maximum 24, 8 musts; prompt 7 maximum 22, 9 musts\)\./);
   assert.match(rubric, /^### c14-edges-and-codebases \(prompts 1 and 6; rubric 3\)$/m);
   assert.match(rubric, /^### c15-cross-service-trace \(prompt 1; rubric 3\)$/m);
-  assert.match(rubric, /only c3, c8, c13, c14 and c15 are not musts/);
+  assert.match(rubric, /^### c16-flows \(prompt 1; rubric 4\)$/m);
+  assert.match(rubric, /only c3, c8, c13, c14, c15 and c16 are not musts/);
   assert.match(rubric, /21 of 26, since 20\.8 rounds up/);
   assert.match(rubric, /20 of 24, since 19\.2 rounds up/);
+  assert.match(rubric, /23 of 28, since 22\.4 rounds up/);
+  assert.match(rubric, /Prompt 5 reads `checkout-inputs\.md` and its critical flows, but its postmortem-seeded baseline is scored on c1 to c10 only, the convention that keeps c13 and c14 off it, so c16 scores prompt 1 alone\./);
+  assert.match(rubric, /at least one chain names both `flow-checkout` and `flow-retry`/);
+  assert.match(rubric, /\(Amended 2026-10-13, before any run was judged under rubric 4:/);
+  assert.match(rubric, /passes when all three hold, or, on a prompt whose inputs name no flows, when the first two hold and the third is reported `not_applicable`:/);
+  assert.match(rubric, /on a prompt whose inputs name no flows \(prompt 6\), the judging workflow passes `--flows-not-applicable`/);
   assert.deepEqual(CRITERIA.find((c) => c.id === "c14-edges-and-codebases"), { id: "c14-edges-and-codebases", must: false, prompts: [1, 6], rubric: 3 });
   assert.deepEqual(CRITERIA.find((c) => c.id === "c15-cross-service-trace"), { id: "c15-cross-service-trace", must: false, prompts: [1], rubric: 3 });
+  assert.deepEqual(CRITERIA.find((c) => c.id === "c16-flows"), { id: "c16-flows", must: false, prompts: [1], rubric: 4 });
   const workflow = readFileSync(join(import.meta.dirname, "workflows", "evals.js"), "utf8");
-  assert.match(workflow, /^const RUBRIC = 3$/m);
+  assert.match(workflow, /^const RUBRIC = 4$/m);
+  assert.match(workflow, /^const FLOWS_NOT_APPLICABLE_PROMPTS = \[6\]$/m);
+  assert.match(workflow, /pass: \{ enum: \['pass', 'fail', 'unverified', 'not_applicable'\] \}/);
+  assert.match(workflow, /node tools\/eval-stability\.ts \$\{a\} \$\{b\}\$\{FLOWS_NOT_APPLICABLE_PROMPTS\.includes\(pair\.prompt\) \? ' --flows-not-applicable' : ''\}/);
   assert.match(workflow, /node \$\{SKILL\}\/scripts\/update-check\.ts \$\{SKILL\}\/evals\/fixtures\/update\/before\.fmea\.json \$\{item\.dir\}\/analysis\.json/);
   const fromWorkflow = [...workflow.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\])(?:, rubric: (\d+))? \}/g)]
     .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]), rubric: m[4] === undefined ? undefined : Number(m[4]) }));
   assert.deepEqual(fromWorkflow, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts, rubric: c.rubric })));
+  // rejudge.js carries a third copy, without the rubric field it does not use;
+  // its prompts drive the refusal of a criterion on a prompt it does not apply to.
+  const rejudge = readFileSync(join(import.meta.dirname, "workflows", "rejudge.js"), "utf8");
+  const fromRejudge = [...rejudge.matchAll(/\{ id: '(c\d+-[a-z0-9-]+)', must: (true|false), prompts: (\[[0-9, ]*\]) \}/g)]
+    .map((m) => ({ id: m[1], must: m[2] === "true", prompts: JSON.parse(m[3]) }));
+  assert.deepEqual(fromRejudge, CRITERIA.map((c) => ({ id: c.id, must: c.must, prompts: c.prompts })));
+  for (const script of [workflow, rejudge]) {
+    assert.ok(script.includes("!ctx || ctx.present !== true || ctx.compactions !== 0 || ctx.assistant_lines === 0 || ctx.assistant_lines_without_usage !== 0 || ctx.final_message.complete !== true"), "the context gate predicate");
+  }
+});
+
+/** The two judging workflow scripts as text: evals.js, then rejudge.js. */
+function workflowScripts(): string[] {
+  return ["evals.js", "rejudge.js"].map((name) => readFileSync(join(import.meta.dirname, "workflows", name), "utf8"));
+}
+
+/** One definition of a workflow script, from its `const NAME = ` or `function NAME(` start through the brace that closes it. */
+function definitionText(script: string, name: string): string {
+  const forms = [`const ${name} = `, `function ${name}(`];
+  const count = forms.reduce((n, form) => n + script.split(form).length - 1, 0);
+  assert.equal(count, 1, `${name} is defined ${count} times`);
+  const start = Math.max(...forms.map((form) => script.indexOf(form)));
+  let depth = 0;
+  for (let i = script.indexOf("{", start); i < script.length; i++) {
+    if (script[i] === "{") depth++;
+    if (script[i] === "}" && --depth === 0) return script.slice(start, i + 1);
+  }
+  assert.fail(`${name} has no closing brace`);
+}
+
+// The context gate is copied into rejudge.js from evals.js; the workflows
+// cannot import, so the two copies are compared as text and run here.
+test("the context gate's five definitions are byte-identical in evals.js and rejudge.js", () => {
+  const [evals, rejudge] = workflowScripts();
+  for (const name of ["CONTEXT_SCHEMA", "contextPrompt", "parseContext", "gated", "contextDetail"]) {
+    assert.equal(definitionText(rejudge, name), definitionText(evals, name), `${name} differs between the workflows`);
+  }
+});
+
+/** The context gate's three functions as one workflow script spells them. */
+interface WorkflowGate {
+  parseContext: (reply: unknown) => unknown;
+  gated: (ctx: unknown) => boolean;
+  contextDetail: (ctx: unknown) => string;
+}
+
+/** A workflow's parseContext, gated and contextDetail, run as written. */
+function gateOf(script: string): WorkflowGate {
+  const source = `${["parseContext", "gated", "contextDetail"].map((name) => definitionText(script, name)).join("\n")}\nreturn { parseContext, gated, contextDetail }`;
+  // oxlint-disable-next-line typescript/no-implied-eval -- the workflows cannot be imported, so their gate text is run as written
+  return new Function(source)() as WorkflowGate;
+}
+
+/** A context.json that passes the gate: read in full, no compaction, one top-level assistant line, every one with its usage, and a final message recorded complete. */
+const GATE_FULL = { window_line: "x", compactions: 0, peak_context_tokens: 1, assistant_lines: 1, assistant_lines_without_usage: 0, final_message: { complete: true, reason: null, length: 1 } };
+
+/** The final_message of p5/high/run2 of the stage-1 round, whose final message ended mid-word (prose design §8.1). */
+const CUT = { complete: false, reason: 'ends with "h"', length: 2433 };
+
+/** A context agent's reply carrying the given fields as the file's text. */
+function gateReply(fields: unknown): { exists: true; text: string } {
+  return { exists: true, text: JSON.stringify(fields) };
+}
+
+test("the context gate closes on every reply but a context.json read in full with no compaction, every top-level assistant line carrying its usage and a final message recorded complete, in both workflows", () => {
+  const full = GATE_FULL;
+  const file = gateReply;
+  const closing: [string, unknown][] = [
+    ["no reply", null],
+    ["no file", { exists: false, text: "" }],
+    ["exists as a string", { exists: "true", text: "{}" }],
+    ["line-number prefixes", { exists: true, text: JSON.stringify(full, null, 2).split("\n").map((line, i) => `${i + 1}\t${line}`).join("\n") }],
+    ["fenced", { exists: true, text: "```json\n" + JSON.stringify(full) + "\n```" }],
+    ["compactions 2", file({ ...full, compactions: 2 })],
+    ["compactions -1", file({ ...full, compactions: -1 })],
+    ['compactions "0"', file({ ...full, compactions: "0" })],
+    ["no window_line", file({ ...full, window_line: undefined })],
+    ["no assistant_lines", file({ ...full, assistant_lines: undefined })],
+    ["assistant_lines 0", file({ ...full, assistant_lines: 0 })],
+    ["no assistant_lines_without_usage", file({ ...full, assistant_lines_without_usage: undefined })],
+    ["assistant_lines_without_usage 1", file({ ...full, assistant_lines_without_usage: 1 })],
+    ["no final_message, as a context.json written before 2026-10-15", file({ ...full, final_message: undefined })],
+    ["final_message null", file({ ...full, final_message: null })],
+    ["final_message true", file({ ...full, final_message: true })],
+    ["final_message {}", file({ ...full, final_message: {} })],
+    ["final message cut", file({ ...full, final_message: CUT })],
+    ["final message unchecked", file({ ...full, final_message: { complete: null, reason: "transcript.json missing", length: null } })],
+    ['complete "true"', file({ ...full, final_message: { ...full.final_message, complete: "true" } })],
+    ["text null", { exists: true, text: "null" }],
+    ["text []", { exists: true, text: "[]" }],
+  ];
+  for (const script of workflowScripts()) {
+    const { parseContext, gated } = gateOf(script);
+    const gate = (reply: unknown) => gated(parseContext(reply));
+    for (const [name, reply] of closing) assert.equal(gate(reply), true, `${name} passed the gate`);
+    assert.equal(gate(file(full)), false, "a context.json read in full with no compaction, every line's usage and a complete final message was gated");
+  }
+});
+
+test("a gated run's detail names a cut-off final message with its reason, a final message that could not be checked, and a context.json without the field, after a compaction, in both workflows", () => {
+  for (const script of workflowScripts()) {
+    const { parseContext, contextDetail } = gateOf(script);
+    const detail = (fields: unknown) => contextDetail(parseContext(gateReply(fields)));
+    assert.equal(detail({ ...GATE_FULL, final_message: CUT }), `the run's final message is cut off (ends with "h"); a cut-off run is unverified (prose design §8.1), its cell is re-run once, and no judge was called`);
+    assert.equal(detail({ ...GATE_FULL, final_message: { complete: null, reason: "transcript.json missing", length: null } }), "the run's final message could not be checked (transcript.json missing); it is unverified (prose design §8.1) and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, final_message: undefined }), "the run's context.json could not be read in code (final_message missing or not an object); it is unverified and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, final_message: null }), "the run's context.json could not be read in code (final_message missing or not an object); it is unverified and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, compactions: 1, final_message: CUT }), "the run compacted 1 time(s) under the window x; a compacted run is unverified (prose design §5.3) and no judge was called");
+  }
+});
+
+test("a gated run's detail names a missing line count, no top-level assistant line and lines without usage, the last two before a compaction, in both workflows", () => {
+  const verdict = "it is unverified (prose design §5.3) and no judge was called";
+  for (const script of workflowScripts()) {
+    const { parseContext, contextDetail } = gateOf(script);
+    const detail = (fields: unknown) => contextDetail(parseContext(gateReply(fields)));
+    assert.equal(detail({ ...GATE_FULL, assistant_lines: "1" }), "the run's context.json could not be read in code (assistant_lines missing or not an integer); it is unverified and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, assistant_lines_without_usage: undefined }), "the run's context.json could not be read in code (assistant_lines_without_usage missing or not an integer); it is unverified and no judge was called");
+    assert.equal(detail({ ...GATE_FULL, assistant_lines: 0, compactions: 1 }), `the run's transcript carries no top-level assistant line; ${verdict}`);
+    assert.equal(detail({ ...GATE_FULL, assistant_lines_without_usage: 3, compactions: 1 }), `the run has 3 top-level assistant line(s) without usage figures, so its compaction count and peak cannot be trusted; ${verdict}`);
+    assert.equal(detail({ ...GATE_FULL, compactions: 2 }), `the run compacted 2 time(s) under the window x; a compacted run is unverified (prose design §5.3) and no judge was called`);
+  }
+});
+
+// c16 and the flows stability predicate both key on flows[].id, so the ids and
+// tiers c16's table expects must be the ones prompt 1's input states and the
+// model answer carries. The 2026-10-13 round ran on an input that stated
+// neither, and every run minted its own ids. The update/*.md inputs restate
+// checkout-inputs.md word for word except for their one change, so their
+// critical flows are the same section.
+test("c16's table, prompt 1's input and the model answer name the same flows with the same tiers", () => {
+  const evals = join(import.meta.dirname, "..", "skills", "fmea-software", "evals");
+  const read = (rel: string) => readFileSync(join(evals, rel), "utf8");
+  const section = (text: string, heading: string) => {
+    const from = text.indexOf(heading);
+    assert.notEqual(from, -1, `no ${heading}`);
+    const to = text.indexOf("\n## ", from);
+    return to === -1 ? text.slice(from) : text.slice(from, to);
+  };
+  // The body rows of the first markdown table in text, each row's cells with backticks dropped.
+  const rows = (text: string) =>
+    text.split("\n").filter((l) => l.startsWith("| ")).slice(1).map((l) => l.slice(1, -1).split("|").map((c) => c.trim().replaceAll("`", "")));
+  const byId = (pairs: string[][]) => [...pairs].sort((a, b) => a[0].localeCompare(b[0]));
+
+  const flows = section(read("fixtures/checkout-inputs.md"), "## Critical flows");
+  const fromInputs = byId(rows(flows).map(([id, tier]) => [id, tier]));
+  const fromRubric = byId(rows(section(read("rubric.md"), "### c16-flows")).map(([id, , tier]) => [id, tier]));
+  const answer = JSON.parse(read("fixtures/checkout-service.fmea.json")) as { flows: { id: string; value_priority: string }[] };
+  const fromAnswer = byId(answer.flows.map((f) => [f.id, f.value_priority]));
+
+  assert.equal(fromAnswer.length, 3);
+  assert.deepEqual(fromInputs, fromAnswer);
+  assert.deepEqual(fromRubric, fromAnswer);
+  for (const copy of ["gateway-dropped.md", "gateway-limits.md", "codebase-missing.md"]) {
+    assert.equal(section(read(`fixtures/update/${copy}`), "## Critical flows"), flows, copy);
+  }
 });
 
 test("CLI reads --results and writes --out", () => {
@@ -1230,11 +1728,17 @@ test("prompts not re-run print one bullet each, with the reason", () => {
     "## Prompts not re-run\n\nPrompts this round did not run, each with the reason. No result of an earlier round stands in for them; the acceptance note rules on each one.\n\n- Prompt 5: it adds no criterion of this round\n\n## Completeness critic"));
 });
 
-test("a results file without session_checks or not_rerun renders exactly as before", () => {
-  const plain = renderReport(sampleResults());
-  assert.doesNotMatch(plain, /## Session checks|## Prompts not re-run/);
-  assert.equal(renderReport({ ...withSessionChecks(), session_checks: undefined, not_rerun: undefined }), plain);
-  assert.doesNotMatch(renderReport(staleShapedResults()), /## Session checks|## Prompts not re-run/);
+test("a results file without session_checks or not_rerun renders exactly as before, with the run model unknown when no run directory holds a models.json", () => {
+  const { r, root } = inRunDirs([null, null, null, null]);
+  try {
+    const plain = renderReport(r);
+    assert.doesNotMatch(plain, /## Session checks|## Prompts not re-run/);
+    assert.match(plain, /^Run model: unknown \(no models\.json readable\)\. /m);
+    assert.equal(renderReport({ ...withSessionChecks(), runs: r.runs, session_checks: undefined, not_rerun: undefined }), plain);
+    assert.doesNotMatch(renderReport(staleShapedResults()), /## Session checks|## Prompts not re-run/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("an empty session_checks prints None. and a pipe in a clause is escaped", () => {

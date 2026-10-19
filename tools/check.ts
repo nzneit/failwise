@@ -1,4 +1,4 @@
-// Runs the three static checks, the gate beside the test suites:
+// Runs the four static checks, the gate beside the test suites:
 //
 //   node tools/check.ts        # after `npm ci --prefix dev --ignore-scripts` once
 //   bun tools/check.ts         # a shell where only Bun is on PATH
@@ -6,15 +6,23 @@
 // 1. types:    tsc -p tsconfig.json
 // 2. lint:     oxlint --type-aware --deny-warnings skills tools dev/browser
 // 3. analysis: fallow list --files --format json, then a bare fallow
+// 4. prose:    tools/check-prose.ts
 //
-// Each tool is the Node script under dev/node_modules/.bin, started from the repository root with
-// the Node 24.2 or later that tools/lib/host.ts finds, so the gate never reaches the network and
-// does not depend on which `node` is first on PATH, or on there being one. The verdict is each
-// tool's exit status and nothing else; `fallow list` only proves that fallow analysed TypeScript
-// under each of skills/, tools/ and dev/browser/, since fallow exits 0 when it analyses nothing.
-// Every step runs even after a failure. Exit status 0 when all three pass, 1 otherwise, with three
-// coded lines of its own: NODE (no Node 24.2 or later found), TOOLING (a tool absent, unstartable,
-// or a `fallow list` that failed) and EMPTY (no TypeScript file analysed under a folder).
+// Each of the first three is the Node script under dev/node_modules/.bin.
+// It starts from the repository root with the Node 24.2 or later that tools/lib/host.ts finds.
+// So the gate never reaches the network and does not depend on which `node` is first on PATH,
+// or on there being one.
+// The fourth is a repository script, not a dev/node_modules tool, started the same way from the
+// root.
+// The verdict is each step's exit status and nothing else.
+// `fallow list` only proves that fallow analysed TypeScript under each of skills/, tools/ and
+// dev/browser/, since fallow exits 0 when it analyses nothing.
+// Every step runs even after a failure.
+// Exit status 0 when all four pass, 1 otherwise.
+// It has three coded lines of its own: NODE (no Node 24.2 or later found), TOOLING and EMPTY.
+// TOOLING means a tool absent, a tool or the prose script unstartable, or a `fallow list` that
+// failed.
+// EMPTY means no TypeScript file analysed under a folder.
 
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { isEntry } from "./lib/entry.ts";
@@ -61,6 +69,17 @@ function runTool(
     return null;
   }
   return { status: result.status, stdout: result.stdout ?? "" };
+}
+
+/** Starts one repository script through the resolved Node from the root. Returns whether it exited 0;
+ *  a TOOLING line follows when it could not be started or ended without an exit status. */
+function runScript(ctx: Context, script: string): boolean {
+  const result = ctx.host.spawn(ctx.node, [script], { cwd: ctx.root, stdio: "inherit", env: ctx.env });
+  if (result.status === null) {
+    ctx.writeError(`error TOOLING: ${script} could not be started or ended without an exit status`);
+    return false;
+  }
+  return result.status === 0;
 }
 
 /** The files `fallow list --files --format json` names, or null when its output is not
@@ -136,7 +155,9 @@ export function runChecks(root: string, host: Host, write = printLine, writeErro
   write(`## analysis: fallow list --files --format json, then fallow ${version}`);
   const analysed = analysedEveryFolder(ctx);
   const analysis = passes(ctx, "fallow", []);
-  return types && lint && analysed && analysis ? 0 : 1;
+  write(`## prose: tools/check-prose.ts ${version}`);
+  const prose = runScript(ctx, "tools/check-prose.ts");
+  return types && lint && analysed && analysis && prose ? 0 : 1;
 }
 
 function main(): number {

@@ -6,15 +6,22 @@ Every row rests on one verified record or is marked as the skill's own, and the 
 
 ## Reading a row
 
-A row is: a stable row id, the mode in the source's own terms, its typical effects, its causes, the controls that bear on it, a trigger or exposure note, and one provenance tag. [skill-authored]
-The row id has the form `cat-<kind>-<NN>` with a two-digit `NN`, and an analysis copies the id and the tag verbatim into `chains[].catalog_refs[]`, so both are fixed rather than editorial. [skill-authored]
-A Provenance cell holds exactly one tag. [skill-authored]
-When a row rests on more than one record, the extra records are named inside the row's own cells as `also C0nn`, never as a second bracket. [skill-authored]
-Effects are written at three levels — the element itself, its immediate consumer, and the end user — because that is the shape the analysis records and the level Severity is rated on is the last one. [skill-authored]
-The end-effect vocabulary the rows reuse is Gunawi et al.'s six outage-impact categories, and the top of the range is Yuan et al.'s catastrophic-failure criterion; both are stated in the rows that carry them rather than repeated per row. [cites:C058] [cites:C030]
-Controls are written as prevention, detection or compensating. [skill-authored]
-The third slot exists because Neufelder's second edition keeps three constructs apart: the preventive measure, the compensating provision, and the corrective action. [paraphrased:C120]
-The trigger or exposure note is what a chain built from the row copies into its `trigger` field, so a row that names one leaves the analysis with a trigger already in hand. [skill-authored]
+- A row carries a stable row id, the mode in the source's own terms, its typical effects and its causes. [skill-authored]
+- A row also carries the controls that bear on it, a trigger or exposure note, and one provenance tag. [skill-authored]
+- The row id has the form `cat-<kind>-<NN>` with a two-digit `NN`. [skill-authored]
+- An analysis copies the id and the tag verbatim into `chains[].catalog_refs[]`, so both are fixed rather than editorial. [skill-authored]
+- A Provenance cell holds exactly one tag. [skill-authored]
+- When a row rests on more than one record, the extra records are named inside its own cells as `also C0nn`. [skill-authored]
+- An extra record is never named as a second bracket. [skill-authored]
+- Effects are written at three levels because that is the shape the analysis records. [skill-authored]
+- The three levels are the element itself, its immediate consumer, and the end user. [skill-authored]
+- Severity is rated on the last level, the end user. [skill-authored]
+- The end-effect vocabulary the rows reuse is Gunawi et al.'s six outage-impact categories, and the top of the range is Yuan et al.'s catastrophic-failure criterion. [cites:C058] [cites:C030]
+- Both are stated in the rows that carry them rather than repeated per row. [cites:C058] [cites:C030]
+- Controls are written as prevention, detection or compensating. [skill-authored]
+- The third slot exists because Neufelder's second edition keeps three constructs apart: the preventive measure, the compensating provision, and the corrective action. [paraphrased:C120]
+- The trigger or exposure note is what a chain built from the row copies into its `trigger` field. [skill-authored]
+- So a row that names one leaves the analysis with a trigger already in hand. [skill-authored]
 
 ## What counts as a failure mode here
 
@@ -85,17 +92,19 @@ The recovery storm, the failover cold-cache load spikes and the post-outage reco
 
 #### ML or LLM elements: elicitation questions, no rows
 
-The elicitation questions below rest on no row-bearing record: no record this catalog draws a row from supplies failure modes for a machine-learning or large-language-model element. [skill-authored]
+The elicitation questions below rest on no row-bearing record. [skill-authored]
+No record this catalog draws a row from supplies failure modes for a machine-learning or large-language-model element. [skill-authored]
 The one claim that offered a machine-learning category inside a software failure-mode enumeration failed verification, so nothing is taken from it. [cites:C101]
-Until a sourced run supplies rows, an ML or LLM element is analysed by answering these questions and writing the answers as ordinary modes on that element. [skill-authored]
+Until a sourced run supplies rows, analyse an ML or LLM element by answering these questions. [skill-authored]
+Write the answers as ordinary modes on that element. [skill-authored]
 
-- What does the element do when the model is unavailable, slow, or rate-limited, and which of those three has ever happened? [skill-authored]
+- What does the element do when the model is unavailable, slow, or rate-limited? Which of those three has ever happened? [skill-authored]
 - What output shape does the element accept, and what does it do with an output that does not match it? [skill-authored]
 - What is the fallback when the model declines to answer or answers with low confidence, and who decided that threshold? [skill-authored]
 - Which decisions does the model's output reach without a human or a deterministic check in between? [skill-authored]
 - What does the element do with an output that is well formed and wrong, and how would anyone notice? [skill-authored]
-- How is a change of model or model version detected, and what is re-tested when it changes? [skill-authored]
-- Which part of the model's input is controlled by someone outside the trust boundary, and what does that make a cause of? [skill-authored]
+- How is a change of model or model version detected, and which tests run again when it changes? [skill-authored]
+- Which part of the model's input does someone outside the trust boundary control? What does that make a cause of? [skill-authored]
 - What does a repeated identical request produce, and does anything downstream depend on it producing the same thing twice? [skill-authored]
 
 ## Tier 2 — skill-authored rows
@@ -161,8 +170,14 @@ The basis the rows for this kind will rest on is NASA-GB-8719.13's data fault ta
 
 ## What this catalog does not carry
 
-No closed taxonomy of software failure modes, because none survived verification: the Common Defect Enumeration record, the NASA guidebook record and the NASA handbook two-worksheet record were each refuted. [cites:C101] [cites:C107] [cites:C128]
-No Google SRE Book text: the chapter is CC BY-NC-ND 4.0, so the rows that name it carry `cites:` and take no wording, selection or arrangement from it. [cites:C040]
-No text from Yuan et al. or Gunawi et al.: neither has a license status in evidence, so their findings and category labels are used as facts with the source named in the row, and nothing of theirs is reproduced. [cites:C026] [cites:C057]
-No severity or business-impact anchor from Release It!: the publisher's page claims, with nothing cited behind it, that four fifths of what a project costs over its life falls in production, so that figure is not used. [paraphrased:C050]
-No rows for `interface`, `event_stream` or `datastore`, and none for ML or LLM elements, until a sourced run supplies them. [skill-authored]
+- No closed taxonomy of software failure modes, because none survived verification. [cites:C101] [cites:C107] [cites:C128]
+- The Common Defect Enumeration record, the NASA guidebook record and the NASA handbook two-worksheet record were each refuted. [cites:C101] [cites:C107] [cites:C128]
+- No Google SRE Book text. [cites:C040]
+- The chapter is CC BY-NC-ND 4.0, so the rows that name it carry `cites:` and take no wording, selection or arrangement from it. [cites:C040]
+- No text from Yuan et al. or Gunawi et al. [cites:C026] [cites:C057]
+- Neither has a license status in evidence, so their findings and category labels are used as facts with the source named in the row. [cites:C026] [cites:C057]
+- And nothing of theirs is reproduced. [cites:C026] [cites:C057]
+- No severity or business-impact anchor from Release It! [paraphrased:C050]
+- The publisher's page claims, with nothing cited behind it, that four fifths of what a project costs over its life falls in production. [paraphrased:C050]
+- So that figure is not used. [paraphrased:C050]
+- No rows for `interface`, `event_stream` or `datastore`, and none for ML or LLM elements, until a sourced run supplies them. [skill-authored]

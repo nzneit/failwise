@@ -18,7 +18,7 @@ const LIST = JSON.stringify({
 });
 
 /** A tool call as the fake tells them apart: `fallow list` and the bare `fallow` separately. */
-type Step = "tsc" | "oxlint" | "fallow-list" | "fallow";
+type Step = "tsc" | "oxlint" | "fallow-list" | "fallow" | "check-prose";
 
 interface Call {
   command: string;
@@ -46,7 +46,7 @@ function fakeHost(
     if (args[0] === "--version") return options.noNode ? { status: null } : { status: 0, stdout: "v24.17.0\n" };
     calls.push({ command, args, cwd: spawnOptions.cwd, stdio: spawnOptions.stdio, env: spawnOptions.env });
     const tool = args[0].slice(BIN.length + 1);
-    const key = (tool === "fallow" && args[1] === "list" ? "fallow-list" : tool) as Step;
+    const key = (args[0] === "tools/check-prose.ts" ? "check-prose" : tool === "fallow" && args[1] === "list" ? "fallow-list" : tool) as Step;
     const statuses = options.statuses ?? {};
     const status = key in statuses ? (statuses[key] ?? null) : 0;
     return { status, stdout: key === "fallow-list" ? (options.list ?? LIST) : "" };
@@ -72,10 +72,12 @@ function run(host: Host): { status: number; lines: string[]; errors: string[] } 
 
 /** Each tool call as `<tool> <args>`, with the Node and the entry path folded into the tool name. */
 function toolCalls(calls: Call[]): string[] {
-  return calls.map((call) => [call.args[0].slice(BIN.length + 1), ...call.args.slice(1)].join(" "));
+  return calls.map((call) =>
+    call.args[0] === "tools/check-prose.ts" ? "tools/check-prose.ts" : [call.args[0].slice(BIN.length + 1), ...call.args.slice(1)].join(" "),
+  );
 }
 
-test("all three steps pass: three headings, each tool once in order, exit 0", () => {
+test("all four steps pass: four headings, each tool once in order, exit 0", () => {
   const calls: Call[] = [];
   const result = run(fakeHost({ calls }));
   assert.equal(result.status, 0);
@@ -84,12 +86,14 @@ test("all three steps pass: three headings, each tool once in order, exit 0", ()
     "## types: tsc -p tsconfig.json (node v24.17.0)",
     "## lint: oxlint --type-aware --deny-warnings skills tools dev/browser (node v24.17.0)",
     "## analysis: fallow list --files --format json, then fallow (node v24.17.0)",
+    "## prose: tools/check-prose.ts (node v24.17.0)",
   ]);
   assert.deepEqual(toolCalls(calls), [
     "tsc -p tsconfig.json",
     "oxlint --type-aware --deny-warnings skills tools dev/browser",
     "fallow list --files --format json",
     "fallow",
+    "tools/check-prose.ts",
   ]);
 });
 
@@ -98,10 +102,34 @@ test("a failing step does not stop the later ones, and the run exits 1", () => {
     const calls: Call[] = [];
     const result = run(fakeHost({ calls, statuses: { [failing]: 1 } }));
     assert.equal(result.status, 1, failing);
-    assert.equal(result.lines.length, 3, failing);
+    assert.equal(result.lines.length, 4, failing);
     assert.deepEqual(result.errors, [], failing);
-    assert.equal(calls.length, 4, failing);
+    assert.equal(calls.length, 5, failing);
   }
+});
+
+test("the prose step failing does not stop the others' report, and the run exits 1", () => {
+  const result = run(fakeHost({ statuses: { "check-prose": 1 } }));
+  assert.equal(result.status, 1);
+  assert.equal(result.lines.length, 4);
+  assert.deepEqual(result.errors, []);
+});
+
+test("the prose script ending without an exit status: TOOLING, exit 1", () => {
+  const result = run(fakeHost({ statuses: { "check-prose": null } }));
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, ["error TOOLING: tools/check-prose.ts could not be started or ended without an exit status"]);
+});
+
+test("the prose step is started as a repository script through the resolved Node from the root, not from dev/node_modules/.bin", () => {
+  const calls: Call[] = [];
+  run(fakeHost({ calls }));
+  const call = calls.find((each) => each.args[0] === "tools/check-prose.ts");
+  assert.ok(call);
+  assert.equal(call.command, "/opt/node/bin/node");
+  assert.deepEqual(call.args, ["tools/check-prose.ts"]);
+  assert.equal(call.cwd, ROOT);
+  assert.equal(call.stdio, "inherit");
 });
 
 test("no Node 24.2 or later: the NODE line, exit 1, no step run", () => {
@@ -126,16 +154,16 @@ test("one tool's entry absent: TOOLING for that step, the other steps still run,
   const calls: Call[] = [];
   const result = run(fakeHost({ calls, missing: [`${BIN}/oxlint`] }));
   assert.equal(result.status, 1);
-  assert.equal(result.lines.length, 3);
+  assert.equal(result.lines.length, 4);
   assert.deepEqual(result.errors, [`error TOOLING: ${BIN}/oxlint is absent; run npm ci --prefix dev --ignore-scripts`]);
-  assert.deepEqual(toolCalls(calls), ["tsc -p tsconfig.json", "fallow list --files --format json", "fallow"]);
+  assert.deepEqual(toolCalls(calls), ["tsc -p tsconfig.json", "fallow list --files --format json", "fallow", "tools/check-prose.ts"]);
 });
 
 test("a tool that cannot be started or ends without an exit status: TOOLING, exit 1", () => {
   const calls: Call[] = [];
   const result = run(fakeHost({ calls, statuses: { tsc: null } }));
   assert.equal(result.status, 1);
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
   assert.deepEqual(result.errors, ["error TOOLING: tsc could not be started or ended without an exit status; run npm ci --prefix dev --ignore-scripts"]);
 });
 
@@ -144,7 +172,8 @@ test("fallow list exits non-zero: TOOLING, the bare fallow still runs, exit 1", 
   const result = run(fakeHost({ calls, statuses: { "fallow-list": 2 } }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error TOOLING: fallow list exited with status 2; run npm ci --prefix dev --ignore-scripts"]);
-  assert.equal(toolCalls(calls).at(-1), "fallow");
+  assert.equal(toolCalls(calls).at(-2), "fallow");
+  assert.equal(toolCalls(calls).at(-1), "tools/check-prose.ts");
 });
 
 test("fallow list prints something that is not its JSON file list: TOOLING, exit 1", () => {
@@ -161,7 +190,8 @@ test("fallow list names no .ts file under tools/ while fallow exits 0: EMPTY, th
   const result = run(fakeHost({ calls, list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under tools/"]);
-  assert.equal(toolCalls(calls).at(-1), "fallow");
+  assert.equal(toolCalls(calls).at(-2), "fallow");
+  assert.equal(toolCalls(calls).at(-1), "tools/check-prose.ts");
 });
 
 test("fallow list names no .ts file under skills/: EMPTY, exit 1", () => {
@@ -192,33 +222,33 @@ test("a list that holds only the HTML template is EMPTY for every folder", () =>
 test("each tool is started through the resolved Node from the root, with that Node's directory first on PATH", () => {
   const calls: Call[] = [];
   run(fakeHost({ calls }));
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
   for (const call of calls) {
     assert.equal(call.command, "/opt/node/bin/node");
-    assert.match(call.args[0], /^dev\/node_modules\/\.bin\/(tsc|oxlint|fallow)$/);
+    assert.match(call.args[0], /^dev\/node_modules\/\.bin\/(tsc|oxlint|fallow)$|^tools\/check-prose\.ts$/);
     assert.equal(call.cwd, ROOT);
     assert.equal(call.env?.PATH, "/opt/node/bin:/usr/bin:/bin");
   }
-  assert.deepEqual(calls.map((call) => call.stdio), ["inherit", "inherit", "pipe", "inherit"]);
+  assert.deepEqual(calls.map((call) => call.stdio), ["inherit", "inherit", "pipe", "inherit", "inherit"]);
 });
 
 test("with no PATH at all the tools receive the resolved Node's directory as their PATH", () => {
   const calls: Call[] = [];
   run(fakeHost({ calls, env: {} }));
-  assert.deepEqual(calls.map((call) => call.env?.PATH), ["/opt/node/bin", "/opt/node/bin", "/opt/node/bin", "/opt/node/bin"]);
+  assert.deepEqual(calls.map((call) => call.env?.PATH), ["/opt/node/bin", "/opt/node/bin", "/opt/node/bin", "/opt/node/bin", "/opt/node/bin"]);
 });
 
 test("a Node found as the bare command node leaves PATH as it is", () => {
   const calls: Call[] = [];
   run({ ...fakeHost({ calls }), isNode: false, execPath: "/bun" });
-  assert.deepEqual(calls.map((call) => call.command), ["node", "node", "node", "node"]);
-  assert.deepEqual(calls.map((call) => call.env?.PATH), ["/usr/bin:/bin", "/usr/bin:/bin", "/usr/bin:/bin", "/usr/bin:/bin"]);
+  assert.deepEqual(calls.map((call) => call.command), ["node", "node", "node", "node", "node"]);
+  assert.deepEqual(calls.map((call) => call.env?.PATH), ["/usr/bin:/bin", "/usr/bin:/bin", "/usr/bin:/bin", "/usr/bin:/bin", "/usr/bin:/bin"]);
 });
 
 test("only the lint step is told where oxlint's type-aware companion is", () => {
   const calls: Call[] = [];
   run(fakeHost({ calls }));
-  assert.deepEqual(calls.map((call) => call.env?.OXLINT_TSGOLINT_PATH), [undefined, `${BIN}/tsgolint`, undefined, undefined]);
+  assert.deepEqual(calls.map((call) => call.env?.OXLINT_TSGOLINT_PATH), [undefined, `${BIN}/tsgolint`, undefined, undefined, undefined]);
 });
 
 // Claude Code installs a plugin's Node packages on every user's machine when the plugin root holds a

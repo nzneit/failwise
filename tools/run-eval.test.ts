@@ -5,8 +5,21 @@
 // that drops the filtering, would leave every test green while handing the run
 // the answer keys again. So the script is run end to end with `claude` replaced
 // by a stub placed first on PATH — no model call is made — and the stub records
-// the argv it was given, its working directory, and a listing of the
-// --plugin-dir tree, which the assertions below read.
+// the argv it was given, its working directory, a listing of the --plugin-dir
+// tree, the CLAUDE_CONFIG_DIR it was given with a listing of that directory, and
+// the two context-window settings and DISABLE_AUTOUPDATER it was given, which
+// the assertions below read. The stub answers the harness's /autocompact probe
+// with a window line a case can replace (FMEA_STUB_AUTOCOMPACT, on stderr when
+// FMEA_STUB_AUTOCOMPACT_STREAM is stderr) and records nothing for the probe.
+// FMEA_STUB_BAD_LINE=1 puts a line that is not JSON into the run's stream.
+// FMEA_STUB_RESULT replaces the JSON value of the result line's result, the
+// run's final message, which is "stub." by default. FMEA_STUB_HANG, a file
+// path, makes the run's call (not the probe's) create that file and then wait
+// on a thirty-second sleep it becomes, so a case can signal the script while
+// its claude session runs; with FMEA_STUB_LINGER as well, the stub catches
+// SIGTERM, SIGINT and SIGHUP and, 0.3 s later, writes a file into its
+// CLAUDE_CONFIG_DIR, creates FMEA_STUB_HANG's path with .done appended and
+// exits 0, as a session that saves its state on the way out would.
 //
 // The fail-closed guard needs two cases of its own. The clean copy the first
 // test inspects is the very condition the guard checks, so a guard edited into a
@@ -33,7 +46,9 @@
 // The run publishes into a temporary directory rather than build/evals/ (the
 // script reads $FMEA_EVAL_PUBLISH_ROOT), and $TMPDIR is a temporary directory
 // too, so the scratch directories the script makes can be checked for after it
-// exits.
+// exits, a signal's exit included: the case that signals the script starts it
+// as the leader of its own process group, as tools/run-round.ts does, and
+// signals the group.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -49,9 +64,9 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const SCRIPT = join(import.meta.dirname, "run-eval.sh");
 const ROOT = resolve(import.meta.dirname, "..");
@@ -66,6 +81,9 @@ interface Sandbox {
   argvFile: string;
   cwdFile: string;
   treeFile: string;
+  configFile: string;
+  configListFile: string;
+  envFile: string;
   env: Record<string, string>;
 }
 
@@ -84,10 +102,22 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
   const argvFile = join(dir, "argv.txt");
   const cwdFile = join(dir, "cwd.txt");
   const treeFile = join(dir, "tree.txt");
+  const configFile = join(dir, "config.txt");
+  const configListFile = join(dir, "config-list.txt");
+  const envFile = join(dir, "env.txt");
   const stub = [
     "#!/usr/bin/env bash",
+    'if [ "$2" = "/autocompact" ]; then',
+    "  reply=\"${FMEA_STUB_AUTOCOMPACT-Auto-compact window for stub: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)}\"",
+    '  if [ -z "$reply" ]; then exit 0; fi',
+    "  if [ \"${FMEA_STUB_AUTOCOMPACT_STREAM:-}\" = stderr ]; then printf '%s\\n' \"$reply\" >&2; else printf '%s\\n' \"$reply\"; fi",
+    "  exit 0",
+    "fi",
     `printf '%s\\n' "$@" > '${argvFile}'`,
     `pwd > '${cwdFile}'`,
+    "printf '%s\\n' \"${CLAUDE_CONFIG_DIR:-}\" > '" + configFile + "'",
+    "if [ -n \"${CLAUDE_CONFIG_DIR:-}\" ]; then ls -A \"$CLAUDE_CONFIG_DIR\" > '" + configListFile + "'; fi",
+    "printf '%s\\n' \"CLAUDE_CODE_AUTO_COMPACT_WINDOW=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}\" \"CLAUDE_CODE_MAX_CONTEXT_TOKENS=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-}\" \"DISABLE_AUTOUPDATER=${DISABLE_AUTOUPDATER:-}\" > '" + envFile + "'",
     'plugin=""',
     'prev=""',
     'for a in "$@"; do',
@@ -96,7 +126,14 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     "done",
     `: > '${treeFile}'`,
     `if [ -n "$plugin" ]; then (cd "$plugin" && find .) > '${treeFile}'; fi`,
-    `printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"result":"stub"}'`,
+    'if [ -n "${FMEA_STUB_HANG:-}" ] && [ -n "${FMEA_STUB_LINGER:-}" ]; then',
+    '  sleep 30 & sleeper=$!',
+    '  trap \'kill "$sleeper" 2> /dev/null; sleep 0.3; mkdir -p "$CLAUDE_CONFIG_DIR"; echo "{}" > "$CLAUDE_CONFIG_DIR/state.json"; : > "$FMEA_STUB_HANG.done"; exit 0\' TERM INT HUP',
+    '  : > "$FMEA_STUB_HANG"; wait "$sleeper"',
+    'fi',
+    'if [ -n "${FMEA_STUB_HANG:-}" ]; then : > "$FMEA_STUB_HANG"; exec sleep 30; fi',
+    'if [ "${FMEA_STUB_BAD_LINE:-}" = 1 ]; then printf \'%s\\n\' "not json"; fi',
+    'printf \'{"type":"result","subtype":"success","is_error":false,"result":%s}\\n\' "${FMEA_STUB_RESULT:-\\"stub.\\"}"',
     "",
   ].join("\n");
   const claude = join(bin, "claude");
@@ -110,7 +147,7 @@ function sandbox(tmpName = "tmp", models?: string): Sandbox {
     FMEA_EVAL_PUBLISH_ROOT: publish,
   };
   if (models !== undefined) env.FMEA_EVAL_MODELS = models;
-  return { dir, tmp, publish, argvFile, cwdFile, treeFile, env };
+  return { dir, tmp, publish, argvFile, cwdFile, treeFile, configFile, configListFile, envFile, env };
 }
 
 /**
@@ -150,8 +187,22 @@ test("the run gets a filtered plugin copy outside the repository, and the trap c
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present final=complete$/m);
     assert.ok(existsSync(join(s.publish, "p1", "medium", "run1", "transcript.json")), "the run was not published under $FMEA_EVAL_PUBLISH_ROOT");
+    // The stub's stream holds one result line and no tool call, so the extracted
+    // record is published and lists no call.
+    const invocations = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "invocations.json"), "utf8")) as { scripts: string[]; calls: unknown[] };
+    assert.ok(invocations.scripts.includes("priority.ts"), "invocations.json searched for no priority.ts");
+    assert.deepEqual(invocations.calls, []);
+    // The context record is published beside it; the stub's stream holds no init
+    // line and no compaction.
+    const context = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "context.json"), "utf8")) as { init: { present: boolean }; compactions: number; final_message: unknown; message_counts: unknown };
+    assert.equal(context.init.present, false);
+    assert.equal(context.compactions, 0);
+    // The stub's final message, "stub.", is complete (prose design §8.1).
+    assert.deepEqual(context.final_message, { complete: true, reason: null, length: 5 });
+    // The stub writes no analysis.json, so the counts the message states are not checked.
+    assert.deepEqual(context.message_counts, { checked: false, reason: "analysis.json missing", document: {}, stated: [] });
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
     const pluginDir = argv[argv.indexOf("--plugin-dir") + 1];
@@ -184,12 +235,170 @@ test("the run gets a filtered plugin copy outside the repository, and the trap c
   }
 });
 
+test("the run gets a fresh, empty CLAUDE_CONFIG_DIR under its own TMPDIR, never ~/.claude, and the trap clears it", { skip: SKIP }, () => {
+  const s = sandbox();
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: { ...s.env, CLAUDE_CONFIG_DIR: join(homedir(), ".claude") }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const configDir = readFileSync(s.configFile, "utf8").trim();
+    assert.ok(configDir.startsWith(s.tmp + sep), `CLAUDE_CONFIG_DIR is not under the run's TMPDIR: ${configDir}`);
+    assert.ok(!configDir.startsWith(join(homedir(), ".claude")), `CLAUDE_CONFIG_DIR is the user's own: ${configDir}`);
+    assert.ok(!configDir.startsWith(ROOT + sep), `CLAUDE_CONFIG_DIR is inside the repository: ${configDir}`);
+    assert.equal(readFileSync(s.configListFile, "utf8"), "", "the harness put files into CLAUDE_CONFIG_DIR before the launch: it copies nothing in (what the CLI itself leaves there after a probe is the preflight's record)");
+    assert.ok(!existsSync(configDir), `the config directory survived the run: ${configDir}`);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("a model with no table row runs with neither window setting, whatever the launcher carries, and the probe's reply is published", { skip: SKIP }, () => {
+  const s = sandbox();
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1", CLAUDE_CODE_MAX_CONTEXT_TOKENS: "2" }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=", "DISABLE_AUTOUPDATER=1"]);
+    assert.equal(readFileSync(join(s.publish, "p1", "high", "run1", "autocompact.txt"), "utf8"), "Auto-compact window for stub: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)\n");
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("deepseek-flash gets the 786.4k window settings and runs only when the probe reports that window", { skip: SKIP }, () => {
+  const s = sandbox(undefined, "high=deepseek-flash,medium=deepseek-flash");
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(readFileSync(s.envFile, "utf8").split("\n").filter((l) => l !== ""), ["CLAUDE_CODE_AUTO_COMPACT_WINDOW=786432", "CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000", "DISABLE_AUTOUPDATER=1"]);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("the probe gate refuses before any model call, printing the reply: no window line, a capped window, or another window than the row's", { skip: SKIP }, () => {
+  const cases: [string, string | undefined, RegExp, string | null][] = [
+    ["", "high=deepseek-flash", /^error: the CLI reported no auto-compact window line; its reply follows$/m, null],
+    ["API Error: 401 authentication failed", "high=deepseek-flash", /^error: the CLI reported no auto-compact window line; its reply follows$/m, "API Error: 401 authentication failed"],
+    ["Auto-compact window for deepseek-flash: 200k tokens (capped at the model's window)", "high=deepseek-flash", /^error: the CLI caps the auto-compact window: Auto-compact window for deepseek-flash: 200k tokens \(capped at the model's window\)$/m, null],
+    ["Auto-compact window for deepseek-flash: 160k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", "high=deepseek-flash", /^error: the CLI did not report the window the table expects for deepseek-flash, 786\.4k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\): Auto-compact window for deepseek-flash: 160k tokens \(from CLAUDE_CODE_AUTO_COMPACT_WINDOW\)$/m, null],
+    ["", undefined, /^error: the CLI reported no auto-compact window line; its reply follows$/m, null],
+  ];
+  for (const [line, models, want, reply] of cases) {
+    const s = sandbox(undefined, models);
+    try {
+      const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_AUTOCOMPACT: line }, encoding: "utf8" });
+      assert.equal(r.status, 1, r.stderr);
+      assert.match(r.stderr, want);
+      if (reply !== null) assert.ok(r.stderr.includes(reply), `the probe's reply was not printed: ${r.stderr}`);
+      assert.ok(!existsSync(s.argvFile), "the run was launched although the probe gate refused");
+      assert.deepEqual(readdirSync(s.tmp).filter((n) => n.startsWith("fmea-")), []);
+    } finally {
+      rmSync(s.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a stream line that is not JSON still publishes the run, with no context.json and one coded IO_READ line in context.stderr", { skip: SKIP }, () => {
+  const s = sandbox();
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_BAD_LINE: "1" }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    // eval-invocations.ts refuses the same stream, so invocations.json is missing too.
+    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=missing context=missing final=missing$/m);
+    assert.match(r.stderr, /^p1 medium run1: tools\/eval-invocations\.ts exited 3 \(see invocations\.stderr\)$/m);
+    assert.match(r.stderr, /^p1 medium run1: tools\/eval-context\.ts exited 3 \(see context\.stderr\)$/m);
+    const published = join(s.publish, "p1", "medium", "run1");
+    assert.ok(existsSync(join(published, "transcript.json")), "the run was not published");
+    assert.ok(!existsSync(join(published, "context.json")), "context.json was written from a stream holding a line that is not JSON");
+    assert.match(readFileSync(join(published, "context.stderr"), "utf8"), /^error IO_READ: [^\n]*transcript\.jsonl line 1 is not JSON\n$/);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
+test("the summary line's final field reads final_message.complete from the context.json the run wrote: cut for a final message that ends mid-word, missing for a result that is not a string", { skip: SKIP }, () => {
+  const cut = "**Priorities: H for ch-1 and M, each resting on provisional ratings** *(the sh";
+  const cases: [string, string, unknown][] = [
+    [JSON.stringify(cut), "cut", { complete: false, reason: 'ends with "h"', length: cut.length }],
+    ["null", "missing", { complete: null, reason: "transcript.json result is not a string", length: null }],
+  ];
+  for (const [result, final, record] of cases) {
+    const s = sandbox();
+    try {
+      const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_RESULT: result }, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, new RegExp(`^p1 medium run1: model=sonnet basis=default \\(anthropic\\) effort=high analysis=missing report=missing validate_exit=\\d+ invocations=present context=present final=${final}$`, "m"));
+      const context = JSON.parse(readFileSync(join(s.publish, "p1", "medium", "run1", "context.json"), "utf8")) as { final_message: unknown };
+      assert.deepEqual(context.final_message, record, final);
+    } finally {
+      rmSync(s.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+/** Sends SIGKILL to a process group; a group with no member left (ESRCH) is not an error. */
+function killGroup(group: number): void {
+  try {
+    process.kill(-group, "SIGKILL");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ESRCH") throw err;
+  }
+}
+
+/** Whether the check holds within twenty seconds, polled every fifty milliseconds. */
+async function until(check: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (!check() && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50));
+  return check();
+}
+
+test("SIGTERM, SIGINT or SIGHUP to the run's process group exits with 128 plus the signal's number, publishes nothing, and removes the three scratch directories once the session has ended, a session that writes on its way out included", { skip: SKIP }, async () => {
+  const scratch = (s: Sandbox) => readdirSync(s.tmp).filter((n) => n.startsWith("fmea-"));
+  const cases = [false, true].flatMap((linger) => ([["SIGTERM", 143], ["SIGINT", 130], ["SIGHUP", 129]] as const).map(([signal, status]) => ({ linger, signal, status })));
+  for (const { linger, signal, status } of cases) {
+    const s = sandbox();
+    const started = join(s.dir, "started");
+    const env = { ...s.env, FMEA_STUB_HANG: started, ...(linger ? { FMEA_STUB_LINGER: "1" } : {}) };
+    const child = spawn("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env, detached: true, stdio: "ignore" });
+    let ended = false;
+    const closed = new Promise<number | null>((done) => child.on("close", (code) => {
+      ended = true;
+      done(code);
+    }));
+    try {
+      const label = linger ? `${signal}, a session that writes on its way out` : signal;
+      assert.ok(child.pid !== undefined, `${label}: the script did not start`);
+      assert.ok(await until(() => existsSync(started)), `${label}: the run never reached its claude call`);
+      assert.deepEqual(scratch(s).map((n) => n.replace(/-[^-]+$/, "")).sort(), ["fmea-config-p1-medium-run1", "fmea-eval-p1-medium-run1", "fmea-plugin-p1-medium-run1"], label);
+      process.kill(-child.pid, signal);
+      assert.equal(await closed, status, label);
+      // A script that cleaned up at once, under the session, would find its config directory written again here.
+      if (linger) assert.ok(await until(() => existsSync(`${started}.done`)), `${label}: the session never finished writing`);
+      assert.deepEqual(scratch(s), [], `${label}: a scratch directory survived`);
+      assert.ok(!existsSync(join(s.publish, "p1")), `${label}: the stopped run was published`);
+    } finally {
+      // An assertion that failed before the script ended leaves nothing of its process group running.
+      if (!ended && child.pid !== undefined) killGroup(child.pid);
+      rmSync(s.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("the probe line is read from stderr as well as stdout, and case-insensitively", { skip: SKIP }, () => {
+  const s = sandbox(undefined, "high=deepseek-flash");
+  try {
+    const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: { ...s.env, FMEA_STUB_AUTOCOMPACT: "AUTO-COMPACT WINDOW FOR deepseek-flash: 786.4k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)", FMEA_STUB_AUTOCOMPACT_STREAM: "stderr" }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  } finally {
+    rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
 test("the default model table keeps the provider's names while every record stays keyed on the capability", { skip: SKIP }, () => {
   const s = sandbox();
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present final=complete$/m);
     assert.ok(existsSync(join(s.publish, "p1", "high", "run1", "transcript.json")), "the run was not published under the capability");
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
@@ -211,7 +420,7 @@ test("FMEA_EVAL_MODELS replaces the whole table: its names reach --model and mod
   try {
     const r = spawnSync("bash", [SCRIPT, "5", "medium", "2"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p5 medium run2: model=glm-5\.3-flash basis=FMEA_EVAL_MODELS effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p5 medium run2: model=glm-5\.3-flash basis=FMEA_EVAL_MODELS effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present final=complete$/m);
     assert.ok(existsSync(join(s.publish, "p5", "medium", "run2", "transcript.json")), "the run was not published under the capability");
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
@@ -235,7 +444,7 @@ test("the run pins effort high: the flag reaches the CLI and the record carries 
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "high", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 high run1: model=opus basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present final=complete$/m);
 
     const argv = readFileSync(s.argvFile, "utf8").split("\n").filter((l) => l !== "");
     assert.equal(argv[argv.indexOf("--effort") + 1], "high", "--effort did not carry the pinned effort");
@@ -319,7 +528,7 @@ test('a $TMPDIR whose own name holds "expected" does not trip the guard', { skip
   try {
     const r = spawnSync("bash", [SCRIPT, "1", "medium", "1"], { cwd: ROOT, env: s.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+$/m);
+    assert.match(r.stdout, /^p1 medium run1: model=sonnet basis=default \(anthropic\) effort=high analysis=missing report=missing validate_exit=\d+ invocations=present context=present final=complete$/m);
   } finally {
     rmSync(s.dir, { recursive: true, force: true });
   }

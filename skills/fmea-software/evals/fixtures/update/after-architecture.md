@@ -14,6 +14,9 @@ Synthetic input for the fmea-software update-mode eval. It describes the same sy
 3. A new in-process price cache, `checkout.pricing-cache`, holds priced carts for the length of
    a shopper's session; checkout reads it first and, on a miss, calls pricing itself.
 4. Two controls were retired in the same release (see the control inventory below).
+5. A resumed session now serves only the client fingerprint the session was issued to: a saved
+   link opened anywhere else does not resume it, so the abandoned-session flow's population
+   narrows to shoppers returning on the issuing client.
 
 ## Component inventory
 

@@ -8,9 +8,11 @@
 // that changes a rating, takes the optional --force on the render line, as every re-render does.
 // Any other non-zero exit fails the test. The Scripts block's update-check.ts line is also run as
 // given, on a stored copy and an unchanged draft of the fixture, its placeholders filled before the
-// line is split, and each heading the legacy messages name is checked against SKILL.md. No shell is
-// involved: each line is split on spaces and its script started with this Node, so the test
-// behaves the same under bash and fish.
+// line is split, and each heading the legacy messages name is checked against SKILL.md. The Scripts
+// table's update-check.ts row that names UPDATE_MISMATCH must name each flow guard of
+// lib/update-diff.ts by its rule id. No shell is involved: each line is split on spaces and its
+// script started with this Node, so the test behaves the same under bash and fish. The frontmatter
+// description of SKILL.md is held to 1,024 characters or fewer, the limit of a skill description.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -181,8 +183,26 @@ test("SKILL.md's update-check.ts line runs on a stored copy and an unchanged dra
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "");
     assert.equal(result.stdout.trimEnd().split("\n").at(-1),
-      "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer");
+      "update-check: 0 edge changes, 0 element changes, 0 stale rows, 0 unmarked rows, 0 links into removed chains, 0 outside elements with no consumer, 0 flow changes, 0 chains re-pointed");
   });
+});
+
+const FLOW_GUARDS = ["removed-flow-still-named", "flow-sources-lost"];
+
+/** The rows of the table under SKILL.md's "## Scripts" heading whose first cell is `update-check.ts`. */
+function updateCheckRows(skillMd: string): string[] {
+  const section = skillMd.split(/^## Scripts$/m)[1]?.split(/^## /m)[0];
+  assert.ok(section !== undefined, "SKILL.md has a '## Scripts' heading");
+  return section.split("\n").filter((line) => line.startsWith("| `update-check.ts` |"));
+}
+
+test("SKILL.md's update-check.ts --check row names each flow guard by the rule id its UPDATE_MISMATCH line carries", () => {
+  const rows = updateCheckRows(skillMd).filter((row) => row.includes("`UPDATE_MISMATCH`"));
+  assert.equal(rows.length, 1, "the Scripts table has one update-check.ts row that names UPDATE_MISMATCH");
+  const diff = readFileSync(join(SKILL_DIR, "scripts", "lib", "update-diff.ts"), "utf8");
+  const ids = [...diff.matchAll(/mismatch\("([a-z-]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(ids.filter((id) => id.includes("flow")), FLOW_GUARDS, "lib/update-diff.ts gives UPDATE_MISMATCH lines for these flow guards, in this order");
+  for (const guard of FLOW_GUARDS) assert.ok(rows[0].includes(`(\`${guard}\`)`), `SKILL.md's --check row does not name ${guard}`);
 });
 
 test("each SKILL.md heading the KIND_LEGACY and DEPENDENCY_LEGACY messages name is a heading of SKILL.md", () => {
@@ -191,4 +211,14 @@ test("each SKILL.md heading the KIND_LEGACY and DEPENDENCY_LEGACY messages name 
   assert.deepEqual([...named].sort(), ["Migrate a v1 document", "Migrate a v2 document"],
     "lib/legacy.ts names both migration headings, each written whole inside one template literal with bare double quotes");
   for (const heading of named) assert.match(skillMd, new RegExp(`^### ${heading}$`, "m"), `SKILL.md has no '### ${heading}' heading`);
+});
+
+test("SKILL.md's frontmatter description is 1,024 characters or fewer, the limit of a skill description", () => {
+  const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skillMd);
+  assert.ok(frontmatter, "SKILL.md opens with a frontmatter block");
+  const lines = frontmatter[1].split("\n").filter((line) => line.startsWith("description:"));
+  assert.equal(lines.length, 1, "the frontmatter has one description line");
+  const description = lines[0].slice("description:".length).trim();
+  assert.doesNotMatch(description, /^[>|]?$/, "the description is written whole on its own line");
+  assert.ok(description.length <= 1024, `the description is ${description.length} characters, over 1,024`);
 });

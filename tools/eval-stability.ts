@@ -13,7 +13,7 @@
 // five of the eight (prompt, model) pairs failed the 0.8 floor on wording
 // alone; measured on ids, every pair cleared it.
 //
-// Usage: node tools/eval-stability.ts <run1.json> <run2.json> [--table-file path]
+// Usage: node tools/eval-stability.ts <run1.json> <run2.json> [--table-file path] [--flows-not-applicable]
 // Prints the Stability JSON to stdout and exits 0 whenever both files load.
 //
 // tools/ imports nothing from skills/fmea-software/scripts/ (the skill stays
@@ -27,6 +27,7 @@ import { isEntry } from "./lib/entry.ts";
 export interface FmeaDocument {
   elements: { id: string; kind?: string; boundary?: string }[];
   chains: { priority: { value: string } }[];
+  flows?: { id: string }[];
 }
 
 /** How far two runs typed their shared elements alike: same kind and same boundary. */
@@ -36,6 +37,25 @@ export interface Typing {
   pass: boolean;
 }
 
+/**
+ * The outcome of the flows predicate: a live verdict, a comparison that could
+ * not be made because there was nothing to compare, or a predicate the caller
+ * set aside on a prompt whose inputs name no flows.
+ */
+export type FlowStability = "pass" | "fail" | "unverified" | "not_applicable";
+
+/**
+ * How far the two runs' flow id sets overlap, and the verdict that overlap
+ * earns. `unverified` means both runs carried no flow ids — there is no
+ * comparison to make — so the predicate is a hole in the evidence, never a pass.
+ * `not_applicable` means the prompt's inputs name no flows and the predicate was
+ * set aside by the caller's flag, so the pair is judged on the other two predicates.
+ */
+export interface FlowComparison {
+  jaccard: number;
+  pass: FlowStability;
+}
+
 export interface Stability {
   jaccard: number;
   maxRows: number;
@@ -43,6 +63,9 @@ export interface Stability {
   bound: number;
   pass: boolean;
   typing: Typing;
+  flows: FlowComparison;
+  /** True only when every predicate ran: false makes the pair unverified, never a pass. */
+  verified: boolean;
 }
 
 /** Minimum Jaccard similarity of the two runs' element id sets (§10). */
@@ -66,6 +89,16 @@ export const SHIPPED_TABLE_PATH = join(
  */
 export function elementIdSet(doc: FmeaDocument): Set<string> {
   return new Set(doc.elements.map((e) => e.id.trim().toLowerCase()));
+}
+
+/**
+ * flows[].id after trimming and case-folding, as a set, by the same rule as
+ * elementIdSet. A document that authors no flows carries no flows[] at all (the
+ * schema refuses an empty array, so absent is the only way to say "none"), and an
+ * absent array is the empty set; a present-but-malformed one is refused upstream.
+ */
+function flowIdSet(doc: FmeaDocument): Set<string> {
+  return new Set((doc.flows ?? []).map((f) => f.id.trim().toLowerCase()));
 }
 
 /** |a ∩ b| / |a ∪ b|; 1 when both sets are empty (two empty runs agree). */
@@ -111,7 +144,26 @@ export function typing(run1: FmeaDocument, run2: FmeaDocument): Typing {
   return { shared, agreeing, pass: shared > 0 && agreeing === shared };
 }
 
-export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: string[]): Stability {
+/**
+ * The two runs' flow id sets at the JACCARD_MIN floor, three-valued. Two runs
+ * that both carry no flow ids have nothing whose stability could be measured, so
+ * the result is `unverified`, never a pass. Exactly one side carrying none is a
+ * real disagreement about the flows and is `fail` (the Jaccard over the two sets
+ * is 0 there). Otherwise the floor decides, failing closed like the other sets.
+ * When the caller sets the predicate aside (notApplicable), the result is
+ * `not_applicable` whatever the runs carry, with the Jaccard still reported.
+ */
+function flowComparison(run1: FmeaDocument, run2: FmeaDocument, notApplicable: boolean): FlowComparison {
+  const a = flowIdSet(run1);
+  const b = flowIdSet(run2);
+  const j = jaccard(a, b);
+  if (notApplicable) return { jaccard: j, pass: "not_applicable" };
+  if (a.size === 0 && b.size === 0) return { jaccard: 1, pass: "unverified" };
+  if (a.size === 0 || b.size === 0) return { jaccard: j, pass: "fail" };
+  return { jaccard: j, pass: j >= JACCARD_MIN ? "pass" : "fail" };
+}
+
+export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: string[], flowsNotApplicable = false): Stability {
   const j = jaccard(elementIdSet(run1), elementIdSet(run2));
   const maxRows = Math.max(run1.chains.length, run2.chains.length);
   // The bound is the exported constant times the row count, so a change to
@@ -126,8 +178,15 @@ export function stability(run1: FmeaDocument, run2: FmeaDocument, vocabulary: st
   const c2 = priorityCounts(run2, vocabulary);
   const countDiffs: Record<string, number> = {};
   for (const v of vocabulary) countDiffs[v] = Math.abs(c1[v] - c2[v]);
-  const pass = j >= JACCARD_MIN && Object.values(countDiffs).every((d) => d <= bound);
-  return { jaccard: j, maxRows, countDiffs, bound, pass, typing: typing(run1, run2) };
+  const flows = flowComparison(run1, run2, flowsNotApplicable);
+  // An unverified flows predicate is a hole in the evidence, so pass requires
+  // flows.pass === "pass" and can never be true when both runs carried no flows.
+  // A not_applicable predicate was set aside by the caller, so pass is the element
+  // and count predicates alone there. verified records whether the predicate ran
+  // at all: false only for the two-empty case, and the caller records the pair as
+  // unverified rather than as a measured failure.
+  const pass = j >= JACCARD_MIN && Object.values(countDiffs).every((d) => d <= bound) && (flows.pass === "pass" || flows.pass === "not_applicable");
+  return { jaccard: j, maxRows, countDiffs, bound, pass, typing: typing(run1, run2), flows, verified: flows.pass !== "unverified" };
 }
 
 function fail(code: "USAGE" | "IO_READ", message: string, status: 1 | 3): never {
@@ -158,16 +217,41 @@ function elementProblem(e: unknown, i: number): string | null {
   return null;
 }
 
+/** Why flows[i] is unusable (id not a string), or null. */
+function flowProblem(f: unknown, i: number): string | null {
+  if (typeof f !== "object" || f === null || typeof (f as { id?: unknown }).id !== "string") {
+    return `has a flows[${i}] that is not an object with a string id`;
+  }
+  return null;
+}
+
+/**
+ * Why flows[] is unusable — not an array, or an entry without a string id — or
+ * null. An absent flows[] is valid and means the run authored no flows, so it is
+ * not read as an empty comparison invented from a broken shape.
+ */
+function flowsProblem(flows: unknown): string | null {
+  if (flows === undefined) return null;
+  if (!Array.isArray(flows)) return "has a flows[] that is not an array";
+  for (let i = 0; i < flows.length; i++) {
+    const problem = flowProblem(flows[i], i);
+    if (problem !== null) return problem;
+  }
+  return null;
+}
+
 /**
  * Why the parsed value is not a usable document, phrased to finish the sentence
  * `<path> …`, or null when it is one. Both files are unvalidated model output, so
- * every field the check later dereferences — elements[].id, and each chains
- * entry — is proved here: an uncaught TypeError would print a stack trace instead
- * of the one coded line the error contract requires (§9).
+ * every field the check later dereferences — elements[].id, each chains entry,
+ * and each flows entry when flows[] is present — is proved here: an uncaught
+ * TypeError would print a stack trace instead of the one coded line the error
+ * contract requires (§9). A present-but-malformed flows[] is refused rather than
+ * read as an empty set, so a broken shape never masquerades as a flows-less run.
  */
 function documentProblem(v: unknown): string | null {
   if (typeof v !== "object" || v === null) return "has no elements[] and chains[]";
-  const d = v as { elements?: unknown; chains?: unknown };
+  const d = v as { elements?: unknown; chains?: unknown; flows?: unknown };
   if (!Array.isArray(d.elements) || !Array.isArray(d.chains)) return "has no elements[] and chains[]";
   for (let i = 0; i < d.elements.length; i++) {
     const problem = elementProblem(d.elements[i], i);
@@ -177,7 +261,7 @@ function documentProblem(v: unknown): string | null {
     const c = d.chains[i];
     if (typeof c !== "object" || c === null) return `has a chains[${i}] that is not an object`;
   }
-  return null;
+  return flowsProblem(d.flows);
 }
 
 /** The parsed file as a document, or one coded I/O failure naming the malformed entry. */
@@ -190,10 +274,13 @@ function asDocument(path: string, v: unknown): FmeaDocument {
 function main(argv: string[]): number {
   const positional: string[] = [];
   let tableFile: string | undefined;
+  let flowsNotApplicable = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--table-file") {
       tableFile = argv[++i];
       if (tableFile === undefined) fail("USAGE", "--table-file needs a path", 1);
+    } else if (argv[i] === "--flows-not-applicable") {
+      flowsNotApplicable = true;
     } else if (argv[i].startsWith("--")) {
       fail("USAGE", `unknown flag ${argv[i]}`, 1);
     } else {
@@ -201,7 +288,7 @@ function main(argv: string[]): number {
     }
   }
   if (positional.length !== 2) {
-    fail("USAGE", "usage: node tools/eval-stability.ts <run1.json> <run2.json> [--table-file path]", 1);
+    fail("USAGE", "usage: node tools/eval-stability.ts <run1.json> <run2.json> [--table-file path] [--flows-not-applicable]", 1);
   }
   const raw1 = readJson(positional[0]);
   const raw2 = readJson(positional[1]);
@@ -216,7 +303,7 @@ function main(argv: string[]): number {
   if (!Array.isArray(vocabulary) || vocabulary.some((v) => typeof v !== "string")) {
     fail("IO_READ", `${tablePath} has no vocabulary[] of strings`, 3);
   }
-  process.stdout.write(JSON.stringify(stability(run1, run2, vocabulary as string[]), null, 2) + "\n");
+  process.stdout.write(JSON.stringify(stability(run1, run2, vocabulary as string[], flowsNotApplicable), null, 2) + "\n");
   return 0;
 }
 

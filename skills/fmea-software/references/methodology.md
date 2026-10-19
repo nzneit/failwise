@@ -18,7 +18,7 @@ All four standards other than MIL-STD-1629A are paywalled products, so no body t
 The IEC Webstore terms bar use of IEC publications for developing a software program or an AI tool without written permission and state no quotation exemption. [cites:C052]
 That clause, not the paywall alone, is why v1 treats IEC 60812 as cite-only rather than paraphrase-only, and `references/provenance.md` holds the ruling. [skill-authored]
 The handbook body is unread in this corpus: no record reaches its seven-step definitions, and its rating tables, Action Priority table and forms are paid and paraphrase-only; no record reads them directly, and no cell value of any of them ships. [cites:C061] [skill-authored]
-For MIL-STD-1629A, the corpus holds the cancellation notice, the base document's cover and foreword, and, since 2026-10-07, records C131 to C134 read from the standard's body; nothing is reproduced from it. [paraphrased:C042] [paraphrased:C045] [cites:C134]
+For MIL-STD-1629A, the corpus holds the cancellation notice, the base document's cover and foreword, and, since 2026-10-07, records C131 to C134 read from the standard's body; nothing is reproduced from it. [paraphrased:C042] [paraphrased:C045] [cites:C134] Since 2026-10-11, the corpus also holds records C166 to C177, read from the nde-ed.org copy of the standard's body. [skill-authored]
 The cancellation notice names no successor and points users generically at national and international FMECA documents, so no claim that a particular standard replaced it is supported. [paraphrased:C043]
 IEEE 1633-2016's public record frames the standard as life-cycle software reliability engineering — assessment, prediction, measurement, data collection — and its product page's scope statement never mentions FMEA or SFMEA, so whatever SFMEA material the body holds is unverified here. [paraphrased:C099]
 
@@ -85,6 +85,7 @@ A status is a claim about this skill's use of a rule, not about that rule's stan
 | Structure analysis: decompose the item into components | adapted | Five element roles with hierarchical dotted ids, depth 1 to 4 [skill-authored]; a boundary attribute (in scope, owned outside, third party) drawn from the workload-scope line the Azure and AWS guidance use [adapted-from:C143] [adapted-from:C146] and the external-interface notion of MIL-STD-1629A [adapted-from:C134]; a security-relevance flag by NIST's reliance test [cites:C157]; NASA's per-phase granularity [paraphrased:C130] informs which level a run stops at, and the depth cap is the skill's own [skill-authored] | [adapted-from:C143] [adapted-from:C146] [adapted-from:C134] [cites:C157] [paraphrased:C130] [skill-authored] |
 | Functions identified per element, after the item is decomposed | direct | `functions[]` keyed by id, each carrying a statement, its conditions and for whom, and owned by one element [skill-authored]; the order, Structure then Function, is the sequence the prior-art spine runs [adapted-from:C086]; IEC places its function step at 5.3.3, directly after the item is divided into elements, recorded here as a parallel only [cites:C055] | [adapted-from:C086] [cites:C055] [skill-authored] |
 | Functional block diagrams as a step of their own | not applicable | A structure tree of typed elements with a function statement per element replaces the diagram [skill-authored]; the step belongs to the MIL-STD-1629 sequence NASA carries [paraphrased:C106] | [paraphrased:C106] [skill-authored] |
+| Operational context as a named path | adapted | A flow is a use-case grouping of functions that a user-valued journey names: not a phase or a mode, not a function, not a failure condition and not a hazardous event. The nearest canon lineage is the function-level analysis object: MIL-STD-1629A's functional approach and its mission functions and operational modes, and ECSS's functional FMEA. The flow itself is Azure's user and system flow, which its failure mode analysis takes as a prioritized input. Mission and phase reach a rating only through Occurrence's exposure axis, as they do today, and phases and modes are out of scope as document objects | [paraphrased:C166] [paraphrased:C169] [paraphrased:C182] [paraphrased:C014] [paraphrased:C201] [skill-authored] |
 | Ground rules decided and assumptions written before the analysis | direct | `meta.ground_rules[]` and `meta.assumptions[]`, each assumption with an owner and an open or closed status | [paraphrased:C130] [skill-authored] |
 | NASA's sample ground rule excluding human-error failure modes | not applicable | Each analysis writes its own ground rules; the sample rules are hardware-scoped and not carried | [paraphrased:C130] [skill-authored] |
 | Failure chain: mode, then effects, then causes | adapted | `failure_mode`, `effects`, `causes[]` per row; identifying modes and evaluating each by its consequence is NASA's step order [paraphrased:C126]; the causes column's place inside the Failure step is the skill's own [skill-authored], and IEC's separate causes clause at 5.3.7 is recorded here as a parallel only [cites:C055] | [paraphrased:C126] [cites:C055] [skill-authored] |
@@ -106,7 +107,8 @@ A status is a claim about this skill's use of a rule, not about that rule's stan
 | The five-value action status vocabulary | direct | `actions[].status` is Open, Decision pending, Implementation pending, Completed, Not Implemented, the post-errata enumeration with Discarded replaced and the Filter Code column gone | [paraphrased:C063] |
 | The no-action invariant on a row | adapted | Where no action is taken the risk and the priority are unchanged [paraphrased:C064]; v1 encodes it more strictly, allowing `post_ratings` only once some action on the row is Completed, so an unchanged row has none [skill-authored] | [paraphrased:C064] [skill-authored] |
 | Re-rating after actions | adapted | One row-level `post_ratings` block, present only once an action on the row is Completed, with `post_priority` computed from it by the same table | [paraphrased:C118] [skill-authored] |
-| Criticality categories keyed to redundancy or single-point failure | not applicable | Redundancy and single-point failure are recorded in causes and controls, not as a criticality category field | [paraphrased:C129] [skill-authored] |
+| Criticality categories keyed to redundancy or single-point failure | not applicable | Redundancy and single-point failure are recorded in causes and controls, not as a criticality category field; the flow's value-priority tier is the skill's only tier, and it is not a criticality category [skill-authored] | [paraphrased:C129] [skill-authored] |
+| A flow's value-priority tier | not applicable | The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. Its three labels are Azure's. MIL-STD-1629A's criticality analysis ranks each failure mode by its severity combined with its probability of occurrence. ECSS-Q-ST-30-02C computes a criticality number as the product of a severity rank and a probability rank. The tier combines no rating with a probability and ranks no failure mode | [paraphrased:C201] [paraphrased:C172] [paraphrased:C184] [skill-authored] |
 | The Critical Items List | not applicable | The report's chain table, sorted by priority then severity, stands in its place | [paraphrased:C118] [skill-authored] |
 | Pruning a defect catalog to what the system contains | direct | A catalog row enters an analysis only when tied to a named element and function and rewritten for it | [paraphrased:C103] [skill-authored] |
 | Listing a software item's modes as failing to execute or terminating, and line-by-line analysis | not applicable | Both are rejected in the corpus itself and neither is offered by the catalog | [paraphrased:C103] [skill-authored] |
@@ -115,9 +117,11 @@ A status is a claim about this skill's use of a rule, not about that rule's stan
 | PFMEA scoped to manufacturing and assembly processes | not applicable | The design side is v1; the process side is a stub that names this scope mismatch as the reason software delivery is an adaptation rather than a transfer | [paraphrased:C082] [skill-authored] |
 | FMEA-MSR | not applicable | J1739 carries it as one of its three FMEA types; v1 has no MSR branch | [paraphrased:C082] [skill-authored] |
 
+The skill draws no safety or hazard conclusion from any rule above: `Severity` is the technical consequence class of an end effect, disjoint from harm to people, property or the environment; no row records a failure condition, a hazardous event, a safety objective or an integrity requirement; no DAL, ASIL or SIL is mapped anywhere; functional hazard assessment and STPA are deliberately not modelled. [skill-authored]
+
 ## The four-way prioritization split
 
-Four prioritization shapes reach the corpus, and no two of them agree. [skill-authored]
+Four prioritization shapes are compared here, and no two of them agree. [skill-authored]
 
 | Shape | What it prioritizes on | What it lacks | Provenance |
 |---|---|---|---|
@@ -131,16 +135,23 @@ Deployed tooling adds a further data point, on the value set rather than on the 
 
 ### Why severity-first
 
-Ruling D2: three ratings on 1 to 10 with software anchors the skill authors, a rationale and an evidence kind on every rating, a severity-first priority table the skill owns, and RPN computed for reference only. [skill-authored]
-The reason severity leads is the one the prior-art skill gives for Action Priority: a product of three factors lets a high-severity row be outranked by low occurrence and low detection, whereas a severity-first table keeps such a row from being ignored. [paraphrased:C086]
-What NASA and the book-era Neufelder method carry is two factors apiece, with detection never multiplied into the priority. [paraphrased:C109] [paraphrased:C118]
-Putting severity first is this skill's own ruling and is inherited from neither of them. [skill-authored]
-Detection stays as a third factor even though NASA's SFMEA has none, because this skill keys Detection on the controls a row actually carries. [paraphrased:C129] [skill-authored]
-That keying is the skill's own: no standard in the corpus, IEC included, binds a control class to a rating column. [cites:C055] [skill-authored]
-Priority is written as a value plus the id of the table it came from, never as a closed enum, because deployed tooling declares its vocabulary per catalog. [paraphrased:C122]
-The shipped vocabulary is H, M, L in that order, which coincides with the handbook's post-errata value set without carrying a single one of its cells. [paraphrased:C062] [skill-authored]
-The table's bands, cell map and properties make no claim to be any standard's and are tested as properties, not as a reproduction; a licensed table supplied at run time replaces it without changing any rule here. [skill-authored]
-RPN is stored for reference and never ranks anything, so a row's place in the report is decided by its priority from the table, then by severity, and never by RPN. [skill-authored]
+- Ruling D2 sets three ratings on 1 to 10 with software anchors the skill authors. [skill-authored]
+- It puts a rationale and an evidence kind on every rating. [skill-authored]
+- It sets a severity-first priority table the skill owns. [skill-authored]
+- It keeps RPN, computed for reference only. [skill-authored]
+- The reason severity leads is the one the prior-art skill gives for Action Priority. [paraphrased:C086]
+- A product of three factors lets a high-severity row be outranked by low occurrence and low detection, whereas a severity-first table keeps such a row from being ignored. [paraphrased:C086]
+- What NASA and the book-era Neufelder method carry is two factors apiece, with detection never multiplied into the priority. [paraphrased:C109] [paraphrased:C118]
+- Putting severity first is this skill's own ruling and is inherited from neither of them. [skill-authored]
+- Detection stays as a third factor even though NASA's SFMEA has none, because this skill keys Detection on the controls a row actually carries. [paraphrased:C129] [skill-authored]
+- That keying is the skill's own: no standard in the corpus, IEC included, binds a control class to a rating column. [cites:C055] [skill-authored]
+- Priority is written as a value plus the id of the table it came from, never as a closed enum, because deployed tooling declares its vocabulary per catalog. [paraphrased:C122]
+- The shipped vocabulary is H, M, L in that order, which coincides with the handbook's post-errata value set without carrying a single one of its cells. [paraphrased:C062] [skill-authored]
+- The table's bands, cell map and properties make no claim to be any standard's. [skill-authored]
+- The skill's tests treat them as properties, not as a reproduction. [skill-authored]
+- A licensed table supplied at run time replaces the shipped table without changing any rule here. [skill-authored]
+- RPN is stored for reference and never ranks anything. [skill-authored]
+- So the report orders the rows by their priority from the table, then by severity, and never by RPN. [skill-authored]
 
 ## What this file never carries
 
