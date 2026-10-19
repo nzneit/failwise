@@ -46,12 +46,22 @@
         "status": "closed"
       },
       {
-        "text": "ch-9 names the flows flow-checkout and flow-retry; their populations are treated as disjoint and their union is not computed, so the row's Severity band is read over the higher of the two single-flow classes rather than the majority the two might jointly reach.",
+        "text": "Where a chain names more than one flow, the named flows' populations are treated as disjoint and their union is not computed: the chain's Severity band is read over the one named flow with the highest radius class, never below the class its function reads with no flow named.",
+        "owner": "user",
+        "status": "open"
+      },
+      {
+        "text": "flow-resume's share of the system's users is not in the inputs: checkout-inputs.md names the flow, a shopper resuming an abandoned session from a saved link, and does not size it. ch-5's Severity reads flow-resume subset through its selecting condition and states no share.",
         "owner": "user",
         "status": "open"
       },
       {
         "text": "ch-9's flows flow-checkout and flow-retry share the steps fn-checkout-order and fn-gateway-authorize, so a failure in either shared provider breaks both flows together; that coupling is not modelled, and the row rates on the flows as named.",
+        "owner": "user",
+        "status": "open"
+      },
+      {
+        "text": "flow-checkout's share of the system's users is not in the inputs: checkout-inputs.md names the flow, a signed-in shopper submitting a cart, and does not size it. ch-9's Severity reads flow-checkout majority over its own population of signed-in shoppers and states no share.",
         "owner": "user",
         "status": "open"
       }
@@ -63,7 +73,7 @@
           "A. Reviewer",
           "B. Owner"
         ],
-        "outcome": "Ratings on the gateway, session, contract-drift and overload rows re-scored against the anchors, and the Severity of the order-store row with them; the retry-amplification and incident-seeded rows, and the Occurrence and Detection of the order-store row, left provisional pending the payments team's input."
+        "outcome": "Ratings on the gateway, contract-drift and overload rows re-scored against the anchors, and with them the Occurrence and Detection of the session row and the Severity of the order-store row; the retry-amplification and incident-seeded rows, and the Occurrence and Detection of the order-store row, left provisional pending the payments team's input, and the Severity of the session row left provisional."
       }
     ],
     "scales": {
@@ -738,13 +748,11 @@
       ],
       "ratings": {
         "S": {
-          "value": 9,
-          "rationale": "The end effect is unauthorized ordering in a shopper's name for a subset of shoppers, an outcome the severity anchor places just below the top band because access for the majority is retained. The named flow, flow-resume, dies by the same clause, \"A subset of shoppers has orders placed and payment attempted in their name\", so the band holds for shoppers resuming an abandoned session.",
+          "value": 8,
+          "rationale": "The end effect, \"A subset of shoppers has orders placed and payment attempted in their name\", is a breach: a shopper's session identity is exposed to whoever presents the token, which is the top class. The mode hits only a request that carries a captured session token or a token whose expiry claim is absent, a selecting condition the causes name, so the function's own class is subset. The named flow, flow-resume, dies by the same clause and is read through its selecting condition, resuming an abandoned session from a saved link, so it reads subset over its population of shoppers. A breach is always N, so the anchor row is 8: the top class at subset radius with no recovery path. flow-resume's share of the system's users is not in the inputs, an open assumption owned by user.",
           "evidence_kind": "estimate",
           "review": {
-            "status": "rescored",
-            "by": "A. Reviewer",
-            "date": "2026-09-03"
+            "status": "provisional"
           }
         },
         "O": {
@@ -785,9 +793,9 @@
       },
       "history": [],
       "priority": {
-        "value": "H",
+        "value": "M",
         "table": "priority-fmea-software-v1",
-        "rpn": 108
+        "rpn": 96
       },
       "flows": [
         "flow-resume"
@@ -1094,7 +1102,7 @@
       "ratings": {
         "S": {
           "value": 9,
-          "rationale": "The end effect restates ch-1's, loss of checkout for all shoppers while the gateway is degraded, which the severity anchor places in the top class at majority radius. Both named flows die by the same clause, \"Shoppers cannot complete checkout for as long as the gateway stays degraded\"; the band is read over the worst single flow, flow-checkout, whose population of signed-in shoppers is the majority of the system's shoppers, and flow-retry carries the same class.",
+          "rationale": "The end effect restates ch-1's, loss of checkout for all shoppers while the gateway is degraded, which the severity anchor places in the top class at majority radius. Both named flows die by the same clause, \"Shoppers cannot complete checkout for as long as the gateway stays degraded\". The band is read over the worst single flow, flow-checkout: the mode hits every submission that reaches it while the gateway is degraded, so it reads majority over its population of signed-in shoppers. flow-retry is read through its selecting condition, retrying a submission after a timeout, so it reads subset over its population of shoppers, and the band is flow-checkout's. flow-checkout's share of the system's users is not in the inputs, an open assumption owned by user.",
           "evidence_kind": "estimate",
           "review": {
             "status": "provisional"
@@ -1166,7 +1174,8 @@
         }
       ],
       "users": {
-        "population": "shoppers retrying a submission after a timeout"
+        "population": "shoppers",
+        "selecting_condition": "retrying a submission after a timeout"
       },
       "steps": [
         "fn-checkout-order",
@@ -1184,7 +1193,8 @@
         }
       ],
       "users": {
-        "population": "shoppers resuming an abandoned session from a saved link"
+        "population": "shoppers",
+        "selecting_condition": "resuming an abandoned session from a saved link"
       },
       "steps": [
         "fn-auth-session"
@@ -1234,6 +1244,12 @@
         "rule": "rating-provisional",
         "severity": "warning",
         "pointer": "/chains/3/ratings/D",
+        "message": "The rating is still provisional and needs re-scoring"
+      },
+      {
+        "rule": "rating-provisional",
+        "severity": "warning",
+        "pointer": "/chains/4/ratings/S",
         "message": "The rating is still provisional and needs re-scoring"
       },
       {
@@ -1297,7 +1313,7 @@
         "message": "flow flow-resume is named by chain ch-5 and its population is not yet re-scored by a named person"
       }
     ],
-    "validated_at": "2026-10-15T02:56:25.370Z",
+    "validated_at": "2026-10-19T02:48:25.067Z",
     "validator_version": "0.7.0"
   }
 }

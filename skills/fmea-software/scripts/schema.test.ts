@@ -799,8 +799,12 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // lists of `ch-5` and `ch-9`, 12 from its two added assumptions and 21 from its three
   // `flow-users-provisional` findings in `computed`. Its order-store edge's new `limits` adds none,
   // because that field carries no constraint. The total is 1,569 (1,336 from the golden, 233 from
-  // the derivation document), so the floor is 1,513.
-  assert.ok(derived >= 1513, `expected at least 1513 derived violations, ran ${derived}`);
+  // the derivation document), so the floor is 1,513. The population rules moved the golden by 19:
+  // 12 from its two added share assumptions, 2 from the selecting conditions of flow-retry and
+  // flow-resume and 7 from ch-5's `rating-provisional` finding in `computed`, less 2 for the `by`
+  // and `date` that ch-5's Severity review no longer carries. The total is 1,588 (1,355 from the
+  // golden, 233 from the derivation document), so the floor is 1,532.
+  assert.ok(derived >= 1532, `expected at least 1532 derived violations, ran ${derived}`);
 
   // The `minLength` share keeps its own floor, because it names what went. Deleting `minLength`
   // from `#/$defs/nonEmptyString` in the schema file drops the total to 958 and stops
@@ -820,6 +824,10 @@ test("drift: every required list, enum, pattern, format, and minLength in the sc
   // gained 19: 9 from its three flows (each one's name, source ref and users population), 4 from
   // its two added assumptions (each one's text and owner) and 6 from its three
   // `flow-users-provisional` findings (each one's rule and message). The total and the floor are
-  // 314 (270 from the golden, 44 from the derivation document).
-  assert.ok(minLengthDerived >= 314, `expected at least 314 derived minLength violations, ran ${minLengthDerived}`);
+  // 314 (270 from the golden, 44 from the derivation document). The population rules add 7 from
+  // the golden: 4 from its two added share assumptions (each one's text and owner), 2 from the two
+  // selecting conditions and 2 from ch-5's `rating-provisional` finding (its rule and message),
+  // less 1 for the `by` that ch-5's Severity review no longer carries. The total and the floor are
+  // 321 (277 from the golden, 44 from the derivation document).
+  assert.ok(minLengthDerived >= 321, `expected at least 321 derived minLength violations, ran ${minLengthDerived}`);
 });

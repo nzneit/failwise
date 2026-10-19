@@ -20,11 +20,11 @@ import { SKILL_ROOT } from "./test-helpers.ts";
 const table = loadTable();
 const golden = (): FmeaDocument => loadFixture<FmeaDocument>("checkout-service.fmea.json");
 
-test("the golden analysis validates with the seventeen expected lints and a score of 89", () => {
+test("the golden analysis validates with the eighteen expected lints and a score of 89", () => {
   const result = validateDocument(golden(), table);
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.lints.length, 17);
+  assert.equal(result.lints.length, 18);
   assert.equal(result.quality_score, 89);
   const blockers = result.lints.filter((l) => l.severity === "blocker");
   assert.equal(blockers.length, 1);
@@ -33,7 +33,7 @@ test("the golden analysis validates with the seventeen expected lints and a scor
   const byRule = (rule: string) => result.lints.filter((l) => l.rule === rule).map((l) => l.pointer);
   assert.deepEqual(byRule("occurrence-estimate-without-trigger"), ["/chains/5/ratings/O"]);
   assert.deepEqual(byRule("seeded-action-without-incident"), ["/chains/7/actions/1"]);
-  assert.equal(byRule("rating-provisional").length, 11);
+  assert.equal(byRule("rating-provisional").length, 12);
   assert.deepEqual(byRule("rating-provisional").slice(-3), ["/chains/8/ratings/S", "/chains/8/ratings/O", "/chains/8/ratings/D"]);
   assert.deepEqual(byRule("metadata-without-ground-rules"), []);
 });
@@ -132,7 +132,7 @@ test("an invariant failure still reports lints and a score", () => {
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].rule, "stale-without-reason");
   assert.equal(result.errors[0].code, "INVARIANT");
-  assert.equal(result.lints.length, 17);
+  assert.equal(result.lints.length, 18);
   assert.equal(result.quality_score, 89);
 });
 
@@ -166,7 +166,7 @@ test("the CLI prints the result JSON and exits 0 on the golden analysis", () => 
     const parsed = JSON.parse(r.stdout);
     assert.equal(parsed.ok, true);
     assert.equal(parsed.quality_score, 89);
-    assert.equal(parsed.lints.length, 17);
+    assert.equal(parsed.lints.length, 18);
   });
 });
 
@@ -290,7 +290,7 @@ test("--write adds a computed block and leaves the authored parts alone", () => 
     );
     assert.equal(first.computed?.validator_version, PLUGIN_VERSION);
     assert.equal(first.computed?.quality_score, 89);
-    assert.equal(first.computed?.lints.length, 17);
+    assert.equal(first.computed?.lints.length, 18);
     assert.ok(isRfc3339DateTime(String(first.computed?.validated_at)));
   });
 });
@@ -310,7 +310,7 @@ test("--write replaces an existing computed block whole and keeps it where the f
     assert.deepEqual(Object.keys(after), ["computed", "meta", "elements", "functions", "dependencies", "chains", "flows"]);
     assert.equal(after.computed?.quality_score, 89);
     assert.equal(after.computed?.validator_version, PLUGIN_VERSION);
-    assert.equal(after.computed?.lints.length, 17);
+    assert.equal(after.computed?.lints.length, 18);
   });
 });
 
@@ -489,7 +489,7 @@ test("staleComputed gives one COMPUTED_STALE issue for the score and one for a s
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/quality_score",
       message: "computed.quality_score is 3 but validate.ts now gives 89; run validate.ts --write, then render.ts again" },
     { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints",
-      message: `computed.lints, written by validator 0.0.1, holds 17 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again` },
+      message: `computed.lints, written by validator 0.0.1, holds 18 findings fewer than validate.ts now finds; run validate.ts --write, then render.ts again` },
   ]);
 });
 
@@ -516,7 +516,7 @@ test("staleComputed points at the first stored lint past the validator's list wh
   const fresh = validateDocument(doc, table);
   const extra = { rule: "rating-provisional", severity: "warning" as const, pointer: "/chains/0/ratings/S", message: "an old finding" };
   assert.deepEqual(staleComputed({ ...doc.computed!, lints: [...fresh.lints, extra] }, fresh), [
-    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/17",
+    { code: "COMPUTED_STALE", rule: "computed-stale", pointer: "/computed/lints/18",
       message: `computed.lints, written by validator ${PLUGIN_VERSION}, holds 1 finding more than validate.ts now finds; run validate.ts --write, then render.ts again` },
   ]);
 });

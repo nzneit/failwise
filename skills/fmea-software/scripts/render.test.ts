@@ -413,9 +413,9 @@ test("the automated checks section explains the checks, states the score and gro
     .map((rule) => checks.indexOf(`<code>${rule}</code>`));
   assert.ok(order.every((at) => at !== -1));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×11</span>'));
+  assert.ok(checks.includes('<code>rating-provisional</code> <span class="muted">×12</span>'));
   assert.equal(occurrences(checks, "×"), 1, "a group of one finding shows no count");
-  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D<br><a href="#row-ch-9"><code>ch-9</code></a> S, O, D'));
+  assert.ok(checks.includes('<a href="#row-ch-2"><code>ch-2</code></a> S, O, D<br><a href="#row-ch-4"><code>ch-4</code></a> O, D<br><a href="#row-ch-5"><code>ch-5</code></a> S<br><a href="#row-ch-8"><code>ch-8</code></a> S, O, D<br><a href="#row-ch-9"><code>ch-9</code></a> S, O, D'));
   assert.ok(checks.includes("<td>The rating is still provisional and needs re-scoring</td>"));
   assert.ok(checks.includes('<a href="#row-ch-7"><code>ch-7</code></a> D</td><td>Detection is 1 with no existing detection control carrying evidence</td>'));
   assert.ok(checks.includes('<a href="#row-ch-8"><code>ch-8</code></a> act-2</td>'));
@@ -485,9 +485,9 @@ test("the header shows the five tiles, each linking to its section", () => {
   const header = headerOf(golden());
   assert.equal(occurrences(header, '<a class="tile'), 5);
   for (const tile of [
-    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>5</span><span class="pcount"><span class="pri pri-mid">M</span>4</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
+    '<a class="tile" href="#chains"><span class="lbl">Rows by priority</span><span class="pcounts"><span class="pcount"><span class="pri pri-top">H</span>4</span><span class="pcount"><span class="pri pri-mid">M</span>5</span><span class="pcount"><span class="pri pri-low">L</span>0</span></span><span class="sub">9 failure chains</span></a>',
     '<a class="tile" href="#chains"><span class="lbl">Ratings not yet reviewed</span><span class="big">12 <small>of 30</small></span><span class="sub">provisional, in 5 rows</span></a>',
-    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">16 warnings</span></a>',
+    '<a class="tile alert" href="#lints"><span class="lbl">Automated checks</span><span class="big">1 blocker</span><span class="sub">17 warnings</span></a>',
     '<a class="tile" href="#actions"><span class="lbl">Actions</span><span class="big">8 open <small>of 9</small></span><span class="sub">next due 2026-10-09</span></a>',
     '<a class="tile" href="#lints"><span class="lbl">Quality score</span><span class="big">89 <small>of 100</small></span><span class="sub">share of rows with no blocker</span></a>',
   ]) {
@@ -526,7 +526,7 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
       '<a href="#row-ch-7"><code>ch-7</code></a> D &mdash; Detection is 1 with no existing detection control carrying evidence',
       "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again."),
     attnItem(`12 ratings not yet reviewed<br>${mark("provisional")}`,
-      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-5"><code>ch-5</code></a> S &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
+      '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-5"><code>ch-5</code></a> S &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
       PROVISIONAL_WHY),
     attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
@@ -604,25 +604,42 @@ test("row marks: one handoff, five provisional rows, no stale row", () => {
   assert.equal(occurrences(index, 'class="mark mark-handoff"'), 1);
   assert.equal(occurrences(index, 'class="mark mark-provisional"'), 5);
   assert.equal(occurrences(index, 'class="mark mark-stale"'), 0);
-  assert.ok(index.includes(`<a href="#row-ch-5"><code>ch-5</code></a><br>${mark("handoff")} ${mark("provisional")}</td>`),
+  const ch5 = `<a href="#row-ch-5"><code>ch-5</code></a><br>${mark("handoff")} ${mark("provisional")}</td>`;
+  assert.ok(index.includes(ch5), "ch-5's re-read Severity is provisional");
+  // The fixture's ch-5 Severity is provisional since its re-read under the population rules; this
+  // copy restores its re-score, so the mark then comes from flow-resume's population alone.
+  const rescored = golden();
+  const s = rescored.chains.find((c) => c.id === "ch-5")!.ratings.S;
+  s.review = { status: "rescored", by: "A. Reviewer", date: "2026-09-03" };
+  assert.ok(indexTable(renderHtml(rescored, table, template, vocabulary)).includes(ch5),
     "ch-5's re-scored Severity is read over flow-resume, whose population is not re-scored");
 });
 
 test("a re-scored Severity over a flow whose population is not re-scored is marked, counted and printed: update/before.fmea.json's ch-2", () => {
   withTempDir((dir) => {
-    const out = join(dir, "report.html");
-    const r = runCli("render.ts", [fixturePath("update", "before.fmea.json"), "--out", out]);
-    assert.equal(r.status, 0);
-    assert.equal(r.stderr, "");
-    assert.equal(r.stdout, provisionalLine(1, 15));
-    const html = readFileSync(out, "utf8");
-    const header = sectionOf(html, "header", "ground-rules");
-    assert.ok(header.includes('<span class="big">1 <small>of 15</small></span><span class="sub">provisional, in 1 row</span>'), "the tile counts ch-2's Severity");
-    assert.ok(header.includes(attnItem(`1 rating not yet reviewed<br>${mark("provisional")}`, '<a href="#row-ch-2"><code>ch-2</code></a> S',
-      PROVISIONAL_WHY)), "the Needs attention block lists ch-2's Severity");
-    assert.ok(!header.includes("attn-none"), "the nothing-needs-attention sentence");
-    assert.ok(indexTable(html).includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("provisional")}</td>`), "the index marks ch-2");
-    assert.ok(rowSection(html, "ch-2").includes(`<span class="muted">RPN 80</span> &middot; ${mark("provisional")}`), "the row header marks ch-2");
+    // The fixture's ch-2 Severity is provisional since its re-read under the population rules; the
+    // copy restores its re-score, so the copy's mark comes from flow-resume's population alone. Both
+    // print the same marks and counts.
+    const doc = loadFixture<FmeaDocument>("update", "before.fmea.json");
+    doc.chains.find((c) => c.id === "ch-2")!.ratings.S.review = { status: "rescored", by: "A. Reviewer", date: "2026-09-03" };
+    const copy = join(dir, "rescored.json");
+    writeFileSync(copy, JSON.stringify(doc, null, 2) + "\n");
+    assert.equal(runCli("validate.ts", [copy, "--write"]).status, 0);
+    for (const [input, name] of [[fixturePath("update", "before.fmea.json"), "fixture"], [copy, "rescored"]] as const) {
+      const out = join(dir, `${name}.html`);
+      const r = runCli("render.ts", [input, "--out", out]);
+      assert.equal(r.status, 0, name);
+      assert.equal(r.stderr, "", name);
+      assert.equal(r.stdout, provisionalLine(1, 15), name);
+      const html = readFileSync(out, "utf8");
+      const header = sectionOf(html, "header", "ground-rules");
+      assert.ok(header.includes('<span class="big">1 <small>of 15</small></span><span class="sub">provisional, in 1 row</span>'), `${name}: the tile counts ch-2's Severity`);
+      assert.ok(header.includes(attnItem(`1 rating not yet reviewed<br>${mark("provisional")}`, '<a href="#row-ch-2"><code>ch-2</code></a> S',
+        PROVISIONAL_WHY)), `${name}: the Needs attention block lists ch-2's Severity`);
+      assert.ok(!header.includes("attn-none"), `${name}: the nothing-needs-attention sentence`);
+      assert.ok(indexTable(html).includes(`<a href="#row-ch-2"><code>ch-2</code></a><br>${mark("provisional")}</td>`), `${name}: the index marks ch-2`);
+      assert.ok(rowSection(html, "ch-2").includes(`<span class="muted">RPN 96</span> &middot; ${mark("provisional")}`), `${name}: the row header marks ch-2`);
+    }
   });
 });
 
@@ -635,10 +652,10 @@ test("a flagged row carries the stale mark; a cleared row carries none", () => {
 });
 
 test("chains sort by priority, then by severity descending, then by id", () => {
-  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(golden(), table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"]);
   const html = renderHtml(golden(), table, template, vocabulary);
   const table_start = html.indexOf('id="chains"');
-  const order = ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
+  const order = ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"].map((id) => html.indexOf(`<code>${id}</code>`, table_start));
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
@@ -651,7 +668,7 @@ test("every table is inside a frame that takes focus, is a region and has a labe
   assert.equal(labels.length, occurrences(html, "<table"));
   assert.deepEqual(labels, [
     "By top-level element", "Dependencies", "Index of failure chains",
-    ...["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
+    ...["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"].map((id) => `Ratings of ${id}`),
     "Ratings of ch-3 after actions", "Actions", "Automated checks", "Provenance",
   ]);
   assert.equal(new Set(labels).size, labels.length);
@@ -861,9 +878,9 @@ test("a post_priority does not move a row in the sort order", () => {
   const ch3 = doc.chains.find((c) => c.id === "ch-3");
   assert.ok(ch3 && ch3.post_ratings, "ch-3 is the fixture's one post-action row");
   ch3.post_priority = computePriority(table, ch3.post_ratings);
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"]);
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"]);
   ch3.post_priority = { value: table.vocabulary[0], table: table.id, rpn: 1000 };
-  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-5", "ch-7", "ch-9", "ch-4", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
+  assert.deepEqual(sortChains(doc, table).map((c) => c.id), ["ch-2", "ch-1", "ch-7", "ch-9", "ch-4", "ch-5", "ch-8", "ch-6", "ch-3"], "the highest possible post-action priority still leaves ch-3 last");
 });
 
 test("the provenance appendix names the catalog row, its tag, and the record the tag carries", () => {
@@ -1377,7 +1394,7 @@ test("the header lists the codebases after Security boundary, each with its repo
 test("the top-level table rolls up each root, links a name to its group, and heads its count with the table's first value", () => {
   const structure = sectionOf(renderHtml(golden(), table, template, vocabulary), "structure", "chains");
   assert.ok(structure.includes(`<table aria-labelledby="roots-caption">${ROOTS_HEAD}<tbody>` +
-    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">5</td><td class="num">5</td><td class="num">7</td></tr>' +
+    '<tr><td><a href="#group-checkout">Checkout service</a></td><td>Checkout service</td><td class="num">8</td><td class="num">4</td><td class="num">5</td><td class="num">7</td></tr>' +
     '<tr><td><a href="#group-pricing">Pricing service</a></td><td>owned outside</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr></tbody></table>'));
   const idle = sectionOf(renderHtml(idleRoot(), table, template, vocabulary), "structure", "chains");
   assert.ok(idle.includes("<tr><td>Idle</td>"), "a root with no chains is not linked");
@@ -1585,7 +1602,7 @@ test("group sections: one per top-level element with chains, each an h3 with nam
   assert.equal(occurrences(chains, '<section class="group"'), 2);
   assert.ok(chains.includes('<section class="group" id="group-checkout"><h3>Checkout service <code>checkout</code></h3><article class="row" id="row-ch-2">'));
   assert.ok(chains.includes('</article></section><section class="group" id="group-pricing"><h3>Pricing service <code>pricing</code></h3><article class="row" id="row-ch-3">'));
-  const at = ["group-checkout", "row-ch-2", "row-ch-1", "row-ch-5", "row-ch-7", "row-ch-9", "row-ch-4", "row-ch-8", "row-ch-6", "group-pricing", "row-ch-3"]
+  const at = ["group-checkout", "row-ch-2", "row-ch-1", "row-ch-7", "row-ch-9", "row-ch-4", "row-ch-5", "row-ch-8", "row-ch-6", "group-pricing", "row-ch-3"]
     .map((id) => chains.indexOf(`id="${id}"`));
   assert.ok(at.every((i) => i !== -1), JSON.stringify(at));
   assert.deepEqual(at, [...at].sort((a, b) => a - b));
