@@ -200,29 +200,36 @@ function flowRecord(html: string, id: string): string {
 }
 
 const FLOW_PROVISIONAL_NOTE = "The flow&#39;s population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
-const FLOWS_FIRST_ENTRY = `<dt><b>Priority</b></dt><dd>${escapeHtml(
-  "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
-  "Flows are listed High first, then by id, a presentational order that ranks nothing.")}</dd>`;
-const FLOWS_TIER_ENTRIES = [
-  `<dt><span class="pri pri-top">High</span></dt><dd>${escapeHtml("Losing the flow stops the business serving its external users at all.")}</dd>`,
-  `<dt><span class="pri pri-mid">Medium</span></dt><dd>${escapeHtml("Losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person.")}</dd>`,
-  `<dt><span class="pri pri-low">Low</span></dt><dd>${escapeHtml("Losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered.")}</dd>`,
-];
+const FLOWS_FIRST_ENTRY = `<dt><b>Tier</b></dt><dd>${escapeHtml(
+  "The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. " +
+  "Flows are listed High first, then by id, a presentational order that ranks nothing. " +
+  "The run copies a tier the inputs give. A flow the inputs leave untiered takes the first tier below whose test it meets.")}</dd>`;
+
+/** The tier tests of `references/design-inputs.md`, in its order, each as the Flows key's entry: the tier's badge and
+ *  the test word for word, its first letter capitalised. Fails unless the reference states exactly Low, Medium, High. */
+function referenceTierEntries(): string[] {
+  const reference = readFileSync(join(SKILL_ROOT, "references", "design-inputs.md"), "utf8");
+  const tests = [...reference.matchAll(/^ {2}- \*\*(Low|Medium|High)\*\* — (.+) \[skill-authored\]$/gm)];
+  assert.deepEqual(tests.map((m) => m[1]), ["Low", "Medium", "High"], "design-inputs.md states the three tier tests, Low first");
+  const style: Record<string, string> = { High: "top", Medium: "mid", Low: "low" };
+  return tests.map(([, tier, words]) => `<dt><span class="pri pri-${style[tier]}">${tier}</span></dt><dd>${escapeHtml(words[0].toUpperCase() + words.slice(1))}</dd>`);
+}
 const FLOWS_CHAINS_ENTRY = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. " +
   "A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. " +
   "A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. " +
   "A chain on one of the flow's steps that does not name the flow is not listed.";
 
-test("the Flows section prints one record per flow, High first then by id, with the key's disclaimer verbatim", () => {
+test("the Flows section prints one record per flow, High first then by id, with the key's disclaimer verbatim and the reference's tier tests", () => {
   const section = flowsSection(renderHtml(golden(), table, template, vocabulary));
   assert.ok(section.includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"), "the key prints DF4's sentence verbatim");
   assert.ok(section.includes("a presentational order that ranks nothing"), "the key states the order");
   const chainsEntry = `<dt><b>Chains</b></dt><dd>${escapeHtml(FLOWS_CHAINS_ENTRY)}</dd>`;
-  assert.ok(section.includes(FLOWS_FIRST_ENTRY), "the first entry reads the disclaimer and the order");
+  assert.ok(section.includes(FLOWS_FIRST_ENTRY), "the first entry, labelled Tier, reads the disclaimer, the order and how a tier is set");
+  assert.ok(!section.includes("<b>Priority</b>"), "no key entry calls the tier a priority");
   assert.ok(section.includes(chainsEntry), "the Chains entry reads the badge, the one-flow and several-flow readings with their floor, and the steps not listed");
-  const at = [FLOWS_FIRST_ENTRY, ...FLOWS_TIER_ENTRIES, chainsEntry].map((entry) => section.indexOf(entry));
-  assert.ok(at.every((i) => i !== -1), "each tier entry prints its badge alone and its test");
-  assert.deepEqual(at, [...at].sort((a, b) => a - b), "the tier entries come after the first entry and before the Chains entry, High, Medium, Low");
+  const at = [FLOWS_FIRST_ENTRY, ...referenceTierEntries(), chainsEntry].map((entry) => section.indexOf(entry));
+  assert.ok(at.every((i) => i !== -1), "each tier entry prints its badge alone and the reference's test word for word");
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "the tier entries come after the first entry and before the Chains entry, Low, Medium, High, in the tests' order");
   const ids = [...section.matchAll(/<article class="flow" id="flow-(flow-[a-z-]+)">/g)].map((m) => m[1]);
   assert.deepEqual(ids, ["flow-checkout", "flow-retry", "flow-resume"], "High flows first, then by id");
   assert.ok(!section.includes("a starting point only; the recorded steps are a prefix"), "the golden fixture's flows are not partial");
@@ -299,20 +306,23 @@ test("a chain-named flow whose population is not re-scored is marked beside the 
   assert.ok(!flowRecord(renderHtml(doc, table, template, vocabulary), "flow-1").includes("mark-provisional"), "a flow no chain names is not marked");
 });
 
-test("the chain annotation links every flow it breaks to its record, marks the one whose band was used, and notes the disjointness assumption", () => {
+test("the chain annotation links every flow it breaks to its record, marks the first as the author's band flow, and notes the disjointness assumption with the floor", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
   const row = rowSection(html, "ch-9");
   assert.ok(row.includes("breaks:"), "the row names the flows");
   assert.ok(row.includes('<a href="#flow-flow-checkout"><code>flow-checkout</code></a>'), "the first named flow links to its record");
   assert.ok(row.includes('<a href="#flow-flow-retry"><code>flow-retry</code></a>'), "the second named flow links to its record");
-  assert.ok(row.includes("whose band was used"), "the chosen flow is marked");
+  assert.ok(row.includes('<code>flow-checkout</code></a> <span class="mark mark-chosen">named first as the band flow</span>'), "the first named flow carries the author's claim");
+  assert.equal(occurrences(row, 'class="mark mark-chosen"'), 1, "only the first named flow is marked");
   assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+  assert.ok(row.includes(escapeHtml("the band is the highest of the single flows' classes, and never below the function's own class.")), "the note states the floor");
 });
 
-test("a chain naming one flow prints no disjointness note, and a chain naming none prints no annotation", () => {
+test("a chain naming one flow prints no band mark and no disjointness note, and a chain naming none prints no annotation", () => {
   const html = renderHtml(golden(), table, template, vocabulary);
   const single = rowSection(html, "ch-5");
   assert.ok(single.includes("breaks:") && single.includes('<a href="#flow-flow-resume"><code>flow-resume</code></a>'), "the single named flow is still annotated");
+  assert.ok(!single.includes("mark-chosen") && !single.includes("named first as the band flow"), "one named flow carries no band mark");
   assert.ok(!single.includes("treated as disjoint"), "one named flow prints no disjointness note");
   assert.ok(!renderHtml(minimalDoc(), table, template, vocabulary).includes("breaks:"));
 });
@@ -339,19 +349,23 @@ test("the annotation marks the first named flow by position, whichever id it car
   assert.equal(occurrences(later, 'class="mark mark-chosen"'), 1, "exactly one flow is marked when the later entry is the other flow, never every named flow");
 });
 
-// One case per DF3 reading that names flows (§8.2): the annotation prints the chosen flow, which
-// is the first entry, marked. A reading that named more than one flow would also carry the
-// disjointness note, and the loop asserts it whenever that happens.
+// One case per DF3 reading that names flows (§8.2): the annotation links the first entry, and marks
+// it only when the chain names more than one flow. A reading that named more than one flow would also
+// carry the disjointness note, and the loop asserts both whenever that happens; a one-flow reading
+// carries neither.
 for (const reading of DF3_READINGS) {
   const doc = readingDoc();
   reading.build(doc);
   const named = doc.chains[0].flows ?? [];
   if (named.length === 0) continue;
-  test(`the DF3 reading ${reading.name} prints the chosen first flow at band ${reading.band}`, () => {
+  test(`the DF3 reading ${reading.name} prints the first flow at band ${reading.band}, marked only beside another`, () => {
     const row = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
     assert.ok(row.includes("breaks:"), "the row names the flows it breaks");
-    assert.ok(row.includes(`<code>${named[0]}</code></a> <span class="mark mark-chosen">`), "the first named flow is the one marked chosen");
-    if (named.length > 1) assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+    assert.ok(row.includes(`<a href="#flow-${named[0]}"><code>${named[0]}</code></a>`), "the first named flow is linked");
+    if (named.length > 1) {
+      assert.ok(row.includes(`<code>${named[0]}</code></a> <span class="mark mark-chosen">`), "the first named flow is the one marked");
+      assert.ok(row.includes("treated as disjoint") && row.includes("their union is not computed"), "the disjointness note is printed");
+    } else assert.ok(!row.includes("mark-chosen") && !row.includes("treated as disjoint"), "a chain that names one flow carries no mark and no note");
   });
 }
 

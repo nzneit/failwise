@@ -417,6 +417,7 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(text(schema).includes("the contract runs one way: the 0.6.0 scripts refuse a document that carries flows or the stale reason flow-changed"));
   assert.ok(text(schema).endsWith("a document that carries neither validates under 0.6.0 and under this schema."));
   assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
+  assert.ok(text(props("flow").value_priority).endsWith("Read for the report's order of flows only; that order is presentational and ranks nothing."), "the tier's one use is the report's order of flows, and no filter reads it");
 });
 
 test("the sla, limits, rationale and history.change descriptions carry the stage-1 rules", () => {

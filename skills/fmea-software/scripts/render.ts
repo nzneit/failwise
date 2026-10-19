@@ -219,32 +219,36 @@ function dependenciesHtml(edges: DependencyEdge[]): string {
     frameHtml("Dependencies", `<table aria-labelledby="dependencies-caption">${head}<tbody>${edges.map(row).join("")}</tbody></table>`);
 }
 
-// The Flows section's key (§5.3), six entries. The first, labelled Priority, reads DF4's disclaimer
-// verbatim and the order sentence. One entry per tier badge then gives that tier's test, the badge
-// beside its text, since no label is wider than the provisional mark. The Chains entry says what
-// the record's Chains line lists, the priority each chain carries, which flow's population a chain
-// reads its Severity over (one flow, several flows) and that a chain on a step that does not name
-// the flow is left out. The mark entry says why a chain-named flow is provisional while its
-// population is not re-scored.
+// The Flows section's key (§5.3), six entries. The first, labelled Tier, reads DF4's disclaimer
+// verbatim, the order sentence and how a tier is set. One entry per tier badge then gives that tier's
+// test, in the tests' order, the badge beside its text, since no label is wider than the provisional
+// mark. The Chains entry says what the record's Chains line lists, the priority each chain carries,
+// which flow's population a chain reads its Severity over (one flow, several flows) and that a chain
+// on a step that does not name the flow is left out. The mark entry says why a chain-named flow is
+// provisional while its population is not re-scored.
 const FLOWS_KEY_TITLE = "How to read this section";
-const FLOWS_DISCLAIMER = "Priority here is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
+const FLOWS_DISCLAIMER = "The tier is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target.";
+// The tier tests of references/design-inputs.md, word for word but the first letter, in their order: a
+// flow the inputs leave untiered takes the first tier whose test it meets.
+const TIER_TEST_ORDER: readonly ValuePriority[] = ["Low", "Medium", "High"];
 const TIER_TESTS: Record<ValuePriority, string> = {
-  High: "Losing the flow stops the business serving its external users at all.",
-  Medium: "Losing the flow degrades it while a stated alternative path still delivers the outcome, and restoring it needs a person.",
-  Low: "Losing the flow is absorbed, because it reaches no external user or an evidenced control keeps the outcome delivered.",
+  Low: "Losing this flow reaches no external user.",
+  Medium: "The inputs state another path that delivers this flow's outcome to its users while the flow is lost.",
+  High: "Every other flow.",
 };
+const FLOWS_TIER_SET = "The run copies a tier the inputs give. A flow the inputs leave untiered takes the first tier below whose test it meets.";
 const FLOWS_ORDER = "Flows are listed High first, then by id, a presentational order that ranks nothing.";
 const FLOWS_CHAINS_NOTE = "The failure chains that name the flow, in the order of the index, each with its row's priority badge, from S, O and D as in the index. A chain that names one flow reads its Severity over that flow's population, and never lower than over the function's own users. A chain that names several reads it over the one whose population yields the highest radius class, listed first, with the same floor, and its row marks it. A chain on one of the flow's steps that does not name the flow is not listed.";
 const FLOW_PROVISIONAL = "The flow's population has not been re-scored by a named reviewer, so the Severity of the chains that name it, and their priority, are not final.";
 const FLOWS_PARTIAL = "a starting point only; the recorded steps are a prefix";
-// The chain annotation (§5.3): its label, the phrase marking the flow the Severity rationale used, and
-// the disjointness note a chain that names more than one flow carries (§4.2).
+// The chain annotation (§5.3): its label, and, for a chain that names more than one flow, the phrase
+// on the flow the author names first as the band flow and the disjointness note (§4.2). The phrase is
+// the author's claim, read from the position in the chain's flows.
 const BREAKS_LABEL = "breaks:";
-const BREAKS_CHOSEN = "the flow whose band was used";
-const FLOWS_DISJOINT_NOTE = "The named flows are treated as disjoint and their union is not computed; the band is the highest of the single flows' classes.";
+const BREAKS_CHOSEN = "named first as the band flow";
+const FLOWS_DISJOINT_NOTE = "The named flows are treated as disjoint and their union is not computed; the band is the highest of the single flows' classes, and never below the function's own class.";
 // The flow value-priority tiers use the same badge styles as the loaded table's first, middle and
 // last values, so a tier is read at a glance and stays the bare label (DF4, C201).
-const VALUE_PRIORITIES: readonly ValuePriority[] = ["High", "Medium", "Low"];
 const VALUE_PRIORITY_STYLE: Record<ValuePriority, RankStyle> = { High: "top", Medium: "mid", Low: "low" };
 
 function flowMarkHtml(): string {
@@ -253,9 +257,9 @@ function flowMarkHtml(): string {
 
 function flowsKeyHtml(): string {
   const badge = (v: ValuePriority): string => badgeHtml(v, VALUE_PRIORITY_STYLE[v]);
-  const tiers: [string, string][] = VALUE_PRIORITIES.map((v) => [badge(v), TIER_TESTS[v]]);
+  const tiers: [string, string][] = TIER_TEST_ORDER.map((v) => [badge(v), TIER_TESTS[v]]);
   return keyBlockHtml(FLOWS_KEY_TITLE, [
-    ["<b>Priority</b>", `${FLOWS_DISCLAIMER} ${FLOWS_ORDER}`],
+    ["<b>Tier</b>", `${FLOWS_DISCLAIMER} ${FLOWS_ORDER} ${FLOWS_TIER_SET}`],
     ...tiers,
     ["<b>Chains</b>", FLOWS_CHAINS_NOTE],
     [flowMarkHtml(), FLOW_PROVISIONAL],
@@ -383,15 +387,16 @@ function part(label: string, body: string): string {
   return `<div><span class="lbl">${e(label)}</span>${body}</div>`;
 }
 
-// The chain annotation (§5.3): the flows the row breaks, the first named flow marked as the one whose
-// band the Severity rationale used, and, for a chain that names more than one flow, the disjointness
-// note. Each flow's link and its mark share one inline-block span, so a narrow screen never wraps the
-// mark away from its flow. A row that names no flow prints nothing — no label, no empty list.
+// The chain annotation (§5.3): the flows the row breaks, and, for a chain that names more than one
+// flow, the first named flow marked as the one the author names as the band flow and the disjointness
+// note. A chain that names one flow carries no mark, since the mark would tell the reader nothing.
+// Each flow's link and its mark share one inline-block span, so a narrow screen never wraps the mark
+// away from its flow. A row that names no flow prints nothing — no label, no empty list.
 function flowBreaksHtml(row: RowModel): string {
   if (row.flows.length === 0) return "";
   const listed = row.flows.map((id) => {
     const link = `<a href="#flow-${e(id)}"><code>${e(id)}</code></a>`;
-    const flow = id === row.chosenFlow ? `${link} <span class="mark mark-chosen">${e(BREAKS_CHOSEN)}</span>` : link;
+    const flow = row.disjoint && id === row.chosenFlow ? `${link} <span class="mark mark-chosen">${e(BREAKS_CHOSEN)}</span>` : link;
     return `<span class="breaks-flow">${flow}</span>`;
   }).join(", ");
   const note = row.disjoint ? ` <span class="muted">${e(FLOWS_DISJOINT_NOTE)}</span>` : "";

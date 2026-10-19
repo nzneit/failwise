@@ -343,7 +343,7 @@
         },
         "value_priority": {
           "enum": ["High", "Medium", "Low"],
-          "description": "The flow's value-priority tier. It is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. Used for sort and filter only; the report's row order is presentational and ranks nothing."
+          "description": "The flow's value-priority tier. It is a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target. Read for the report's order of flows only; that order is presentational and ranks nothing."
         },
         "sources": {
           "type": "array",

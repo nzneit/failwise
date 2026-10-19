@@ -778,7 +778,7 @@ test("a flow carries the chains that name it in the index order, each with its p
   ]);
 });
 
-test("a chain that names flows carries them, the first as the one whose band was used, and the disjointness flag", () => {
+test("a chain that names flows carries them, the first as the one the author names as the band flow, and the disjointness flag", () => {
   const doc = minimalDoc();
   doc.flows = [
     { id: "flow-1", name: "One", value_priority: "High", users: { population: "all shoppers" } },

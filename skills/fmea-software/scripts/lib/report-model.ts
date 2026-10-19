@@ -63,7 +63,7 @@ export interface RowModel {
   causeLinks: CauseLink[];         // the causes linked to another chain, in cause order; element "" only when the provider's function does not resolve
   propagatesTo: Propagation[];     // each chain linking into this one once, in the index order; element "" only when the consumer's function does not resolve
   flows: string[];                 // the flows the chain names, in the author's order; empty when it names none
-  chosenFlow: string | null;       // the first named flow that resolves to a document flow, the one whose band the Severity rationale used (§5.3); null when the chain names none
+  chosenFlow: string | null;       // the first named flow that resolves to a document flow, the one the author names first as the band flow (§5.3); null when the chain names none
   disjoint: boolean;               // true when the chain names more than one flow, so the annotation notes that their union is not computed
 }
 
@@ -326,9 +326,9 @@ function groupFindings(located: Located[]): CheckGroup[] {
     .sort((a, b) => Number(b.severity === "blocker") - Number(a.severity === "blocker"));
 }
 
-// The flows a chain names, the first that resolves to a document flow — the one the chain's Severity
-// rationale names as having set the band (§5.3, the positional rule) — and whether it names more than
-// one, which the annotation's disjointness note reads.
+// The flows a chain names, the first that resolves to a document flow — the one the author names first
+// as the band flow (§5.3, the positional rule) — and whether it names more than one, which the
+// annotation's mark and disjointness note read.
 function rowFlows(chain: Chain, doc: FmeaDocument): Pick<RowModel, "flows" | "chosenFlow" | "disjoint"> {
   const flows = chain.flows ?? [];
   const known = new Set((doc.flows ?? []).map((f) => f.id));
