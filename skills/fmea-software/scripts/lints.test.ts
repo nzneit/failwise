@@ -658,9 +658,9 @@ test("chain-flow-rationale-unnamed reads ids out of the Severity rationale", () 
   const doc = minimalDoc();
   doc.flows = [{ id: "flow-1", name: "Checkout submission", value_priority: "High" }];
   doc.chains[0].flows = ["flow-1"];
-  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names none of the flows the chain names"]]);
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 first, as the band flow, and its Severity rationale does not name it"]]);
   doc.chains[0].ratings.S.rationale = "the checkout journey dies, so S is 8";
-  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 and its Severity rationale names none of the flows the chain names"]]);
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), [["/chains/0/ratings/S", "chain ch-1 names flow flow-1 first, as the band flow, and its Severity rationale does not name it"]]);
   doc.chains[0].ratings.S.rationale = "flow-1 dies at majority radius, so S is 8";
   assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed"), []);
 });
@@ -677,6 +677,37 @@ test("chain-flow-rationale-unnamed reads a flow id followed by a final full stop
     doc.chains[0].ratings.S.rationale = rationale;
     assert.equal(fired(doc, "chain-flow-rationale-unnamed").length, 1, rationale);
   }
+});
+
+test("chain-flow-rationale-unnamed reads the first flow the chain names, the band flow, and fires when the rationale names only a later one", () => {
+  const doc = minimalDoc();
+  doc.flows = [
+    { id: "flow-checkout", name: "Checkout", value_priority: "High" },
+    { id: "flow-retry", name: "Retry", value_priority: "Medium" },
+  ];
+  doc.chains[0].flows = ["flow-checkout", "flow-retry"];
+  const expected = [["/chains/0/ratings/S", "chain ch-1 names flow flow-checkout first, as the band flow, and its Severity rationale does not name it"]];
+  doc.chains[0].ratings.S.rationale = "flow-retry dies at majority radius and set the band, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), expected);
+  doc.chains[0].ratings.S.rationale = "the checkout journey dies, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => [l.pointer, l.message]), expected);
+  for (const rationale of ["flow-checkout dies at majority radius, so S is 8", "flow-checkout set the band and flow-retry carries the same class, so S is 8"]) {
+    doc.chains[0].ratings.S.rationale = rationale;
+    assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed"), [], rationale);
+  }
+  doc.chains[0].flows = ["flow-retry", "flow-checkout"];
+  doc.chains[0].ratings.S.rationale = "flow-checkout dies at majority radius and set the band, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => l.message), ["chain ch-1 names flow flow-retry first, as the band flow, and its Severity rationale does not name it"]);
+});
+
+test("chain-flow-rationale-unnamed reads the first name that resolves, as the report's row does, and leaves an unresolved name to chain-flow-resolves", () => {
+  const doc = minimalDoc();
+  doc.flows = [{ id: "flow-retry", name: "Retry", value_priority: "Medium" }];
+  doc.chains[0].flows = ["flow-gone", "flow-retry"];
+  doc.chains[0].ratings.S.rationale = "flow-retry dies at majority radius, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed"), []);
+  doc.chains[0].ratings.S.rationale = "flow-gone dies at majority radius, so S is 8";
+  assert.deepEqual(fired(doc, "chain-flow-rationale-unnamed").map((l) => l.message), ["chain ch-1 names flow flow-retry first, as the band flow, and its Severity rationale does not name it"]);
 });
 
 test("flow-users-provisional fires while a chain-named flow's users.review is absent or provisional", () => {

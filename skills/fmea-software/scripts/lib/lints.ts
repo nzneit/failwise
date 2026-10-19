@@ -196,13 +196,16 @@ function noStepsLint(at: ChainFlows, name: NamedFlow): Lint[] {
     `chain ${at.chain.id} names flow ${name.flow.id}, which records no steps`)];
 }
 
-// Each named flow's id is read in the rationale as a whole token (wholeToken, below), so `flow-1`
-// reads in `flow-1 dies`, `flow-1.`, `flow-1:` and `flow-1...`, and does not read inside `myflow-1x`.
+// The first flow a chain names is the band flow: the schema stores the flow whose class set the
+// band first in `flows[]`, and the report's row reads the first that resolves as that flow. Its id
+// is read in the rationale as a whole token (wholeToken, below), so `flow-1` reads in `flow-1 dies`,
+// `flow-1.`, `flow-1:` and `flow-1...`, and does not read inside `myflow-1x`. A rationale that names
+// only a later flow fires as one that names none does.
 function rationaleUnnamedLint(at: ChainFlows): Lint[] {
-  const rationale = at.chain.ratings.S.rationale;
-  if (at.named.some((name) => wholeToken(rationale, name.flow.id))) return [];
+  const first = at.named[0].flow.id;
+  if (wholeToken(at.chain.ratings.S.rationale, first)) return [];
   return [lint("chain-flow-rationale-unnamed", "warning", ptr("chains", at.chainIndex, "ratings", "S"),
-    `chain ${at.chain.id} names flow ${at.named[0].flow.id} and its Severity rationale names none of the flows the chain names`)];
+    `chain ${at.chain.id} names flow ${first} first, as the band flow, and its Severity rationale does not name it`)];
 }
 
 // The c1 lint's run-placeholder pattern and the words that name an edge's sla or limits, each a
@@ -216,8 +219,9 @@ const FIELD_WORD = /\b(?:limits?|ceiling|scaling|rate|sla|availability|latency)\
 const EDGE_FIELDS = ["sla", "limits"] as const;
 
 // A field is unstated when it is absent, empty, a text that names the inputs (the design or the
-// supplied inputs as well), or a run placeholder; a stated absence in the inputs' own words, such
-// as `no published request ceiling`, is stated.
+// supplied inputs as well), or a run placeholder. A stated absence that holds none of the
+// PLACEHOLDER phrases, such as `no published request ceiling` or `not published`, is stated; one
+// that holds a phrase, such as `not documented`, is unstated even in the inputs' own words.
 function unstatedField(value: string | undefined): boolean {
   if (value === undefined) return true;
   const text = value.trim();
@@ -668,8 +672,8 @@ export const MACHINE_RULES: MachineRule[] = [
     },
   },
   {
-    // A chain that names flows ranks a Severity for them; a rationale that names none of them does
-    // not say why that S holds for those journeys.
+    // A chain that names flows ranks a Severity for them, on the band of the first; a rationale
+    // that does not name that flow does not say why that S holds for its journey.
     id: "chain-flow-rationale-unnamed",
     severity: "warning",
     check(doc) {
