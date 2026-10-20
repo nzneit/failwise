@@ -4,7 +4,7 @@
 //   bun tools/check.ts         # a shell where only Bun is on PATH
 //
 // 1. types:    tsc -p tsconfig.json
-// 2. lint:     oxlint --type-aware --deny-warnings skills tools dev/browser
+// 2. lint:     oxlint --type-aware --deny-warnings opencode skills tools dev/browser
 // 3. analysis: fallow list --files --format json, then a bare fallow
 // 4. prose:    tools/check-prose.ts
 // 5. docs:     tools/check-docs.ts
@@ -31,7 +31,7 @@ import { defaultHost, findNode, MIN_LABEL, type Host } from "./lib/host.ts";
 
 const BIN = "dev/node_modules/.bin";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
-const ANALYSED_FOLDERS = ["skills", "tools", "dev/browser"] as const;
+const ANALYSED_FOLDERS = ["opencode", "skills", "tools", "dev/browser"] as const;
 
 interface Context {
   root: string;
@@ -149,8 +149,8 @@ export function runChecks(root: string, host: Host, write = printLine, writeErro
   const version = `(node v${node.version.join(".")})`;
   write(`## types: tsc -p tsconfig.json ${version}`);
   const types = passes(ctx, "tsc", ["-p", "tsconfig.json"]);
-  write(`## lint: oxlint --type-aware --deny-warnings skills tools dev/browser ${version}`);
-  const lint = passes(ctx, "oxlint", ["--type-aware", "--deny-warnings", "skills", "tools", "dev/browser"], {
+  write(`## lint: oxlint --type-aware --deny-warnings opencode skills tools dev/browser ${version}`);
+  const lint = passes(ctx, "oxlint", ["--type-aware", "--deny-warnings", "opencode", "skills", "tools", "dev/browser"], {
     OXLINT_TSGOLINT_PATH: `${BIN}/tsgolint`,
   });
   write(`## analysis: fallow list --files --format json, then fallow ${version}`);
