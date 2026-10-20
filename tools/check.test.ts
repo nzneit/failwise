@@ -8,10 +8,11 @@ import { runChecks } from "./check.ts";
 const ROOT = "/repo";
 const BIN = "dev/node_modules/.bin";
 const LIST = JSON.stringify({
-  file_count: 4,
+  file_count: 5,
   files: [
     "skills/fmea-software/assets/report-template.html",
     "skills/fmea-software/scripts/lib/args.ts",
+    "opencode/index.ts",
     "tools/check.ts",
     "dev/browser/matrix.ts",
   ],
@@ -84,14 +85,14 @@ test("all five steps pass: five headings, each tool once in order, exit 0", () =
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.lines, [
     "## types: tsc -p tsconfig.json (node v24.17.0)",
-    "## lint: oxlint --type-aware --deny-warnings skills tools dev/browser (node v24.17.0)",
+    "## lint: oxlint --type-aware --deny-warnings opencode skills tools dev/browser (node v24.17.0)",
     "## analysis: fallow list --files --format json, then fallow (node v24.17.0)",
     "## prose: tools/check-prose.ts (node v24.17.0)",
     "## docs: tools/check-docs.ts (node v24.17.0)",
   ]);
   assert.deepEqual(toolCalls(calls), [
     "tsc -p tsconfig.json",
-    "oxlint --type-aware --deny-warnings skills tools dev/browser",
+    "oxlint --type-aware --deny-warnings opencode skills tools dev/browser",
     "fallow list --files --format json",
     "fallow",
     "tools/check-prose.ts",
@@ -207,7 +208,7 @@ test("fallow list prints something that is not its JSON file list: TOOLING, exit
 
 test("fallow list names no .ts file under tools/ while fallow exits 0: EMPTY, the bare fallow still runs, exit 1", () => {
   const calls: Call[] = [];
-  const list = JSON.stringify({ file_count: 2, files: ["skills/fmea-software/scripts/lib/args.ts", "dev/browser/matrix.ts"] });
+  const list = JSON.stringify({ file_count: 3, files: ["skills/fmea-software/scripts/lib/args.ts", "opencode/index.ts", "dev/browser/matrix.ts"] });
   const result = run(fakeHost({ calls, list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under tools/"]);
@@ -217,14 +218,21 @@ test("fallow list names no .ts file under tools/ while fallow exits 0: EMPTY, th
 });
 
 test("fallow list names no .ts file under skills/: EMPTY, exit 1", () => {
-  const list = JSON.stringify({ file_count: 2, files: ["tools/check.ts", "dev/browser/matrix.ts"] });
+  const list = JSON.stringify({ file_count: 3, files: ["opencode/index.ts", "tools/check.ts", "dev/browser/matrix.ts"] });
   const result = run(fakeHost({ list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under skills/"]);
 });
 
+test("fallow list names no .ts file under opencode/: EMPTY, exit 1", () => {
+  const list = JSON.stringify({ file_count: 3, files: ["skills/fmea-software/scripts/lib/args.ts", "tools/check.ts", "dev/browser/matrix.ts"] });
+  const result = run(fakeHost({ list }));
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under opencode/"]);
+});
+
 test("fallow list names no .ts file under dev/browser/: EMPTY, exit 1", () => {
-  const list = JSON.stringify({ file_count: 2, files: ["skills/fmea-software/scripts/lib/args.ts", "tools/check.ts"] });
+  const list = JSON.stringify({ file_count: 3, files: ["skills/fmea-software/scripts/lib/args.ts", "opencode/index.ts", "tools/check.ts"] });
   const result = run(fakeHost({ list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, ["error EMPTY: fallow analysed no TypeScript file under dev/browser/"]);
@@ -235,6 +243,7 @@ test("a list that holds only the HTML template is EMPTY for every folder", () =>
   const result = run(fakeHost({ list }));
   assert.equal(result.status, 1);
   assert.deepEqual(result.errors, [
+    "error EMPTY: fallow analysed no TypeScript file under opencode/",
     "error EMPTY: fallow analysed no TypeScript file under skills/",
     "error EMPTY: fallow analysed no TypeScript file under tools/",
     "error EMPTY: fallow analysed no TypeScript file under dev/browser/",
@@ -274,12 +283,13 @@ test("only the lint step is told where oxlint's type-aware companion is", () => 
 });
 
 // Claude Code installs a plugin's Node packages on every user's machine when the plugin root holds a
-// package.json and a lockfile. The tools are therefore declared in dev/, and the root must stay bare.
+// package.json and a lockfile. The tools are therefore declared in dev/, and the root holds no
+// dependency and no lockfile. Its exports field is the OpenCode entrypoint and declares no package.
 // This reads the files on disk, not git, so it also holds in an exported folder before `git init`.
-test("the root package.json declares nothing and the root holds no lockfile", () => {
+test("the root package.json declares no dependencies and the root holds no lockfile", () => {
   const root = join(import.meta.dirname, "..");
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(manifest).sort(), ["name", "private", "type"]);
+  assert.deepEqual(Object.keys(manifest).sort(), ["exports", "name", "private", "type"]);
   for (const lockfile of ["package-lock.json", "npm-shrinkwrap.json", "bun.lock"]) {
     assert.equal(existsSync(join(root, lockfile)), false, `${lockfile} at the repository root`);
   }

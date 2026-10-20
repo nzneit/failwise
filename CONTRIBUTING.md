@@ -4,7 +4,7 @@ failwise is one Claude Code skill, `skills/fmea-software/`, with the scripts and
 
 ## Setup
 
-Node.js 24.2 or later must be on PATH; the scripts are TypeScript run directly by Node. Install the development checkers once with `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. The root `package.json` stays bare: Claude Code installs whatever a plugin's root declares on every user's machine, so no dependency and no lockfile goes there.
+Node.js 24.2 or later must be on PATH; the scripts are TypeScript run directly by Node. Install the development checkers once with `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. The root `package.json` declares no dependency and no lockfile, because Claude Code installs whatever a plugin's root declares on every user's machine; its `exports` field is the OpenCode entrypoint and adds no package.
 
 ## Tests
 
