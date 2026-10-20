@@ -1,4 +1,4 @@
-// Runs the four static checks, the gate beside the test suites:
+// Runs the five static checks, the gate beside the test suites:
 //
 //   node tools/check.ts        # after `npm ci --prefix dev --ignore-scripts` once
 //   bun tools/check.ts         # a shell where only Bun is on PATH
@@ -7,18 +7,19 @@
 // 2. lint:     oxlint --type-aware --deny-warnings skills tools dev/browser
 // 3. analysis: fallow list --files --format json, then a bare fallow
 // 4. prose:    tools/check-prose.ts
+// 5. docs:     tools/check-docs.ts
 //
 // Each of the first three is the Node script under dev/node_modules/.bin.
 // It starts from the repository root with the Node 24.2 or later that tools/lib/host.ts finds.
 // So the gate never reaches the network and does not depend on which `node` is first on PATH,
 // or on there being one.
-// The fourth is a repository script, not a dev/node_modules tool, started the same way from the
+// The last two are repository scripts, not dev/node_modules tools, started the same way from the
 // root.
 // The verdict is each step's exit status and nothing else.
 // `fallow list` only proves that fallow analysed TypeScript under each of skills/, tools/ and
 // dev/browser/, since fallow exits 0 when it analyses nothing.
 // Every step runs even after a failure.
-// Exit status 0 when all four pass, 1 otherwise.
+// Exit status 0 when all five pass, 1 otherwise.
 // It has three coded lines of its own: NODE (no Node 24.2 or later found), TOOLING and EMPTY.
 // TOOLING means a tool absent, a tool or the prose script unstartable, or a `fallow list` that
 // failed.
@@ -157,7 +158,9 @@ export function runChecks(root: string, host: Host, write = printLine, writeErro
   const analysis = passes(ctx, "fallow", []);
   write(`## prose: tools/check-prose.ts ${version}`);
   const prose = runScript(ctx, "tools/check-prose.ts");
-  return types && lint && analysed && analysis && prose ? 0 : 1;
+  write(`## docs: tools/check-docs.ts ${version}`);
+  const docs = runScript(ctx, "tools/check-docs.ts");
+  return types && lint && analysed && analysis && prose && docs ? 0 : 1;
 }
 
 function main(): number {

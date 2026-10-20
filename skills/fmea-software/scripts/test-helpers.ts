@@ -11,7 +11,7 @@ import type { PriorityTable } from "./lib/table.ts";
 
 /** `skills/fmea-software/`: this file lives in its `scripts/` directory. */
 export const SKILL_ROOT: string = join(import.meta.dirname, "..");
-const FIXTURES: string = join(SKILL_ROOT, "evals", "fixtures");
+const FIXTURES: string = join(SKILL_ROOT, "..", "..", "dev", "fixtures");
 
 export function fixturePath(...parts: string[]): string {
   return join(FIXTURES, ...parts);

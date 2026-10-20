@@ -6,7 +6,7 @@
 //   node tools/check-browser.ts --fetch                              # fetch the browsers for the engines named
 //
 // `bun tools/check-browser.ts` works wherever `bun tools/check.ts` does. Without --report it renders
-// skills/fmea-software/evals/fixtures/checkout-service.fmea.json into build/browser/report.html, then
+// dev/fixtures/checkout-service.fmea.json into build/browser/report.html, then
 // starts Playwright's test runner with dev/browser/playwright.config.ts, one project per engine, and
 // the report's absolute path in FAILWISE_REPORT. `--fetch` fetches Playwright's builds for the
 // engines named and runs no check; with `--with-deps` it also installs the system packages they

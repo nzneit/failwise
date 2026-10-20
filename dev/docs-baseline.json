@@ -1,0 +1,31 @@
+{
+  "files": {
+    ".claude/CLAUDE.md": {
+      "words": 700
+    },
+    "CONTRIBUTING.md": {
+      "words": 1000
+    },
+    "README.md": {
+      "words": 1200
+    },
+    "docs/design.md": {
+      "lines": 450,
+      "words": 3200
+    },
+    "docs/scripts.md": {
+      "lines": 40,
+      "words": 900
+    },
+    "docs/style.md": {
+      "lines": 60,
+      "words": 1000
+    },
+    "docs/tracking.md": {
+      "lines": 70,
+      "words": 700
+    }
+  },
+  "totalLines": 660,
+  "totalWords": 8700
+}
