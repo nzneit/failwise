@@ -4,9 +4,8 @@ import { isAdfDocument, readMarker, renderDescription, renderSummary } from "./l
 import type { AdfDoc, AdfMark, AdfNode } from "./lib/tracker/jira-body.ts";
 import { plain } from "./lib/tracker/text.ts";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { actionRefs, buildItem, DONE_CLOSE, DONE_DECISION } from "./lib/tracker/items.ts";
-import { minimalDoc } from "./test-helpers.ts";
+import { fixturePath, minimalDoc } from "./test-helpers.ts";
 import type { FmeaDocument, TrackerConfig } from "./lib/types.ts";
 import type { TrackedItem } from "./lib/tracker/provider.ts";
 
@@ -46,7 +45,7 @@ const doc = (...content: AdfNode[]): AdfDoc => ({ version: 1, type: "doc", conte
 const MARKER_TEXT = "failwise:key=a/b/c text=0123456789ab";
 const EXPECTED = { key: "a/b/c", text: "0123456789ab" };
 
-const FIXTURE = join(import.meta.dirname, "..", "evals", "fixtures", "checkout-service.fmea.json");
+const FIXTURE = fixturePath("checkout-service.fmea.json");
 
 /** The description of the fixture's ch-2/act-1 under its own tracker configuration, made a Jira one. */
 function fixtureDescription(): AdfDoc {

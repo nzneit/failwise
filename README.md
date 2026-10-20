@@ -1,164 +1,94 @@
 # failwise
 
-failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders it as a single-file HTML report. You can read an [example report](https://nzneit.github.io/failwise/) before you install it.
+failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders a single-file HTML report. Version 0.7.0 is a pre-release: the skill did not pass its own evaluations and tracking has none; see [Status](#status).
 
-It is version 0.7.0, a pre-release: the skill did not pass its own evaluations, and the tracking of actions has none. Read [Status and limitations](#status-and-limitations) before relying on it.
+An FMEA asks what each part of a system must do, how that can fail, what that does to the system and its users, what causes it, and what prevents or detects it today. One failure mode with its effects, causes and controls is one failure chain. Its Severity, Occurrence and Detection ratings, each from 1 to 10, give it a priority that says where to act first. A design-side FMEA examines the design before the incident.
 
 ## Install
 
-failwise needs Claude Code, and Node.js 24.2 or later on PATH. The scripts are TypeScript that Node runs directly. You install nothing else, except a CLI for the tracking of actions:
-
-- the GitHub CLI, `gh`, if you track actions as GitHub issues
-- the Atlassian CLI, `acli`, if you track them as Jira work items.
-
-To install failwise from a shell, run these commands:
+failwise needs Claude Code and Node.js 24.2 or later on PATH; the scripts are TypeScript that Node runs directly. Tracking adds the GitHub CLI, `gh`, or the Atlassian CLI, `acli`.
 
 ```
 claude plugin marketplace add nzneit/failwise
 claude plugin install failwise@failwise
 ```
 
-Or run these commands inside a Claude Code session:
-
-```
-/plugin marketplace add nzneit/failwise
-/plugin install failwise@failwise
-```
-
-Then start a new session or run `/reload-plugins`. To update, run `claude plugin update failwise@failwise`.
-
-To try a checkout and not install it, load it as a local plugin directory:
-
-```
-claude --plugin-dir /path/to/failwise
-```
+Or inside a session, `/plugin marketplace add nzneit/failwise` then `/plugin install failwise@failwise`. Start a new session or run `/reload-plugins`; update with `claude plugin update failwise@failwise`. To try a checkout without installing it, run `claude --plugin-dir /path/to/failwise`.
 
 ## Use it
 
-If FMEA is new to you, read [What an FMEA is](#what-an-fmea-is) first.
+failwise holds one skill, `fmea-software`; ask in your own words or invoke `/failwise:fmea-software`. It handles four kinds of request:
 
-failwise holds one skill, `fmea-software`. The skill handles four kinds of request. Ask Claude Code for an FMEA in your own words. You can also invoke the skill directly with `/failwise:fmea-software`. The list gives one example prompt for each kind of request:
+- **A new analysis.** "Run a design FMEA of our checkout service, which depends on a third-party payment gateway and a pricing service."
+- **A seeded analysis.** "Seed an FMEA baseline from these postmortems and identify the gaps."
+- **A conversion.** "Convert this legacy RPN spreadsheet to the JSON model." The sheet's ratings are kept as authored.
+- **An update.** "Update the existing FMEA after this architecture change." Only the affected chains are re-read and marked stale.
 
-- The skill makes a new analysis of a system. It works from the architecture, dependencies, contracts and incident history of the system. Example: "Run a design FMEA of our checkout service, which depends on a third-party payment gateway and a pricing service."
-- The skill seeds an analysis from existing postmortems. Example: "Seed an FMEA baseline from these postmortems and identify the gaps."
-- The skill converts a legacy spreadsheet that ranks by RPN to the JSON model. RPN is the risk priority number, the product of the three ratings. The skill keeps the original ratings and RPN for reference. Example: "Convert this legacy RPN spreadsheet to the JSON model."
-- The skill updates an analysis after an architecture change. It flags the affected failure chains as stale, and does not write the whole analysis again. Example: "Update the existing FMEA after this architecture change."
+It works from the inputs [`design-inputs.md`](skills/fmea-software/references/design-inputs.md) lists — flows, components, dependencies and limits, codebases, incidents and controls — and asks for what is missing, recording it as an open assumption rather than inventing it.
 
-The skill works from the inputs that [`design-inputs.md`](skills/fmea-software/references/design-inputs.md) lists. They are critical flows, a component inventory, the dependencies and their limits, the codebases and their repositories, incident history, and the controls already in place. [`checkout-inputs.md`](skills/fmea-software/evals/fixtures/checkout-inputs.md) is an example of such inputs. The skill tells Claude to ask for what is missing. It also tells Claude to write each gap into the analysis as an open assumption, and not to invent a value. In the tests, Claude did not always ask, as the limitations below say.
-
-Every rating that Claude suggests carries a rationale. Each rating is provisional at first. The skill asks a named person to re-score each rating against the [rating anchors](skills/fmea-software/references/scales-software.md). The skill treats no priority as final before that re-score.
-
-Claude works through a new analysis with you in seven steps:
-
-1. Plan the scope.
-2. Break the system into elements.
-3. State the functions of each element.
-4. Derive the failure chains.
-5. Rate the failure chains.
-6. Plan actions.
-7. Write the report.
-
-At the end, Claude gives you the analysis and the rendered report. Claude then asks you to re-score each rating in the session, one at a time. Claude writes your name and the date on each rating that you re-score. After your re-scores, Claude runs the scripts again, so that the priorities and the report follow your ratings. Expect several dozen ratings for one service. Each failure chain carries three ratings. The four test runs of a new analysis at version 0.1.0 wrote between 12 and 18 chains, and the two at version 0.6.0 wrote 16 each.
+Claude works through a new analysis in seven steps: plan the scope, break the system into elements, state each element's functions, derive the failure chains, rate them, plan actions and write the report. Every rating it suggests carries a rationale and stays provisional until a named person re-scores it against the [anchors](skills/fmea-software/references/scales-software.md), one rating at a time, with their name and the date recorded.
 
 ## What you get
 
-- **A JSON document**, the analysis itself. It follows [`fmea.schema.json`](skills/fmea-software/schemas/fmea.schema.json). It is the record that you keep and update.
-- **An HTML report**, which `render.ts` renders from the analysis. The report is one self-contained file. It needs no JavaScript and no network access, and it prints in landscape. It holds these parts, in this order:
-  - a summary strip and a "Needs attention" block, under the title and the scope
-  - the ground rules, assumptions and review record
-  - the structure of the system, with a table of its top-level elements and a table of its dependencies
-  - the flows, with their value priority, their users, their steps and the chains that name each one
-  - an index of the failure chains, sorted by priority
-  - one section per chain, grouped by top-level element
-  - the actions
-  - the automated checks, with a quality score
-  - a provenance appendix.
+A **JSON analysis** against [`fmea.schema.json`](skills/fmea-software/schemas/fmea.schema.json), which you keep and update, and an **HTML report**: one self-contained file, no JavaScript, no network access, landscape print. The report holds, in order: a summary and needs-attention block; the ground rules, assumptions and review record; the structure and its dependencies; the flows; a chain index sorted by priority; one section per chain grouped by top-level element; the actions; the automated checks and quality score; and a provenance appendix.
 
-This repository publishes an [example report](https://nzneit.github.io/failwise/). The report shows a hand-written reference analysis of a synthetic checkout service. That analysis is the fixture of the test suite, not the output of a session. The current code renders it. To render it yourself, run this command in a clone, with Node.js 24.2 or later:
+An [example report](https://nzneit.github.io/failwise/) of a synthetic checkout service is published. Render it yourself with Node.js 24.2 or later:
 
 ```
-node skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out checkout-report.html
+node skills/fmea-software/scripts/render.ts dev/fixtures/checkout-service.fmea.json --out checkout-report.html
 ```
 
-The command also prints one line that counts the provisional ratings. That line is an instruction to Claude. When you run the command yourself, ignore it.
+## Status
 
-## What an FMEA is
+| Version | Model | Rounds | Outcome |
+|---|---|---|---|
+| 0.1.0 acceptance | glm-5.3 and glm-5.3-flash | 8 runs: 4 prompts at 2 capabilities | 3 of 8 combinations passed; the v1 acceptance gate failed |
+| 0.6.0 | Claude Opus 5.5, high | 6 runs: 3 prompts, 2 runs each | 2 of 3 prompts passed; the new analysis failed a must criterion; postmortems did not run |
+| 0.7.0 flow model | DeepSeek V4.1-Flash, high and medium | 12 runs: 3 prompts, 2 capabilities, 2 runs | 0 of 6 combinations passed; 4 of 12 runs passed individually |
+| Prose baseline | DeepSeek V4.1-Flash | 16 runs: 4 prompts, 2 capabilities, 2 runs | 1 of 8 combinations passed |
+| Prose behaviour, three rounds | DeepSeek V4.1-Flash | 48 runs: 3 rounds of 16 | 1, 4 and 2 of 8 combinations passed |
+| Prose readability, two rounds | DeepSeek V4.1-Flash | 32 runs: 2 rounds of 16 | 3 and 4 of 8 combinations passed |
 
-An FMEA asks these questions about each part of a system:
+### Known limitations
 
-- What must it do?
-- How can that fail?
-- What does the failure do to the rest of the system and to the user?
-- What causes it?
-- What prevents or detects it today?
-
-One failure mode, with its effects, causes and controls, is one failure chain, a row of the analysis. Each chain has three ratings from 1 to 10: Severity, Occurrence and Detection. The three ratings give the chain a priority of high, medium or low. The priority says where to act first. A design-side FMEA examines the design, before the incident. It can also start from the incidents that you already have. Wikipedia's [article on FMEA](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) covers the method's history and its variants.
-
-## Status and limitations
-
-0.7.0 is a pre-release. The evaluation that decides v1, on two different models, ran on version 0.1.0, and that version did not pass its own acceptance gate. Versions 0.6.0 and 0.7.0 ran smaller evaluations, or full rounds on one model, which the paragraphs below describe. Neither the GitHub adapter that 0.2.0 adds nor the Jira adapter that 0.4.0 adds has an evaluation. 0.6.0 also changes the format of the analysis to schema v3, so an analysis written with 0.3.x to 0.5.x needs a one-time migration, as [Compatibility between versions](docs/scripts.md#compatibility-between-versions) describes.
-
-The evaluation tested the skill on four prompts. It ran each prompt at two model capabilities, high and medium. glm-5.3 filled the high capability, and glm-5.3-flash filled the medium capability. Three of the eight combinations passed:
-
-- the conversion of a legacy RPN sheet, at both capabilities
-- the update of an analysis after an architecture change, at high.
-
-New analyses and postmortem seeding did not pass. The [eval results](docs/specs/2026-09-07-eval-results.md) give the scores, and the [acceptance note](docs/specs/2026-09-07-acceptance.md) gives the ruling. Both call release 0.1.0 v1.
-
-The other six acceptance criteria pass, with one caveat. The check that each cited record supports its statement predates the edits of 2026-09-29. Four reference files have open findings from that check, and none of the findings is about licensing. The check did not run again on two other reference files. The addendum of the acceptance note gives the details.
-
-Version 0.6.0 ran three of the four prompts again, twice each at high: the new analysis, the conversion of a legacy RPN sheet and the update after an architecture change. Two of the three passed: the conversion and the update. The new analysis failed on a must criterion: its second run wrote "None stated." as the scaling limit of the pricing service, instead of raising the missing limit as an open question. Postmortem seeding did not run again and has no result at 0.6.0. Four checks in a session also tried the migration of an older analysis and the update rules on dependencies and codebases. The [multi-codebase eval results](docs/specs/2026-10-08-multi-codebase-eval-results.md) give the scores, the checks and what stayed unverified.
-
-Version 0.7.0 ran the same three prompts again, twice each at high and twice each at medium. DeepSeek V4.1-Flash (`deepseek-flash`) at effort high filled both capabilities. None of the six combinations passed. Four of the twelve runs passed on their own: the first run of the conversion and the second run of the update, at each capability. The new analysis failed at both capabilities, because every run failed a must criterion: three of the four did not raise the missing scaling limit of the pricing service as an open question, and the fourth named, as sources of its elements, repositories it was never given. The update failed at high: its first run named a priority in its closing message and did not say that the priority rests on provisional ratings. The conversion is unverified at both capabilities, because the stability check could not compare the flows of the two runs: the legacy sheet names none. Its second run at each capability also failed a must criterion: the history of the analysis did not record that the run substituted the rationale on one row. The update is unverified at medium: its first run wrote no report and is not scored. That run's permissions allowed `node` and not `bun`. The maintainer's global Claude Code instructions, which the run read, say that `bun` is always on PATH. The run tried `bun`, was denied, and never ran a script with `node`. The transcripts of eleven of the twelve runs quote or apply those instructions, so those runs tested the skill with the maintainer's own rules added. An unverified combination is not a pass. Postmortem seeding did not run again and has no result at 0.7.0. After the round was judged, the maintainer took nine rulings on it. Four of them amended the rubric, and seven scores were judged again under the amended rubric. The new scores swapped which run of the update at high passed, and changed the result of no combination. The [flow-model eval results](docs/specs/2026-10-12-flow-model-eval-results.md) give the scores and what stayed unverified.
-
-The prose work ran four prompts again in six rounds: the new analysis, postmortem seeding, the conversion of a legacy RPN sheet and the update after an architecture change, twice each at both capabilities, sixteen runs a round. The first round was a baseline, the next three followed changes that state each rule where the output is written, and the fifth and sixth followed a rewrite of the instructions for readability. The sixth repeated the fifth on the same text. deepseek-flash, not an Anthropic model, filled both capabilities in every round. So the rounds compare the stages with each other. They do not show how the skill behaves on Claude, and they do not count toward the v1 acceptance gate. Each run of these rounds had its own empty Claude Code configuration directory, so no runner's instructions reached it. At the baseline, 2 of the 8 runs whose inputs leave out a scaling limit on purpose recorded it as an open question. In the second and third rounds of the behaviour changes, all 8 did. In the third, every run scored full marks on each of the three criteria those changes target, where the criterion applies: the missing input asked for, the provisional caveat beside each priority, and the conversion's substitutions recorded. In the two readability rounds, every run again scored full marks on those three criteria where the criterion applies, except one run in each round, a different one each time: in the fifth round one postmortem-seeding run marked a control as observed in an incident its record does not show that it acted in, and in the sixth one new-analysis run wrote the missing scaling limit into a cause as a fact, and also recorded it as an open question. The design's gate for the rewrite reads those two drops strictly, so it fails on both rounds and the decision goes to the maintainer; an analyst-and-skeptic read of the fifth round's drops found no change in the instructions that explains them, which is why the sixth round repeated the fifth without a change. The maintainer accepted the readability rewrite on the rounds as read, and took each of the two drops as the variance of a single run. Two sentences over the length cap were split afterwards, with no word changed. At the same time, two other sentences lost their citations and are now marked as the skill's own. One part of the stability check compares the number of chains at each priority between the two runs of a combination. That comparison failed on three combinations in the third behaviour round and on four in the fifth round. Two of the four had held in the third behaviour round. In the sixth round, it failed on one combination, which had held in the third behaviour round. The rewrite the rounds measured took the instructions' main file from 56,336 to 62,406 characters, one rule per sentence. Under the rubric's pair rule, 1, 1, 4, 2, 3 and 4 of the eight combinations passed in the six rounds. In every round, several runs of the new analysis and of postmortem seeding failed a must criterion the work left alone: they cited repositories they were not given. Parts of the record stayed unverified. At the baseline, the agent meant to write the results file left it half written, and the file was written from the judging's own output instead. In the first behaviour round, one run's closing message was cut off mid-word, so that run counts as unverified. The check of the counts by priority in the closing message missed counts it should have read, on six runs of the third behaviour round, five of the first readability round and two of its repeat. No run of the sheet conversion typed an element as outside the analysed system, so the skill's rule for such an element's dependency and the two scoring clauses on that dependency were never exercised. No round's records name the commit of the plugin copy its runs used. The notes of the first behaviour round and of the two readability rounds infer it from commit times. The notes of the [baseline](docs/specs/2026-10-14-prose-eval-results-0.md), of the [first](docs/specs/2026-10-14-prose-eval-results-1.md), [second](docs/specs/2026-10-14-prose-eval-results-1b.md) and [third](docs/specs/2026-10-14-prose-eval-results-1c.md) behaviour rounds and of the [readability round](docs/specs/2026-10-14-prose-eval-results-2.md) and [its repeat](docs/specs/2026-10-14-prose-eval-results-2b.md) give the scores and what stayed unverified, and the [acceptance note](docs/specs/2026-10-14-prose-acceptance.md) lists every unverified item, with what each result gate did not check, and gives the rulings.
-
-Known limitations:
-
-- Claude does not always ask for a missing input. The test inputs leave out the scaling limit of a dependency on purpose. At version 0.1.0, on glm-5.3 and glm-5.3-flash, no tested run of a new analysis or of postmortem seeding asked for it. At version 0.6.0, on Claude Opus 5.5, one of the two runs of a new analysis recorded it as an open assumption for you to answer. The other did not. In the 0.7.0 flow-model round, before the prose work, on DeepSeek V4.1-Flash, one of the four runs of a new analysis recorded it as an open assumption for you to answer. The other three did not. In the two readability rounds of the prose work, which measured the rewritten instructions, on DeepSeek V4.1-Flash, all eight runs of a new analysis and of postmortem seeding recorded it as an open assumption for you to answer. In the second of those rounds, one run of a new analysis also wrote the missing limit into a cause as a fact.
-- Results vary between runs. At version 0.1.0, on glm-5.3, the same inputs gave 12 failure chains in one run and 18 in another. At version 0.6.0, on Claude Opus 5.5, both runs wrote 16. In the 0.7.0 flow-model round, before the prose work, on DeepSeek V4.1-Flash, the two runs at high wrote 11 and 12 chains, and the two at medium wrote 14 and 13. The stability check between the two runs at each capability passed. In the first readability round, on DeepSeek V4.1-Flash, the two runs of a new analysis at high wrote 17 and 13 chains, and the two at medium wrote 17 each. The stability check failed at high, because the number of chains at priority high differed by five, above its bound of 3.4. In the second readability round, on the same text, the runs at high wrote 13 and 12 chains, and the runs at medium wrote 14 and 17. The stability check passed at both capabilities. Over all four prompts, the stability check failed on four of the eight combinations in the first readability round and on one in the second.
-- Read the priorities from the analysis or the rendered report. The scripts compute the priorities in both. Do not read them from Claude's closing message, which once stated a priority that the analysis did not carry.
+- Claude does not always ask for a missing input. The test inputs leave out a dependency's scaling limit on purpose, and some runs recorded it as a fact instead of an open question.
+- Results vary between runs. The same inputs have produced 12 failure chains in one run and 18 in another.
+- Read priorities from the analysis or report. The scripts compute both; a closing message once named a priority the analysis did not carry.
 - Every rating stays provisional until a named person re-scores it.
-- No person took part in the tested runs. Nobody answered questions, so the tests did not exercise the back-and-forth of a session or the re-score step.
-- The 0.1.0 runs used glm-5.3 and glm-5.3-flash, not Anthropic models. The 0.6.0 runs used Claude Opus 5.5 (`claude-opus-5-5`) at the high capability. The 0.7.0 runs used DeepSeek V4.1-Flash (`deepseek-flash`), not an Anthropic model, at effort high for both capabilities, so they did not compare two models.
+- No person took part in the tested runs, so the session's back-and-forth and the re-score step were never exercised.
+- The prose rounds used DeepSeek V4.1-Flash, not an Anthropic model: they compare stages of the instructions and do not show how the skill behaves on Claude.
 
-Not in this version:
+### Not in this version
 
-- Ready-made failure modes for every kind of element. The catalog of the skill has them for services and components. It also has catalog rows for dependencies, for any element outside the analysis or that is the provider of an edge. It has a short security set for security-relevant elements. For interfaces, event streams, datastores and ML or LLM components, the skill asks guiding questions instead.
-- Threat modeling. The skill writes a failure whose cause is an adversary as a handoff to threat modeling.
-- Process-side FMEA (PFMEA) of delivery, pipelines or operations. For such a request, the skill gives a short answer and no analysis. The answer names what has a source and what is missing.
-- One analysis has one owner and one tracker target, and an update re-reads the whole analysis; updating one codebase alone, and a tracker per team, are later work.
-
-Under [Compatibility between versions](docs/scripts.md#compatibility-between-versions), the scripts page says which versions of the plugin read which analyses.
+- Ready-made failure modes for every element kind. Interfaces, event streams, datastores and ML or LLM components get elicitation questions instead.
+- Threat modeling. An adversarial cause is written as a handoff to it.
+- Process-side FMEA beyond a stub answer.
+- One owner and one tracker target per analysis. Per-codebase updates and per-team trackers are later work.
 
 ## Tracking actions as GitHub issues or Jira work items
 
-Once an analysis has actions, Claude can create a GitHub issue or a Jira work item for each one and later read their state back. This happens only when you ask. Tracking needs `gh` for GitHub or `acli` for Jira, installed and signed in. The script `track.ts` does the work in three commands: `plan`, `apply` and `refresh`. `plan` changes nothing, and nothing is created before you agree to the plan it prints. [The tracking page](docs/tracking.md) gives the details, the differences for Jira and the caveats.
+When you ask, Claude can create a GitHub issue or Jira work item per action and read their state back later. Tracking needs `gh` or `acli`, installed and signed in, and nothing is created before you agree to the plan. [The tracking page](docs/tracking.md) gives the commands, Jira differences and caveats.
 
 ## The scripts
 
-The skill has Claude run five scripts and take every priority from them. The fifth, `update-check.ts`, is the one the update mode runs. You can also run them directly with `node`. All five are in `skills/fmea-software/scripts/`.
-
 | Script | What it does |
 |---|---|
-| `validate.ts <analysis.json> [--write]` | Checks the analysis against the schema, the invariants and the lint rules, recomputes the priorities and the quality score, and on a clean run writes the results with `--write`, which `render.ts` requires. |
-| `priority.ts <analysis.json> --write [--change-table]` | Writes each failure chain's priority from its ratings, and with `--change-table` moves the analysis to another priority table. |
-| `render.ts <analysis.json> --out <report.html> [--force]` | Renders a validated analysis to the HTML file that `--out` names, and with `--force` overwrites an existing file. |
-| `track.ts plan <analysis.json>`<br>`track.ts apply <analysis.json> --plan <digest> [--only <key>,<key>] [--public-ok]`<br>`track.ts refresh <analysis.json> [--write]` | Tracks the actions as GitHub issues or Jira work items, as [the tracking page](docs/tracking.md) describes, and `apply` takes the digest that `plan` prints. |
-| `update-check.ts <stored copy> <draft> [--check]` | Compares an update's draft with the analysis as it was stored. Prints the dependency, element and flow changes, the rows they mark stale and the order to re-rate them in. With `--check`, refuses a draft whose stale flags disagree. With `--check`, also refuses a draft in which a chain names a removed flow, or a flow with no source whose kind is not `catalog`. It writes nothing. |
+| `validate.ts <analysis.json> [--write]` | Checks the schema, invariants and lints, recomputes priorities and the score, and writes results with `--write`. |
+| `priority.ts <analysis.json> --write [--change-table]` | Writes each chain's priority from its ratings, and records the priority table. |
+| `render.ts <analysis.json> --out <report.html> [--force]` | Renders a validated analysis to one HTML file; `--force` overwrites. |
+| `track.ts plan\|apply\|refresh <analysis.json>` | Plans, creates or reads back the tracker items for the actions. |
+| `update-check.ts <stored copy> <draft> [--check]` | Prints the structural diff and the stale set an update produces, and checks a draft against them. |
 
-[The scripts page](docs/scripts.md) describes the flags, the refusals and how to use a priority table of your own.
+[The scripts page](docs/scripts.md) gives every flag and refusal.
 
 ## Provenance
 
-The skill depends on no external knowledge service. Every anchor, catalog row, table and rule it carries is tagged with its provenance: either a record id (`Cnnn`) that traces to a source, or `skill-authored`. The tags, what each source's license permits, and the register that gives each record's source and its web address are in [`provenance.md`](skills/fmea-software/references/provenance.md). The plugin ships no AIAG-VDA cell values, no Google SRE Book text, and no detail of any real system.
-
-The research evidence behind the record ids quotes paywalled standards and no-derivatives material verbatim, so it is kept in a private repository. Finding ids of the form `F-WSn-NN`, in the design spec and the schema, point into it and do not resolve here. The design spec, the eval results and the acceptance note are public, under [`docs/specs/`](docs/specs/).
+Every anchor, catalog row, table and rule carries a record id that traces to a source or the tag `skill-authored`. The tags, license permissions and source register are in [`provenance.md`](skills/fmea-software/references/provenance.md). The design history, eval results and acceptance notes are private, because the records behind them quote restricted material; the plugin ships no AIAG-VDA cell values, no Google SRE Book text and no detail of a real system.
 
 ## Contributing
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the tests and static checks, the evals, and the provenance rule for changes to the reference files. It also covers the prose rules for changes to `SKILL.md` and the reference files. The design is [`docs/specs/2026-09-07-fmea-software-design.md`](docs/specs/2026-09-07-fmea-software-design.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, tests, static and browser checks, provenance, prose rules and pull request limits. The design is [`docs/design.md`](docs/design.md).
 
 ## License
 
-Apache-2.0, Copyright 2026 Nathan Neitman; see [`LICENSE`](LICENSE). Third-party material the skill reproduces or adapts keeps its own license and is listed with its attribution in [`NOTICES.md`](skills/fmea-software/licenses/NOTICES.md), with copies of those licenses beside it.
+Apache-2.0, Copyright 2026 Nathan Neitman; see [`LICENSE`](LICENSE). Third-party material the skill reproduces or adapts keeps its own license and is listed in [`NOTICES.md`](skills/fmea-software/licenses/NOTICES.md).

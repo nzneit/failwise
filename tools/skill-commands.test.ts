@@ -23,7 +23,7 @@ import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..");
 const SKILL_DIR = join(ROOT, "skills", "fmea-software");
-const FIXTURE = join(SKILL_DIR, "evals", "fixtures", "checkout-service.fmea.json");
+const FIXTURE = join(ROOT, "dev", "fixtures", "checkout-service.fmea.json");
 const PREFIX = "node ${CLAUDE_SKILL_DIR}/scripts/";
 const DOCUMENT_SCRIPTS = ["priority.ts", "validate.ts", "render.ts"];
 const EXIT_IO = 3;

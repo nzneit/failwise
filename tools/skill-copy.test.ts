@@ -69,7 +69,7 @@ test("the four scripts run from a copy of skills/fmea-software/ alone, outside t
     writeFileSync(join(bin, "gh"), STAND_IN_GH);
     chmodSync(join(bin, "gh"), 0o755);
     const doc = join(dir, "analysis.json");
-    const fixture = JSON.parse(readFileSync(join(skill, "evals", "fixtures", "checkout-service.fmea.json"), "utf8")) as Record<string, unknown>;
+    const fixture = JSON.parse(readFileSync(join(ROOT, "dev", "fixtures", "checkout-service.fmea.json"), "utf8")) as Record<string, unknown>;
     delete fixture.computed;
     writeFileSync(doc, JSON.stringify(fixture, null, 2) + "\n");
     const report = join(dir, "report.html");

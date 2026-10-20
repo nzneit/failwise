@@ -42,7 +42,7 @@ test("the default run: dry run, render, Playwright on chromium, the other engine
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.calls, [
     `${PLAYWRIGHT} install --dry-run chromium`,
-    "skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out build/browser/report.html --force",
+    "skills/fmea-software/scripts/render.ts dev/fixtures/checkout-service.fmea.json --out build/browser/report.html --force",
     `${PLAYWRIGHT} test --config dev/browser/playwright.config.ts --project chromium`,
   ]);
   assert.deepEqual(result.lines, ["## gate: playwright test over chromium (node v24.17.0)", ...(NOT_ASSERTED.length > 0 ? [NOT_ASSERTED_LINE] : []), "## not run here: firefox, webkit"]);

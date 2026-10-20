@@ -17,7 +17,7 @@ import { defaultHost, findNode, MIN_LABEL, type Host } from "./host.ts";
 const PLAYWRIGHT = "dev/node_modules/.bin/playwright";
 /** The renderer and the fixture every browser command renders, repository-relative. */
 export const RENDER = "skills/fmea-software/scripts/render.ts";
-export const FIXTURE = "skills/fmea-software/evals/fixtures/checkout-service.fmea.json";
+export const FIXTURE = "dev/fixtures/checkout-service.fmea.json";
 const OUT = "build/browser";
 const INSTALL = "run npm ci --prefix dev --ignore-scripts";
 const ENGINE_LIST = ENGINES.join(", ");

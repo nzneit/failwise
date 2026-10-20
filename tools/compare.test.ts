@@ -174,8 +174,8 @@ test("the before render runs the unpacked tree's renderer on its own fixture, th
     "git status --porcelain",
     `git archive --format=tar --output=build/compare/before.tar ${MERGE_BASE} skills`,
     "tar -xf build/compare/before.tar -C build/compare/before-tree",
-    "build/compare/before-tree/skills/fmea-software/scripts/render.ts build/compare/before-tree/skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out build/compare/before.html --force",
-    "skills/fmea-software/scripts/render.ts skills/fmea-software/evals/fixtures/checkout-service.fmea.json --out build/compare/after.html --force",
+    "build/compare/before-tree/skills/fmea-software/scripts/render.ts dev/fixtures/checkout-service.fmea.json --out build/compare/before.html --force",
+    "skills/fmea-software/scripts/render.ts dev/fixtures/checkout-service.fmea.json --out build/compare/after.html --force",
   ]);
 });
 

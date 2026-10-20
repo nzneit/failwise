@@ -1,72 +1,40 @@
 # Tracking actions as GitHub issues or Jira work items
 
-The README's section [Tracking actions as GitHub issues or Jira work items](../README.md#tracking-actions-as-github-issues-or-jira-work-items) summarizes this page.
-
-For each action of an analysis, you can ask Claude to create a GitHub issue or a Jira work item, an item below. Later, you can ask Claude to read the state of the items back. Claude does this only when you ask, never as part of a run.
-
-For GitHub, `track.ts` needs the GitHub CLI, `gh`, installed and signed in to the host. Sign in with one of these commands:
-
-- `gh auth login` for github.com
-- `gh auth login --hostname <host>` for another host.
-
-`plan` and `apply` need an account that can push to the repository. The repository must have issues turned on. It must not be an archived repository. `refresh` needs only an account that can read the issues.
+When you ask, Claude can create a GitHub issue or a Jira work item for each action of an analysis, and later read their state. Only on request, never as part of a run. Tracking needs `gh` for GitHub or `acli` for Jira, installed and signed in.
 
 ## The target on GitHub
 
-Claude first asks where the issues go. It asks for the repository, as `owner/repo`, and for the label that every issue carries. The label is `failwise` unless you choose another. Claude writes the repository and the label into the analysis as `meta.tracker`. When the host is not github.com, `meta.tracker` also holds the host. When the report has a published address, `meta.tracker` also holds that address, so that each issue links to its failure chain.
+Claude asks where the issues go: the repository as `owner/repo`, and the label every issue carries, `failwise` unless you choose another. It writes both into `meta.tracker`, with the host when it is not github.com and a published report address when one exists. `plan` and `apply` need an account that can push to the repository, and the repository must not be archived; `refresh` needs only read access.
 
 ## The three commands
 
-After Claude sets the target, the script `track.ts` does the work in three commands:
-
-- **`plan`** changes nothing. It prints the repository and whether it is public. It prints the text of every issue that it will create, and each existing issue that it will link instead. It also prints anything that needs your attention, such as two issues for one action.
-- **`apply`** creates the issues of that plan, or links the existing issues that `plan` found. It writes the link of each issue into the analysis, on its action. When the label is missing from the repository, `apply` creates the label before the first issue. `apply` creates nothing before you agree to the plan. It takes the digest of the plan and refuses when the plan has changed since Claude showed it. Claude then shows you the new plan and asks again.
-
-  `apply` refuses a repository that is public, or whose visibility it cannot establish, unless you agree to that as well.
-- **`refresh`** reads the state of each linked issue. When someone closes an issue as completed, `refresh` proposes Completed. When someone closes an issue as not planned, `refresh` proposes Not Implemented. Claude changes a status only when you confirm it. When the analysis holds a finished action whose issue is still open, close the issue yourself.
+- **`plan`** changes nothing. It prints the repository and its visibility, every issue it will create or link, every finding, and the digest `apply` takes.
+- **`apply`** recomputes the plan, refuses a stale digest, and creates or adopts one issue per action, the label included. It writes each link into the analysis as soon as the item exists, creates nothing before you agree, and refuses a public or unknown-visibility repository without `--public-ok`.
+- **`refresh`** reads every linked issue's state. A close as completed proposes Completed, and one as not planned proposes Not Implemented; Claude changes a status only on your confirmation. A finished action whose issue is still open is yours to close.
 
 ## What an item says
 
-An item starts with the text of its action. Six sections follow:
+An item begins with the action's text, then six sections: **Where** names the element, function, conditions and people served; **The failure** gives the mode, trigger, effects, causes and controls; **Priority** gives the chain's priority and each rating's rationale and evidence; **This action** gives its owner, target date, status and sibling actions; **Done when** says how to finish it; **Reference** names the analysis, version, chain, action and key, and links to the chain when the report is published.
 
-- **Where** names the element and the function of the failure chain, with the conditions of the function and the people it serves.
-- **The failure** gives the failure mode, its trigger, its three effects, its causes and the existing controls.
-- **Priority** gives the priority of the chain and the rationale and evidence of each rating.
-- **This action** gives the owner, the target date and the status of the action. It also names the other actions on the chain. When the chain carries a threat-model handoff, a stale flag or a source incident, it names them too.
-- **Done when** tells you how to finish the item and what a close proposes in the analysis.
-- **Reference** names the analysis, its version, the chain and the action. It shows the key of the item. When the report has a published address, it links to the chain in the report.
-
-`plan` prints the content of every item before you agree. An item is written once. A later change in the analysis does not change the item. Items that an earlier version created keep their text, and `refresh` reads them as before.
+An item is written once: a later analysis change does not rewrite it, and items from an earlier plugin version keep their text.
 
 ## Caveats on GitHub
 
-`apply` escapes the text it takes from the analysis, so that GitHub interprets nothing in it. Then `apply` writes the text into the body of an issue. The escape puts invisible characters into the text. Text that you copy from an issue, or search for on GitHub, does not match the analysis exactly.
-
-The listing of labelled issues on GitHub can lag a new issue by some seconds. After an interrupted `apply`, wait a moment before you run `plan` again. When `plan` prints a duplicate, remove the label from the extra issue.
+`apply` escapes the analysis text so GitHub interprets none of it, which puts invisible characters into the body; copied text does not match the analysis byte for byte. The issue listing can lag a new issue by seconds, so after an interrupted `apply`, wait before running `plan` again and remove the label from any duplicate.
 
 ## Jira Cloud
 
-The same three commands track actions as work items in a Jira Cloud project. For Jira, `track.ts` needs the Atlassian CLI, `acli`, installed and signed in to your site. The version tested is 1.3.39-stable. Claude gives you the sign-in command, and you run it yourself. So failwise never sees your token.
+The same three commands work against a Jira Cloud project, through `acli`; the version tested is 1.3.39-stable. Claude gives you the sign-in command and you run it, so failwise never sees your token. With an API token in a file outside any repository:
 
-To sign in with an API token:
+```
+acli jira auth login --site <host> --email <email> --token < token.txt
+```
 
-1. Save an API token to a file outside any repository.
-2. Run `acli jira auth login --site <host> --email <email> --token < token.txt`.
-3. Delete the file.
+Delete it afterwards; `acli jira auth login --web` also works. When `acli` is signed in to another site, `track.ts` refuses and prints the `acli jira auth switch --site <host> --email <email>` command. `plan` and `apply` need an account that can create work items; `refresh` needs read access.
 
-You can also sign in through the browser with `acli jira auth login --web`.
+For Jira, `meta.tracker` holds the site as `host`, the project key and the label. It can hold the work type `apply` creates, `Task` unless you choose another, and the key of an Epic as `parent`; Claude recommends an Epic so Jira groups the items. Four differences follow.
 
-When `acli` has a sign-in to another site, `track.ts` refuses to run. It prints the command that switches the site: `acli jira auth switch --site <host> --email <email>`. `plan` and `apply` need an account that can create work items in the project. `refresh` needs only an account that can read them.
-
-For a Jira target, `meta.tracker` holds the site as `host`, such as `example.atlassian.net`. It also holds the project key and the label. It can hold the work type that `apply` creates, which is `Task` unless you choose another. It can also hold the key of an Epic as `parent`. Claude recommends an Epic, so that Jira groups the work items under it.
-
-These are the differences from GitHub:
-
-- `apply` creates no label first. `track.ts` cannot tell who can see a Jira project. So it treats every Jira target as one whose visibility is unknown. Claude asks you each time before `apply` creates anything.
-- `refresh` reads a work item closed under the status or resolution `Done` as done, and proposes Completed. It reads a work item closed as `Won't Do` as dropped, and proposes Not Implemented.
-
-  When the workflow of your project closes work under other names, Claude writes the whole list in `meta.tracker.states`. A `done` or `dropped` list there replaces its default. So Claude keeps `Done` or `Won't Do` in that list while your site still closes work under that name.
-
-  `refresh` reports a work item closed under a name in neither list as `closed-unclear`, with its status and resolution. You can then choose, and add the name to the list.
-- A linked work item can have a description that no longer carries the key of its action, or carries the key of another action. `refresh` reports such a work item as `link-mismatch` and leaves it as it is. Check the link. When the link is wrong, remove the `tracker` block of the action by hand.
-- `refresh` refuses a link to a work item on a site other than `host`. Remove that link by hand too.
+- `apply` creates no label, because `track.ts` cannot tell who can see a Jira project; every target is unknown-visibility, so Claude asks first.
+- `refresh` reads a work item closed as `Done` as done and proposes Completed, and one closed as `Won't Do` as dropped and proposes Not Implemented. Put your project's own close names in `meta.tracker.states` as `done` or `dropped` lists. A close under a name in neither list is reported as `closed-unclear`.
+- A linked work item whose description no longer carries its action's key, or carries another's, is reported as `link-mismatch` and left alone. Check the link, and remove the action's `tracker` block by hand when it is wrong.
+- `refresh` refuses a link to a work item on a site other than `host`; remove that link by hand too.

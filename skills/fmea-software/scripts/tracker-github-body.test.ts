@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { literal, readMarker, renderBody, renderTitle } from "./lib/tracker/github-body.ts";
 import { actionRefs, buildItem, DONE_CLOSE, DONE_DECISION } from "./lib/tracker/items.ts";
-import { minimalDoc } from "./test-helpers.ts";
+import { fixturePath, minimalDoc } from "./test-helpers.ts";
 import type { FmeaDocument, TrackerConfig } from "./lib/types.ts";
 import type { TrackedItem } from "./lib/tracker/provider.ts";
 
@@ -89,7 +89,7 @@ test("a body whose action begins with four spaces and whose cause holds two carr
   assert.ok(!lines[causes + 2].startsWith("  - "));
 });
 
-const FIXTURE = join(import.meta.dirname, "..", "evals", "fixtures", "checkout-service.fmea.json");
+const FIXTURE = fixturePath("checkout-service.fmea.json");
 const fixture = (): FmeaDocument => JSON.parse(readFileSync(FIXTURE, "utf8")) as FmeaDocument;
 
 /** The body of the fixture's ch-2/act-1 under the fixture's own tracker configuration. */

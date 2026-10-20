@@ -6,9 +6,10 @@
 //   node tools/compare.ts --engines chromium,firefox,webkit
 //
 // `bun tools/compare.ts` works as well. The before side is the merge base of --base (default main)
-// and HEAD: its skills/ folder is exported with `git archive` and `tar` into build/compare/before-tree/,
-// which touches neither the working tree, the index nor a branch, and its checkout fixture is
-// rendered by its own renderer into build/compare/before.html; the tar file and the tree are then
+// and HEAD: its skills/ folder is exported with `git archive` and `tar` into build/compare/before-tree/
+// and its own renderer renders the working tree's fixture into build/compare/before.html, so the base
+// commit supplies the base renderer and both sides read the same fixture and its own copy of the
+// repository; the tar file and the tree are then
 // removed. The after side is the working tree's render, build/compare/after.html. Playwright's test
 // runner then runs dev/browser/compare.config.ts twice over the parts both reports have: the first
 // pass writes a reference image of each part at each view from the before report, the second
@@ -136,7 +137,7 @@ function exportBase(session: Session, sha: string): boolean {
 /** Renders one side's checkout fixture with that side's renderer into build/compare/<side>.html. */
 function renderSide(session: Session, side: "before" | "after"): boolean {
   const prefix = side === "before" ? `${TREE}/` : "";
-  const status = session.render(prefix + RENDER, prefix + FIXTURE, `${OUT}/${side}.html`);
+  const status = session.render(prefix + RENDER, FIXTURE, `${OUT}/${side}.html`);
   if (status === 0) return true;
   return fail(
     session,

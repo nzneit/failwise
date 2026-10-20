@@ -1,10 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { actionRefs, buildItem, DONE_CLOSE, DONE_DECISION, DONE_OTHER, itemKey, splitKey, textHash } from "./lib/tracker/items.ts";
 import type { Block, Section, TrackedItem } from "./lib/tracker/provider.ts";
-import { clone, minimalDoc, rating } from "./test-helpers.ts";
+import { clone, fixturePath, minimalDoc, rating } from "./test-helpers.ts";
 import type { Action, FmeaDocument, TrackerConfig } from "./lib/types.ts";
 
 const config: TrackerConfig = { provider: "github", project: "o/r", label: "failwise" };
@@ -101,7 +100,7 @@ test("origin.version is the analysis's meta.version", () => {
   assert.equal(itemOf(doc).content.origin.version, 7);
 });
 
-const FIXTURE = join(import.meta.dirname, "..", "evals", "fixtures", "checkout-service.fmea.json");
+const FIXTURE = fixturePath("checkout-service.fmea.json");
 const fixture = (): FmeaDocument => JSON.parse(readFileSync(FIXTURE, "utf8")) as FmeaDocument;
 
 /** The item of the action `actionId` on the chain `chainId` of `doc`. */

@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -12,12 +13,28 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
       - run: npm ci --prefix dev --ignore-scripts
       - run: node tools/run-tests.ts
       - run: node tools/check.ts
+      - if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node tools/check-bodies.ts --pr
+      - if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node tools/check-bodies.ts --commits "$BASE..$HEAD"
+      - if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: node tools/check-bodies.ts --commits "$BEFORE..HEAD"
 
   browser:
     runs-on: ubuntu-latest
