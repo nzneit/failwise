@@ -409,18 +409,24 @@ test("attention: handoff rows in index order with their failure modes", () => {
     c.failure_mode = `mode ${i}`;
   });
   assert.deepEqual(attentionOf(doc).handoffs, {
-    label: "2 rows passed to threat modelling and not yet answered",
-    rows: [{ chainId: "ch-1", failureMode: "mode 1" }, { chainId: "ch-2", failureMode: "mode 0" }],
+    label: "2 rows awaiting threat modelling",
+    rows: [{ chainId: "ch-1", failureMode: "mode 1", received: false }, { chainId: "ch-2", failureMode: "mode 0", received: false }],
   });
 });
 
-test("attention: an answered handoff keeps its mark and leaves the list; with every handoff answered the item is null", () => {
+test("attention: a modelled or declined handoff keeps its mark and leaves the list; a received one stays, marked received", () => {
   const doc = withComputed(docOf({ id: "ch-2" }, { id: "ch-1" }), []);
   doc.chains.forEach((c) => { c.handoff = { to: "threat-model", reason: "an attacker", adversary_cause: "process crash" }; });
   doc.chains[0].handoff!.result = { reference: "threat-models/svc.md", status: "modelled", date: "2026-10-01" };
   assert.deepEqual(attentionOf(doc).handoffs?.rows.map((r) => r.chainId), ["ch-1"]);
   assert.ok(modelOf(doc).rows.every((r) => r.marks.includes("handoff")), "an answered handoff row is still a handoff row");
-  doc.chains[1].handoff!.result = { reference: "threat-models/svc.md", status: "declined", date: "2026-10-02" };
+  // received: the receiver has the row but no threat model covers it yet, so the handoff stays open.
+  doc.chains[1].handoff!.result = { reference: "threat-models/svc.md", status: "received", date: "2026-10-02" };
+  assert.deepEqual(attentionOf(doc).handoffs, {
+    label: "1 row awaiting threat modelling",
+    rows: [{ chainId: "ch-1", failureMode: doc.chains[1].failure_mode, received: true }],
+  });
+  doc.chains[1].handoff!.result.status = "declined";
   assert.equal(attentionOf(doc).handoffs, null);
 });
 
@@ -531,8 +537,8 @@ test("attention: the checkout fixture's block", () => {
     ],
   });
   assert.deepEqual(a.handoffs, {
-    label: "1 row passed to threat modelling and not yet answered",
-    rows: [{ chainId: "ch-5", failureMode: "A session token that this component did not issue for the current session is accepted" }],
+    label: "1 row awaiting threat modelling",
+    rows: [{ chainId: "ch-5", failureMode: "A session token that this component did not issue for the current session is accepted", received: false }],
   });
   assert.deepEqual(a.nextActions.map((r) => `${r.chainId} ${r.action.id}`), ["ch-4 act-1", "ch-1 act-1", "ch-8 act-1"]);
 });

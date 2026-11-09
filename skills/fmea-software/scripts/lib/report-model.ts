@@ -85,7 +85,7 @@ export interface Attention {
   blockers: { label: string; lines: PlacedFinding[] } | null;
   stale: { label: string; rows: { chainId: string; reason: string | null }[] } | null;
   provisional: { label: string; rows: { chainId: string; factors: string[] }[] } | null;   // factors: "S", "O", "D", "post-action S", ...
-  handoffs: { label: string; rows: { chainId: string; failureMode: string }[] } | null;
+  handoffs: { label: string; rows: { chainId: string; failureMode: string; received: boolean }[] } | null;   // received: the receiver has the row, not yet modelled or declined
   nextActions: ActionRow[];                                        // at most three; empty means the item is left out
 }
 
@@ -531,14 +531,21 @@ function staleItem(rows: RowModel[]): Attention["stale"] {
   };
 }
 
-// The rows handed off to threat modelling with no answer recorded, in the index order, each with
-// its failure mode. A row whose handoff carries a result has been answered and needs no attention.
+// Whether a handoff is still open: no answer recorded, or only that the receiver has the row. A
+// modelled or declined answer closes it.
+function handoffOpen(row: RowModel): boolean {
+  const result = row.chain.handoff?.result;
+  return row.marks.includes("handoff") && (result === undefined || result.status === "received");
+}
+
+// The rows whose handoff to threat modelling is still open, in the index order, each with its
+// failure mode and whether the receiver has it.
 function handoffItem(rows: RowModel[]): Attention["handoffs"] {
-  const marked = rows.filter((row) => row.marks.includes("handoff") && row.chain.handoff?.result === undefined);
+  const marked = rows.filter(handoffOpen);
   if (marked.length === 0) return null;
   return {
-    label: count(marked.length, "row", "rows") + " passed to threat modelling and not yet answered",
-    rows: marked.map((row) => ({ chainId: row.chain.id, failureMode: row.chain.failure_mode })),
+    label: count(marked.length, "row", "rows") + " awaiting threat modelling",
+    rows: marked.map((row) => ({ chainId: row.chain.id, failureMode: row.chain.failure_mode, received: row.chain.handoff?.result?.status === "received" })),
   };
 }
 

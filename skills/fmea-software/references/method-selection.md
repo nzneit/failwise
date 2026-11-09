@@ -136,7 +136,7 @@ Only an adversarial cause writes a handoff. [skill-authored]
 - The receiver is whatever threat-modeling activity the person uses; in Claude Code, the `security-review` skill run over the element's code is one. [skill-authored]
 - The person records the receiver's answer on the row as `handoff.result`: a `reference` to where the answer lives, a `status` and a `date`. [skill-authored]
 - `status` is `received` when the receiver has the row, `modelled` when the threat model covers it, and `declined` when the receiver will not model it. [skill-authored]
-- An absent `result` means the handoff is open. [skill-authored]
+- The handoff stays open while `result` is absent or its `status` is `received`; `modelled` and `declined` close it. [skill-authored]
 - A recorded answer changes nothing else on the row: its ratings, priority and actions stand. [skill-authored]
 - The report lists the open handoffs under Needs attention and prints each answer in the row's section. [skill-authored]
 

@@ -50,7 +50,7 @@ The update writes its summary into `meta.history`, bumps `meta.version`, appends
 
 ## The five scripts
 
-The plugin has five scripts under `skills/fmea-software/scripts/`, run by Node 24.2 or later. `validate.ts`, `priority.ts`, `render.ts` and `update-check.ts` have no dependencies; `track.ts` starts `gh` for a GitHub target and `acli` for a Jira target. Nothing else the scripts do reaches the network. A script reaches the network only on the person's command and only for the tracker `meta.tracker` names, writes there only after the person agrees to a plan it has shown, and writes no file but the document and the report; a later connector obeys the same rule.
+The plugin has five scripts under `skills/fmea-software/scripts/`, run by Node 24.2 or later. `validate.ts`, `priority.ts`, `render.ts` and `update-check.ts` have no dependencies; `track.ts` starts `gh` for a GitHub target and `acli` for a Jira target. Nothing else the scripts do reaches the network. A script reaches the network only on the person's command and only for the tracker `meta.tracker` names, writes there only after the person agrees to a plan it has shown, and leaves no file but the document and the report, removing any temporary file it writes; a later connector obeys the same rule.
 
 **`validate.ts <file> [--write] [--table-file <path>]`** runs the schema checks, the cross-reference invariants, the priority recomputation and the twenty-one machine lints, and computes the quality score. On a clean run, `--write` replaces the `computed` block with the score, the lints, the validation time and the validator version. On any finding it writes nothing and exits 2.
 

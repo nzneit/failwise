@@ -848,7 +848,7 @@
     },
     "handoff": {
       "title": "Threat-model handoff",
-      "description": "Present if and only if at least one cause on the chain is marked adversarial, on any element kind (D6). The report marks handoff rows, and lists under Needs attention those with no result.",
+      "description": "Present if and only if at least one cause on the chain is marked adversarial, on any element kind (D6). The report marks handoff rows, and lists under Needs attention those still open.",
       "type": "object",
       "additionalProperties": false,
       "required": ["to", "reason", "adversary_cause"],
@@ -872,7 +872,7 @@
     },
     "handoffResult": {
       "title": "Threat-model answer",
-      "description": "The receiving threat-modeling activity's answer, recorded by the person who received it. Absent means the handoff is open. Recording it changes nothing else on the row: its ratings, priority and actions stand.",
+      "description": "The receiving threat-modeling activity's answer, recorded by the person who received it. The handoff stays open while this is absent or its status is received, and closes when it is modelled or declined. Recording it changes nothing else on the row: its ratings, priority and actions stand.",
       "type": "object",
       "additionalProperties": false,
       "required": ["reference", "status", "date"],

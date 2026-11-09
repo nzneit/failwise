@@ -22,7 +22,7 @@ Pass the same `--table-file` to `priority.ts`, `validate.ts`, `render.ts` and `t
 
 ## Compatibility between versions
 
-**Policy.** Before 1.0.0 nothing in this section is a promise: a release may move the schema id, bump the scales version or change what a script refuses, and the skill's update mode migrates what a migration was written for. The practice since 0.7.0 is that an optional addition keeps the schema id and an earlier plugin refuses the newer document, so people sharing a document share the plugin version. What 1.0.0 will promise is not yet defined. The history below records what each release did.
+**Policy.** Before 1.0.0 nothing in this section is a promise: a release may move the schema id, bump the scales version or change what a script refuses, and the skill's update mode migrates what a migration was written for. Since 0.7.0 each optional addition has kept the schema id, and an earlier plugin refuses the newer document, so people sharing a document share the plugin version. What 1.0.0 will promise is not yet defined. The history below records what each release did.
 
 Version 0.3.0 moved the analysis to schema v2: every element carries a boundary and a security flag, replacing the `external_dependency` and `security_component` kinds. `validate.ts`, `render.ts` and `track.ts` refuse a document written against 0.2.x or earlier with `KIND_LEGACY`; the skill's update mode migrates it.
 

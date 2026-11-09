@@ -432,7 +432,7 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(text(schema).endsWith("It stayed v3 when 0.8.0 added a chain's disposition and a handoff's result, the same way: the 0.7.0 scripts refuse a document that carries either, and a document that carries neither validates under 0.7.0 and under this schema."));
   assert.deepEqual(Object.keys(props("chain")).slice(13, 16), ["disposition", "handoff", "source_incident"]);
   assert.ok(text(defs.disposition).includes("disposition-with-open-action"), "the disposition names the invariant that governs it");
-  assert.ok(text(defs.handoffResult).includes("Absent means the handoff is open."));
+  assert.ok(text(defs.handoffResult).includes("The handoff stays open while this is absent or its status is received, and closes when it is modelled or declined."));
   assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
   assert.ok(text(props("flow").value_priority).endsWith("Read for the report's order of flows only; that order is presentational and ranks nothing."), "the tier's one use is the report's order of flows, and no filter reads it");
 });
@@ -605,6 +605,14 @@ test("the schema file uses only supported keywords and formats, and every $ref r
       const ref = node.$ref as string;
       assert.ok(ref.startsWith("#/$defs/"), `${schemaPointer}: $ref ${ref} is not a #/$defs/ reference`);
       assert.ok(ref.slice("#/$defs/".length) in defs, `${schemaPointer}: $ref ${ref} does not resolve`);
+    }
+  });
+});
+
+test("every object the schema declares properties for rejects a property it does not declare", () => {
+  forEachSchemaNode(loadSchema(), (schemaPointer, node) => {
+    if (node.type === "object" && node.properties !== undefined) {
+      assert.equal(node.additionalProperties, false, `${schemaPointer}: an object with properties carries additionalProperties false`);
     }
   });
 });

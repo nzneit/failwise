@@ -44,7 +44,7 @@ const ATTENTION_WHY = {
   blockers: "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again.",
   stale: "A stale row was rated before the design or the scales changed. Its ratings describe the earlier state until it is rated again.",
   provisional: `A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. ${FLOW_SEVERITY_PROVISIONAL} The priority of these rows is not final until one does.`,
-  handoffs: "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure. A row leaves this list when the answer is recorded.",
+  handoffs: "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure. A row leaves this list when its answer is modelled or declined.",
   nextActions: "The open actions with the earliest target dates, three at most. All actions are listed under Actions.",
 };
 const NOTHING_NEEDS_ATTENTION = "Nothing needs attention: no blocker, no stale row, no provisional rating, no open handoff and no open action.";
@@ -132,8 +132,8 @@ function provisionalEntries(rows: { chainId: string; factors: string[] }[]): str
   return rows.map((r) => `${rowLinkHtml(r.chainId)} ${e(r.factors.join(", "))}`);
 }
 
-function handoffEntries(rows: { chainId: string; failureMode: string }[]): string[] {
-  return rows.map((r) => `${rowLinkHtml(r.chainId)} ${e(r.failureMode)}`);
+function handoffEntries(rows: { chainId: string; failureMode: string; received: boolean }[]): string[] {
+  return rows.map((r) => `${rowLinkHtml(r.chainId)} ${e(r.failureMode)}${r.received ? ' <span class="muted">(received)</span>' : ""}`);
 }
 
 function nextActionEntries(rows: ActionRow[]): string[] {

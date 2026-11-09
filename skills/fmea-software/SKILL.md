@@ -148,7 +148,7 @@ Review runs while the analysis is produced, not only at the end, and the cross-d
    - Set `completed_date` when the status becomes Completed. [skill-authored]
    - Where no action is taken the risk and the priority are unchanged. [paraphrased:C064]
    - Record `disposition` only when the person accepts a row's risk and owes it no action. An empty `actions` list records no decision. [skill-authored]
-   - Give `disposition` the owner, rationale and date the person states, and `review_by` when they name one. [skill-authored]
+   - Set `disposition.status` to `accepted`. Give it the `owner`, `rationale` and `decided` date the person states, and `review_by` when they name one. [skill-authored]
    - In v1, record a single row-level re-rating, `post_ratings`, only once some action on the row is Completed. This encodes the rule above more strictly. `priority.ts --write` then fills `post_priority` from `post_ratings`. [skill-authored]
    - When the person asks to track the actions in a work tracker, load [work-tracking](references/work-tracking.md) and use `track.ts`. [skill-authored]
    - Track actions only on that request, never as part of a run. [skill-authored]
@@ -376,7 +376,7 @@ This mode produces the stored document brought up to the new structure, with its
 - Copy the checker's printed summary into the update summary in `meta.history`. The printed summary is its `edges:`, `elements:`, `flows:`, `chains re-pointed:`, `flows removed:` and `stale:` sections and its last line. [skill-authored]
 - Copy the checker's flow sections into the update summary. They are flows added, removed and changed, chains re-pointed, evidence and status changes, and the removed-flow guard. [skill-authored]
 - Name in the hand-over each stale row that carries a `disposition`. Its acceptance rests on the ratings the update replaced. [skill-authored]
-- Name in the hand-over each handoff with no `result`, and ask for the receiver's answer. [skill-authored]
+- Name in the hand-over each handoff whose `result` is absent or `received`, and ask for the receiver's answer. [skill-authored]
 - Name the copy of the stored document in the hand-over message. [skill-authored]
 - In the hand-over, list the stale rows, the findings outside the stale set and each link dropped or repointed. Place them under their root, with the root's codebase named, so that a team finds its own. Put the rows that reach no root last. [skill-authored]
 

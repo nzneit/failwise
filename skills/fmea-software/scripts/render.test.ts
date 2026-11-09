@@ -103,6 +103,7 @@ const MARK_TITLES = new Map<string, string>([
 ]);
 const mark = (name: string): string => `<span class="mark mark-${name}" title="${escapeHtml(MARK_TITLES.get(name) ?? "")}">${name}</span>`;
 const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
+const HANDOFFS_WHY = "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure. A row leaves this list when its answer is modelled or declined.";
 
 function between(html: string, open: string, close: string): string {
   const start = html.indexOf(open);
@@ -533,9 +534,9 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
     attnItem(`12 ratings not yet reviewed<br>${mark("provisional")}`,
       '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-5"><code>ch-5</code></a> S &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
       PROVISIONAL_WHY),
-    attnItem(`1 row passed to threat modelling and not yet answered<br>${mark("handoff")}`,
+    attnItem(`1 row awaiting threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
-      "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure. A row leaves this list when the answer is recorded."),
+      HANDOFFS_WHY),
     attnItem("Next actions due",
       '2026-10-09 <a href="#row-ch-4"><code>ch-4</code></a> act-1, Platform team &middot; 2026-10-15 <a href="#row-ch-1"><code>ch-1</code></a> act-1, Payments team &middot; 2026-10-16 <a href="#row-ch-8"><code>ch-8</code></a> act-1, Payments team',
       "The open actions with the earliest target dates, three at most. All actions are listed under Actions."),
@@ -794,6 +795,25 @@ test("a row section carries its parts in order on a row that has every part", ()
   assert.deepEqual(at, [...at].sort((a, b) => a - b), "the parts are out of order");
   assert.equal(occurrences(article, '<p class="finding'), 2, "two finding lines, blocker first");
   assert.ok(!article.includes("rating-provisional"), "a rating-provisional finding is not repeated in the row");
+});
+
+test("an accepted risk with no review date prints no review clause, and its text is escaped", () => {
+  const doc = minimalDoc();
+  doc.chains[0].disposition = { status: "accepted", owner: "Ops & <team>", rationale: "the <b>controls</b> hold it", decided: "2026-09-10" };
+  const section = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+  assert.ok(section.includes('<span class="lbl">Risk accepted</span>the &lt;b&gt;controls&lt;/b&gt; hold it <span class="muted">(Ops &amp; &lt;team&gt;, decided 2026-09-10)</span>'));
+  assert.ok(!section.includes("review by"));
+});
+
+test("a received handoff stays under Needs attention, marked received; a modelled one leaves it", () => {
+  const doc = golden();
+  const ch5 = doc.chains.find((c) => c.id === "ch-5")!;
+  ch5.handoff!.result = { reference: "threat-models/session.md", status: "received", date: "2026-10-01" };
+  assert.ok(headerOf(doc).includes(attnItem(`1 row awaiting threat modelling<br>${mark("handoff")}`,
+    '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted <span class="muted">(received)</span>',
+    HANDOFFS_WHY)));
+  ch5.handoff!.result.status = "modelled";
+  assert.ok(!headerOf(doc).includes("awaiting threat modelling"));
 });
 
 test("an open handoff says so in its part, and an answer's text is escaped", () => {
