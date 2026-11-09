@@ -1,5 +1,6 @@
 {
-  "entry": ["skills/fmea-software/scripts/*.ts", "tools/*.ts", "dev/browser/*.ts"],
+  "entry": ["opencode/*.ts", "skills/fmea-software/scripts/*.ts", "tools/*.ts", "dev/browser/*.ts"],
+  "ignoreExports": [{ "file": "opencode/index.ts", "exports": ["default"] }],
   "includeEntryExports": true,
   "ignorePatterns": ["tools/workflows/**"],
   "failOnParseError": true,

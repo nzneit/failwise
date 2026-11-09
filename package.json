@@ -1,1 +1,1 @@
-{"name": "failwise", "private": true, "type": "module"}
+{"name": "failwise", "private": true, "type": "module", "exports": {".": "./opencode/index.ts", "./server": "./opencode/index.ts"}}
