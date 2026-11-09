@@ -227,9 +227,9 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
 });
 
-test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-5, ch-8, handoff on ch-5, blocker on ch-7", () => {
+test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-5, ch-8, handoff on ch-5, accepted on ch-9, blocker on ch-7", () => {
   assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
-    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-7", ["blocker"]], ["ch-9", ["accepted", "provisional"]],
     ["ch-4", ["provisional"]], ["ch-5", ["handoff", "provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
   ]);
 });
@@ -246,14 +246,15 @@ test("the fixture's row findings leave out rating-provisional", () => {
   ]);
 });
 
-test("a row's marks come in the order stale, handoff, provisional, blocker", () => {
+test("a row's marks come in the order stale, handoff, accepted, provisional, blocker", () => {
   const doc = minimalDoc();
   const chain = doc.chains[0];
   chain.stale = { flag: true, reason: "element-changed", since_version: 1 };
   chain.handoff = { to: "threat-model", reason: "an attacker", adversary_cause: "process crash" };
+  chain.disposition = { status: "accepted", owner: "T. Tester", rationale: "the controls hold it", decided: "2026-09-01" };
   chain.post_ratings = { S: rating(8), O: rating(2, "provisional"), D: rating(4) };
   assert.deepEqual(modelOf(withComputed(doc, [finding("/chains/0/ratings/D", "blocker")])).rows[0].marks,
-    ["stale", "handoff", "provisional", "blocker"]);
+    ["stale", "handoff", "accepted", "provisional", "blocker"]);
 });
 
 test("only a blocker that points into the row marks it", () => {
@@ -408,9 +409,19 @@ test("attention: handoff rows in index order with their failure modes", () => {
     c.failure_mode = `mode ${i}`;
   });
   assert.deepEqual(attentionOf(doc).handoffs, {
-    label: "2 rows passed to threat modelling",
+    label: "2 rows passed to threat modelling and not yet answered",
     rows: [{ chainId: "ch-1", failureMode: "mode 1" }, { chainId: "ch-2", failureMode: "mode 0" }],
   });
+});
+
+test("attention: an answered handoff keeps its mark and leaves the list; with every handoff answered the item is null", () => {
+  const doc = withComputed(docOf({ id: "ch-2" }, { id: "ch-1" }), []);
+  doc.chains.forEach((c) => { c.handoff = { to: "threat-model", reason: "an attacker", adversary_cause: "process crash" }; });
+  doc.chains[0].handoff!.result = { reference: "threat-models/svc.md", status: "modelled", date: "2026-10-01" };
+  assert.deepEqual(attentionOf(doc).handoffs?.rows.map((r) => r.chainId), ["ch-1"]);
+  assert.ok(modelOf(doc).rows.every((r) => r.marks.includes("handoff")), "an answered handoff row is still a handoff row");
+  doc.chains[1].handoff!.result = { reference: "threat-models/svc.md", status: "declined", date: "2026-10-02" };
+  assert.equal(attentionOf(doc).handoffs, null);
 });
 
 test("attention: next actions due are the three earliest open actions", () => {
@@ -520,7 +531,7 @@ test("attention: the checkout fixture's block", () => {
     ],
   });
   assert.deepEqual(a.handoffs, {
-    label: "1 row passed to threat modelling",
+    label: "1 row passed to threat modelling and not yet answered",
     rows: [{ chainId: "ch-5", failureMode: "A session token that this component did not issue for the current session is accepted" }],
   });
   assert.deepEqual(a.nextActions.map((r) => `${r.chainId} ${r.action.id}`), ["ch-4 act-1", "ch-1 act-1", "ch-8 act-1"]);

@@ -14,6 +14,7 @@ export type ActionStatus = "Open" | "Decision pending" | "Implementation pending
 export type CauseOrigin = "specification" | "design" | "code";
 export type StaleReason = "element-changed" | "function-changed" | "flow-changed" | "control-removed" | "scales-version";
 export type AssumptionStatus = "open" | "closed";
+export type HandoffStatus = "received" | "modelled" | "declined";
 export type Strength = "strong" | "weak";
 export type Factor = "S" | "O" | "D";
 export type Severity = "blocker" | "warning";
@@ -48,7 +49,9 @@ export interface Rating { value: number; rationale: string; evidence_kind: Ratin
 export interface Ratings { S: Rating; O: Rating; D: Rating }
 export interface Priority { value: string; table: string; rpn: number }
 export interface Action { id: string; description: string; owner: string; status: ActionStatus; target_date: string; completed_date?: string; source_incident?: string; tracker?: TrackerLink }
-export interface Handoff { to: "threat-model"; reason: string; adversary_cause: string }
+export interface HandoffResult { reference: string; status: HandoffStatus; date: string }
+export interface Handoff { to: "threat-model"; reason: string; adversary_cause: string; result?: HandoffResult }
+export interface Disposition { status: "accepted"; owner: string; rationale: string; decided: string; review_by?: string }
 export interface CatalogRef { id: string; provenance: string }
 export interface Stale { flag: boolean; reason?: StaleReason; since_version?: number }
 export interface Effects { local: string; next_level: string; end: string }
@@ -57,7 +60,7 @@ export interface Flow { id: string; name: string; value_priority: ValuePriority;
 export interface Chain {
   id: string; function: string; flows?: string[]; failure_mode: string; effects: Effects; causes: Cause[]; trigger?: string;
   controls: Control[]; ratings: Ratings; priority: Priority; actions: Action[]; post_ratings?: Ratings; post_priority?: Priority;
-  handoff?: Handoff; source_incident?: string; catalog_refs: CatalogRef[]; stale: Stale; history: HistoryEntry[];
+  disposition?: Disposition; handoff?: Handoff; source_incident?: string; catalog_refs: CatalogRef[]; stale: Stale; history: HistoryEntry[];
 }
 export interface Lint { rule: string; severity: Severity; pointer: string; message: string }
 export interface Computed { quality_score: number; lints: Lint[]; validated_at: string; validator_version: string }

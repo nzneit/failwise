@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:fmea-software:schema:fmea:v3",
   "title": "fmea-software analysis document",
-  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Six parts are authored (meta, elements, functions, dependencies, chains, flows): elements and functions are normalized and keyed by stable ids, dependencies are edges from a consumer element to a provider element, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print, and flows are the critical user and system flows a chain may name. A seventh part, computed, follows them and is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version. It stayed v3 when 0.7.0 added the flow model, so the contract runs one way: the 0.6.0 scripts refuse a document that carries flows or the stale reason flow-changed, which their schema does not declare, and a document that carries neither validates under 0.6.0 and under this schema.",
+  "description": "One design-side FMEA (DFMEA) analysis as a single JSON document. Six parts are authored (meta, elements, functions, dependencies, chains, flows): elements and functions are normalized and keyed by stable ids, dependencies are edges from a consumer element to a provider element, and chains are denormalized rows, one per failure chain, carrying everything the report's chain index and row sections print, and flows are the critical user and system flows a chain may name. A seventh part, computed, follows them and is written only by validate.ts --write. Every object rejects properties this schema does not declare, and no object may carry one key twice: the scripts refuse such a document when they read it, because a JSON reader keeps only the last of the two values. Cross-reference, uniqueness and presence-coupling rules are enforced by validate.ts as invariants, because the keyword subset it interprets cannot express them; each such rule is named in the description of the field it governs. The trailing segment of $id is the format version. It stayed v3 when 0.7.0 added the flow model, so the contract runs one way: the 0.6.0 scripts refuse a document that carries flows or the stale reason flow-changed, which their schema does not declare, and a document that carries neither validates under 0.6.0 and under this schema. It stayed v3 when 0.8.0 added a chain's disposition and a handoff's result, the same way: the 0.7.0 scripts refuse a document that carries either, and a document that carries neither validates under 0.7.0 and under this schema.",
   "type": "object",
   "additionalProperties": false,
   "required": ["meta", "elements", "functions", "dependencies", "chains"],
@@ -848,7 +848,7 @@
     },
     "handoff": {
       "title": "Threat-model handoff",
-      "description": "Present if and only if at least one cause on the chain is marked adversarial, on any element kind (D6). The report marks handoff rows.",
+      "description": "Present if and only if at least one cause on the chain is marked adversarial, on any element kind (D6). The report marks handoff rows, and lists under Needs attention those with no result.",
       "type": "object",
       "additionalProperties": false,
       "required": ["to", "reason", "adversary_cause"],
@@ -864,6 +864,59 @@
         "adversary_cause": {
           "$ref": "#/$defs/nonEmptyString",
           "description": "The exact text of a cause on the same chain whose adversarial flag is true (invariant handoff-cause-mismatch)."
+        },
+        "result": {
+          "$ref": "#/$defs/handoffResult"
+        }
+      }
+    },
+    "handoffResult": {
+      "title": "Threat-model answer",
+      "description": "The receiving threat-modeling activity's answer, recorded by the person who received it. Absent means the handoff is open. Recording it changes nothing else on the row: its ratings, priority and actions stand.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "status", "date"],
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Where the threat model or the receiver's answer lives, in the receiver's own terms."
+        },
+        "status": {
+          "enum": ["received", "modelled", "declined"],
+          "description": "received: the receiver has the row; modelled: the threat model covers it; declined: the receiver will not model it."
+        },
+        "date": {
+          "$ref": "#/$defs/date",
+          "description": "The calendar date the answer was recorded."
+        }
+      }
+    },
+    "disposition": {
+      "title": "Row disposition",
+      "description": "Present when the person decides that the row's risk is accepted as it stands and no action is owed; absent means no such decision is recorded, and an empty actions list records none either. A chain carrying it has no action whose status is Open, Decision pending or Implementation pending (invariant disposition-with-open-action); Completed and Not Implemented actions are allowed, so a residual risk after a completed action may be accepted. The report marks accepted rows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "owner", "rationale", "decided"],
+      "properties": {
+        "status": {
+          "const": "accepted",
+          "description": "The risk is accepted as it stands. The one value in this release."
+        },
+        "owner": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "The person, role or team accountable for the acceptance."
+        },
+        "rationale": {
+          "$ref": "#/$defs/nonEmptyString",
+          "description": "Why the risk is accepted, against the anchors and the existing controls."
+        },
+        "decided": {
+          "$ref": "#/$defs/date",
+          "description": "The calendar date the acceptance was recorded."
+        },
+        "review_by": {
+          "$ref": "#/$defs/date",
+          "description": "The calendar date by which the acceptance is to be looked at again."
         }
       }
     },
@@ -931,7 +984,7 @@
     },
     "chain": {
       "title": "Failure chain",
-      "description": "One chain row, as the report's chain index and its row section show it: the function that fails, the mode, its effects, causes, trigger, controls, ratings, computed priority, actions, the optional post-action re-rating and its priority, the optional handoff and source incident, catalog references, the stale mark and the row's own history. post_priority is present exactly when post_ratings is (invariant post-priority-presence): priority.ts --write fills it from post_ratings with the same table and validate.ts recomputes it the same way, while the chain's priority, the report's sort order and the computed block derive from ratings alone.",
+      "description": "One chain row, as the report's chain index and its row section show it: the function that fails, the mode, its effects, causes, trigger, controls, ratings, computed priority, actions, the optional post-action re-rating and its priority, the optional disposition, handoff and source incident, catalog references, the stale mark and the row's own history. post_priority is present exactly when post_ratings is (invariant post-priority-presence): priority.ts --write fills it from post_ratings with the same table and validate.ts recomputes it the same way, while the chain's priority, the report's sort order and the computed block derive from ratings alone.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "function", "failure_mode", "effects", "causes", "controls", "ratings", "priority", "actions", "catalog_refs", "stale", "history"],
@@ -998,6 +1051,9 @@
         },
         "post_priority": {
           "$ref": "#/$defs/priority"
+        },
+        "disposition": {
+          "$ref": "#/$defs/disposition"
         },
         "handoff": {
           "$ref": "#/$defs/handoff"

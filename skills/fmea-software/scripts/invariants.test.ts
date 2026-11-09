@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { INVARIANT_RULES, checkInvariants, checkPriorities } from "./lib/invariants.ts";
 import { loadTable } from "./lib/table.ts";
 import { clone, edge, graphDoc, minimalDoc, rating } from "./test-helpers.ts";
-import type { Codebase, FmeaDocument } from "./lib/types.ts";
+import type { Action, Codebase, FmeaDocument } from "./lib/types.ts";
 import type { Issue } from "./lib/codes.ts";
 
 const table = loadTable();
@@ -43,12 +43,12 @@ test("INVARIANT_RULES lists every rule id this module can report", () => {
     "flow-users-required", "flow-sources-required", "flow-users-review-by-date",
     "dependency-from-resolves", "dependency-to-resolves",
     "dependency-self", "dependency-pair-unique", "cause-chain-resolves", "cause-chain-self", "cause-chain-cycle",
-    "rating-review-by-date", "post-ratings-without-completed", "post-priority-presence",
+    "rating-review-by-date", "post-ratings-without-completed", "post-priority-presence", "disposition-with-open-action",
     "handoff-without-adversarial", "adversarial-without-handoff", "handoff-cause-mismatch",
     "stale-without-reason", "stale-version-ahead",
     "priority-table-mismatch", "priority-row-table-mismatch", "priority-value-mismatch", "priority-rpn-mismatch",
   ]);
-  assert.equal(INVARIANT_RULES.length, 39);
+  assert.equal(INVARIANT_RULES.length, 40);
 });
 
 test("element-id-unique flags the second occurrence", () => {
@@ -392,6 +392,34 @@ test("priority-value-mismatch reaches post_priority at its own pointer", () => {
   assert.ok(wrong, "the shipped table needs at least two priority values");
   doc.chains[0].post_priority!.value = wrong;
   expectOne(checkPriorities(doc, table), "priority-value-mismatch", "PRIORITY_MISMATCH", "/chains/0/post_priority/value");
+});
+
+// The minimal document with its one chain's risk accepted, and the given actions on that chain.
+function accepted(statuses: Action["status"][]): FmeaDocument {
+  const doc = minimalDoc();
+  doc.chains[0].disposition = { status: "accepted", owner: "T. Tester", rationale: "the existing controls hold it", decided: "2026-09-01" };
+  doc.chains[0].actions = statuses.map((status, i) => ({ id: `act-${i + 1}`, description: "a step", owner: "T. Tester", status, target_date: "2026-08-01" }));
+  return doc;
+}
+
+test("an accepted row with no action, or only closed ones, violates nothing", () => {
+  assert.deepEqual(checkInvariants(accepted([])), []);
+  assert.deepEqual(checkInvariants(accepted(["Not Implemented"])), []);
+  const residual = accepted(["Completed"]);
+  residual.chains[0].actions[0].completed_date = "2026-08-15";
+  assert.deepEqual(checkInvariants(residual), [], "a residual risk after a completed action may be accepted");
+});
+
+test("disposition-with-open-action flags an accepted row once, naming each action still owed", () => {
+  const doc = accepted(["Open", "Completed", "Decision pending", "Implementation pending"]);
+  expectOne(checkInvariants(doc), "disposition-with-open-action", "INVARIANT", "/chains/0/disposition");
+  assert.deepEqual(found(checkInvariants(doc), "disposition-with-open-action"), [[
+    "/chains/0/disposition",
+    "an accepted row owes no action, but act-1 (Open), act-3 (Decision pending), act-4 (Implementation pending) are still open",
+  ]]);
+  assert.deepEqual(found(checkInvariants(accepted(["Open"])), "disposition-with-open-action"), [[
+    "/chains/0/disposition", "an accepted row owes no action, but act-1 (Open) is still open",
+  ]]);
 });
 
 test("handoff-without-adversarial flags a handoff with no adversarial cause", () => {

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import process from "node:process";
 import { ScriptError } from "./lib/codes.ts";
-import type { Action, Chain, DependencyEdge, Element, FmeaDocument, Ratings, Factor, ValuePriority } from "./lib/types.ts";
+import type { Action, Chain, DependencyEdge, Disposition, Element, FmeaDocument, Handoff, Ratings, Factor, ValuePriority } from "./lib/types.ts";
 import type { PriorityTable } from "./lib/table.ts";
 import { loadTable } from "./lib/table.ts";
 import type { Vocabulary } from "./lib/vocabulary.ts";
@@ -31,6 +31,7 @@ const KEY_TEXT: Record<"sod" | "priority" | "rpn" | RowMark | "warning", string>
   provisional: `At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final. ${FLOW_SEVERITY_PROVISIONAL}`,
   stale: "The design or the scales changed after the row was rated; the row is due to be rated again.",
   handoff: "A cause is an attacker; the row is handed to threat modelling.",
+  accepted: "A named owner accepted the row's risk as it stands, so no action is owed. The row's section says who, why and when.",
   blocker: "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks.",
   warning: "An automated check found something for a reviewer to judge; it may be acceptable as it stands.",
 };
@@ -43,10 +44,10 @@ const ATTENTION_WHY = {
   blockers: "A blocker is an automated check that must pass before the row, or the analysis as a whole, can be relied on. Fix it, then validate again.",
   stale: "A stale row was rated before the design or the scales changed. Its ratings describe the earlier state until it is rated again.",
   provisional: `A provisional rating was suggested during the analysis and no named reviewer has re-scored it yet. ${FLOW_SEVERITY_PROVISIONAL} The priority of these rows is not final until one does.`,
-  handoffs: "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure.",
+  handoffs: "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure. A row leaves this list when the answer is recorded.",
   nextActions: "The open actions with the earliest target dates, three at most. All actions are listed under Actions.",
 };
-const NOTHING_NEEDS_ATTENTION = "Nothing needs attention: no blocker, no stale row, no provisional rating, no handoff and no open action.";
+const NOTHING_NEEDS_ATTENTION = "Nothing needs attention: no blocker, no stale row, no provisional rating, no open handoff and no open action.";
 const CONTENTS: [string, string][] = [
   ["ground-rules", "Ground rules"], ["assumptions", "Assumptions"], ["reviews", "Review record"], ["structure", "Structure"],
   ["flows", "Flows"], ["chains", "Failure chains"], ["actions", "Actions"], ["lints", "Automated checks"], ["provenance", "Provenance"],
@@ -344,7 +345,7 @@ function marksHtml(marks: readonly RowMark[]): string {
 
 function keyHtml(vocabulary: ReportModel["vocabulary"]): string {
   const badges = vocabulary.map((v) => badgeHtml(v.value, v.style)).join(" ");
-  const marks: (RowMark | "warning")[] = ["provisional", "stale", "handoff", "blocker", "warning"];
+  const marks: (RowMark | "warning")[] = ["provisional", "stale", "handoff", "accepted", "blocker", "warning"];
   const entries: [string, string][] = [
     ["<b>S</b>, <b>O</b>, <b>D</b>", KEY_TEXT.sod],
     [badges, KEY_TEXT.priority],
@@ -481,10 +482,25 @@ function rowActionsHtml(chain: Chain, trackers: Map<Action, ActionRow["tracker"]
   return part("Actions", list(items, "No actions on this row."));
 }
 
+// The handoff part: the target, the reason and the adversary cause, then the receiver's answer, or
+// the note that none is recorded and the handoff is open.
+function handoffHtml(handoff: Handoff): string {
+  const answer = handoff.result
+    ? `Answer: <b>${e(handoff.result.status)}</b>, recorded ${e(handoff.result.date)} &mdash; ${e(handoff.result.reference)}`
+    : `<span class="muted">No answer recorded; the handoff is open.</span>`;
+  return part("Handoff", `<b>${e(handoff.to)}</b> &mdash; ${e(handoff.reason)} <span class="muted">(adversary cause: ${e(handoff.adversary_cause)})</span><br>${answer}`);
+}
+
+// The accepted risk: the rationale, then the owner, the decision date and any review date.
+function dispositionHtml(disposition: Disposition): string {
+  const review = disposition.review_by === undefined ? "" : `, review by ${e(disposition.review_by)}`;
+  return part("Risk accepted", `${e(disposition.rationale)} <span class="muted">(${e(disposition.owner)}, decided ${e(disposition.decided)}${review})</span>`);
+}
+
 function gridHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): string {
   const c = row.chain;
   return [
-    c.handoff ? part("Handoff", `<b>${e(c.handoff.to)}</b> &mdash; ${e(c.handoff.reason)} <span class="muted">(adversary cause: ${e(c.handoff.adversary_cause)})</span>`) : "",
+    c.handoff ? handoffHtml(c.handoff) : "",
     part("Function", e(row.statement)),
     c.source_incident ? part("Seeded from incident", `<code>${e(c.source_incident)}</code>`) : "",
     part("Effects", effectsHtml(c)),
@@ -493,6 +509,7 @@ function gridHtml(row: RowModel, trackers: Map<Action, ActionRow["tracker"]>): s
     `<div class="two">${causesHtml(row)}${controlsHtml(c)}</div>`,
     part("Ratings", ratingsTableHtml(`Ratings of ${c.id}`, c.ratings)),
     postRatingsHtml(c),
+    c.disposition ? dispositionHtml(c.disposition) : "",
     rowActionsHtml(c, trackers),
     c.history.length === 0 ? "" : part("Row history", list(c.history.map((h) => `v${h.version} ${e(h.date)} &mdash; ${e(h.change)}`), "")),
   ].join("");
