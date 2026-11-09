@@ -7,15 +7,15 @@
       "words": 1000
     },
     "README.md": {
-      "words": 1200
+      "words": 1500
     },
     "docs/design.md": {
       "lines": 450,
-      "words": 3200
+      "words": 3400
     },
     "docs/scripts.md": {
       "lines": 40,
-      "words": 900
+      "words": 1100
     },
     "docs/style.md": {
       "lines": 60,
@@ -27,5 +27,5 @@
     }
   },
   "totalLines": 660,
-  "totalWords": 8700
+  "totalWords": 9400
 }

@@ -204,6 +204,19 @@ test("minimalDoc() yields no schema issues", () => {
   assert.deepEqual(checkSchema(minimalDoc()), []);
 });
 
+test("a disposition takes the one status accepted, and a handoff result one of three statuses", () => {
+  const doc = minimalDoc();
+  doc.chains[0].disposition = { status: "accepted", owner: "T. Tester", rationale: "the controls hold it", decided: "2026-09-01", review_by: "2026-12-01" };
+  assert.deepEqual(checkSchema(doc), []);
+  (doc.chains[0].disposition as unknown as Record<string, unknown>).status = "rejected";
+  assert.deepEqual(checkSchema(doc).map((i) => i.pointer), ["/chains/0/disposition/status"]);
+  delete doc.chains[0].disposition;
+  doc.chains[0].handoff = { to: "threat-model", reason: "an attacker", adversary_cause: "process crash", result: { reference: "tm.md", status: "received", date: "2026-09-02" } };
+  assert.deepEqual(checkSchema(doc), []);
+  (doc.chains[0].handoff.result as unknown as Record<string, unknown>).status = "done";
+  assert.deepEqual(checkSchema(doc).map((i) => i.pointer), ["/chains/0/handoff/result/status"]);
+});
+
 // The schema issues for minimalDoc() with its one element changed by edit.
 function elementIssues(edit: (element: Record<string, unknown>) => void): Issue[] {
   const doc = minimalDoc();
@@ -415,7 +428,11 @@ test("the v3 properties sit where the plan places them and each new description 
   assert.ok(text(schema).includes("Six parts are authored (meta, elements, functions, dependencies, chains, flows)"));
   assert.ok(!text(schema).includes("fifth part"));
   assert.ok(text(schema).includes("the contract runs one way: the 0.6.0 scripts refuse a document that carries flows or the stale reason flow-changed"));
-  assert.ok(text(schema).endsWith("a document that carries neither validates under 0.6.0 and under this schema."));
+  assert.ok(text(schema).includes("a document that carries neither validates under 0.6.0 and under this schema."));
+  assert.ok(text(schema).endsWith("It stayed v3 when 0.8.0 added a chain's disposition and a handoff's result, the same way: the 0.7.0 scripts refuse a document that carries either, and a document that carries neither validates under 0.7.0 and under this schema."));
+  assert.deepEqual(Object.keys(props("chain")).slice(13, 16), ["disposition", "handoff", "source_incident"]);
+  assert.ok(text(defs.disposition).includes("disposition-with-open-action"), "the disposition names the invariant that governs it");
+  assert.ok(text(defs.handoffResult).includes("The handoff stays open while this is absent or its status is received, and closes when it is modelled or declined."));
   assert.ok(text(props("flow").value_priority).includes("a flow-value priority label: not a rating, not a criticality analysis, not a safety or hazard analysis, and not a reliability target"));
   assert.ok(text(props("flow").value_priority).endsWith("Read for the report's order of flows only; that order is presentational and ranks nothing."), "the tier's one use is the report's order of flows, and no filter reads it");
 });
@@ -592,6 +609,14 @@ test("the schema file uses only supported keywords and formats, and every $ref r
   });
 });
 
+test("every object the schema declares properties for rejects a property it does not declare", () => {
+  forEachSchemaNode(loadSchema(), (schemaPointer, node) => {
+    if (node.type === "object" && node.properties !== undefined) {
+      assert.equal(node.additionalProperties, false, `${schemaPointer}: an object with properties carries additionalProperties false`);
+    }
+  });
+});
+
 test("the golden fixture validates against the shipped schema", () => {
   assert.deepEqual(checkSchema(loadFixture("checkout-service.fmea.json")), []);
 });
@@ -649,6 +674,13 @@ function derivationDoc(): Record<string, unknown> {
       users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-09-07" } } },
   ];
   doc.chains[0].flows = ["flow-1"];
+  // An accepted risk and an answered handoff, which the golden fixture does not carry.
+  doc.chains[0].disposition = { status: "accepted", owner: "T. Tester", rationale: "the controls hold it", decided: "2026-09-01", review_by: "2026-12-01" };
+  Object.assign(doc.chains[0].causes[0], { adversarial: true });
+  doc.chains[0].handoff = {
+    to: "threat-model", reason: "an adversary is the agent", adversary_cause: doc.chains[0].causes[0].text,
+    result: { reference: "threat-models/svc.md#replay", status: "modelled", date: "2026-10-01" },
+  };
   return doc as unknown as Record<string, unknown>;
 }
 

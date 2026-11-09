@@ -37,6 +37,7 @@ export const INVARIANT_RULES: readonly string[] = [
   "rating-review-by-date",
   "post-ratings-without-completed",
   "post-priority-presence",
+  "disposition-with-open-action",
   "handoff-without-adversarial",
   "adversarial-without-handoff",
   "handoff-cause-mismatch",
@@ -400,6 +401,23 @@ function postRatingsIssues(chains: Chain[]): Issue[] {
   return out;
 }
 
+// The action statuses that leave an action owed; Completed and Not Implemented close it.
+const OPEN_STATUSES: ReadonlySet<string> = new Set(["Open", "Decision pending", "Implementation pending"]);
+
+// disposition-with-open-action: an accepted row owes no action, so none of its actions is still open.
+function dispositionIssues(chains: Chain[]): Issue[] {
+  const out: Issue[] = [];
+  for (let i = 0; i < chains.length; i++) {
+    const c = chains[i];
+    if (!c.disposition) continue;
+    const open = c.actions.filter((a) => OPEN_STATUSES.has(a.status)).map((a) => `${a.id} (${a.status})`);
+    if (open.length > 0) {
+      out.push(invariant("disposition-with-open-action", `an accepted row owes no action, but ${open.join(", ")} ${open.length === 1 ? "is" : "are"} still open`, ptr("chains", i, "disposition")));
+    }
+  }
+  return out;
+}
+
 // The three handoff rules, which share the loop over chains.
 function handoffIssues(chains: Chain[]): Issue[] {
   const out: Issue[] = [];
@@ -476,6 +494,7 @@ export function checkInvariants(doc: FmeaDocument): Issue[] {
     ...cycleIssues(doc, index),
     ...ratingReviewIssues(chains),
     ...postRatingsIssues(chains),
+    ...dispositionIssues(chains),
     ...handoffIssues(chains),
     ...staleIssues(chains, doc.meta.version),
   ];

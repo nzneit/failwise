@@ -97,11 +97,13 @@ const MARK_TITLES = new Map<string, string>([
   ["provisional", "At least one rating on the row was suggested during the analysis and has not been re-scored by a named reviewer, so the row's priority is not final. A Severity read over a flow population that no named reviewer has re-scored counts as provisional, whatever its own review."],
   ["stale", "The design or the scales changed after the row was rated; the row is due to be rated again."],
   ["handoff", "A cause is an attacker; the row is handed to threat modelling."],
+  ["accepted", "A named owner accepted the row's risk as it stands, so no action is owed. The row's section says who, why and when."],
   ["blocker", "The row, or the analysis as a whole, fails an automated check and cannot be relied on until it is fixed. See Automated checks."],
   ["warning", "An automated check found something for a reviewer to judge; it may be acceptable as it stands."],
 ]);
 const mark = (name: string): string => `<span class="mark mark-${name}" title="${escapeHtml(MARK_TITLES.get(name) ?? "")}">${name}</span>`;
 const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
+const HANDOFFS_WHY = "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure. A row leaves this list when its answer is modelled or declined.";
 
 function between(html: string, open: string, close: string): string {
   const start = html.indexOf(open);
@@ -158,13 +160,17 @@ function priced(doc: FmeaDocument, index: number, value: string): FmeaDocument {
 }
 
 // minimalDoc's one row with every part of §4.2: two findings and a rating-provisional one, stale with
-// reason and version, a handoff, an incident, a trigger equal to no cause, a control, post-action
-// ratings, an action carrying the incident, and a history entry.
+// reason and version, an answered handoff, an incident, a trigger equal to no cause, a control,
+// post-action ratings, an accepted residual risk, an action carrying the incident, and a history entry.
 function everyPart(): FmeaDocument {
   const doc = minimalDoc();
   const chain = doc.chains[0];
   chain.stale = { flag: true, reason: "element-changed", since_version: 2 };
-  chain.handoff = { to: "threat-model", reason: "an adversary forges the request", adversary_cause: "attacker forges a request" };
+  chain.handoff = {
+    to: "threat-model", reason: "an adversary forges the request", adversary_cause: "attacker forges a request",
+    result: { reference: "threat-models/svc.md#forgery", status: "modelled", date: "2026-09-20" },
+  };
+  chain.disposition = { status: "accepted", owner: "Service owner", rationale: "the supervisor leaves a residual risk the alerting covers", decided: "2026-09-10", review_by: "2027-03-01" };
   chain.source_incident = "INC-1";
   chain.trigger = "a deploy restarts the process";
   chain.controls = [{ kind: "detection", description: "crash alerting", status: "existing", evidence: { kind: "test_result", ref: "alert suite" } }];
@@ -528,9 +534,9 @@ test("the Needs attention block lists the fixture's blocker, provisional ratings
     attnItem(`12 ratings not yet reviewed<br>${mark("provisional")}`,
       '<a href="#row-ch-2"><code>ch-2</code></a> S, O, D &middot; <a href="#row-ch-9"><code>ch-9</code></a> S, O, D &middot; <a href="#row-ch-4"><code>ch-4</code></a> O, D &middot; <a href="#row-ch-5"><code>ch-5</code></a> S &middot; <a href="#row-ch-8"><code>ch-8</code></a> S, O, D',
       PROVISIONAL_WHY),
-    attnItem(`1 row passed to threat modelling<br>${mark("handoff")}`,
+    attnItem(`1 row awaiting threat modelling<br>${mark("handoff")}`,
       '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted',
-      "A handoff row has an attacker as a cause. It is recorded here and handed to threat modelling, which owns the countermeasure."),
+      HANDOFFS_WHY),
     attnItem("Next actions due",
       '2026-10-09 <a href="#row-ch-4"><code>ch-4</code></a> act-1, Platform team &middot; 2026-10-15 <a href="#row-ch-1"><code>ch-1</code></a> act-1, Payments team &middot; 2026-10-16 <a href="#row-ch-8"><code>ch-8</code></a> act-1, Payments team',
       "The open actions with the earliest target dates, three at most. All actions are listed under Actions."),
@@ -562,7 +568,7 @@ test("a blocker outside any row names the document or the unknown row, with no l
 
 test("with nothing to list, the Needs attention block holds its one sentence", () => {
   const header = headerOf(minimalDoc());
-  assert.ok(header.includes('<div class="attn"><h2 class="attn-title">Needs attention</h2><p class="attn-none">Nothing needs attention: no blocker, no stale row, no provisional rating, no handoff and no open action.</p></div>'));
+  assert.ok(header.includes('<div class="attn"><h2 class="attn-title">Needs attention</h2><p class="attn-none">Nothing needs attention: no blocker, no stale row, no provisional rating, no open handoff and no open action.</p></div>'));
   assert.equal(occurrences(header, "attn-item"), 0);
 });
 
@@ -703,7 +709,7 @@ test("the template lets a frame scroll sideways, keeps a framed table's shape, a
   assert.doesNotMatch(template, /^caption \{/m, "no rule styles a <caption> any more");
 });
 
-test("the key lists the loaded table's vocabulary and all five marks; a document with no chains has no key and no index", () => {
+test("the key lists the loaded table's vocabulary and all six marks; a document with no chains has no key and no index", () => {
   // The chains key is the one after the Flows section's.
   const html = renderHtml(golden(), table, template, vocabulary);
   const key = between(html.slice(html.indexOf('id="chains"')), '<div class="key">', "</div>");
@@ -763,11 +769,12 @@ test("a row section carries its parts in order on a row that has every part", ()
   const article = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
   const post = doc.chains[0].post_priority!;
   const parts = [
-    `<header><span class="pri pri-mid">M</span><h4><code>ch-1</code>&nbsp; stops serving</h4><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("blocker")}<br>`,
+    `<header><span class="pri pri-mid">M</span><h4><code>ch-1</code>&nbsp; stops serving</h4><div class="meta"><code>svc</code><br>S <b>8</b> &middot; O <b>3</b> &middot; D <b>4</b> &middot; <span class="muted">RPN 96</span> &middot; ${mark("stale")} ${mark("handoff")} ${mark("accepted")} ${mark("blocker")}<br>`,
     `<p class="finding">${mark("blocker")} &nbsp;D &mdash; Detection is 1 with no existing detection control carrying evidence <span class="muted"><code>detection-1-without-evidenced-control</code></span></p>`,
     `<p class="finding warn">${mark("warning")} &nbsp;post-action O &mdash; post-action finding <span class="muted"><code>occurrence-estimate-without-trigger</code></span></p>`,
     '<p class="stale-notice">Stale since version 2: its element changed.</p>',
-    '<span class="lbl">Handoff</span><b>threat-model</b> &mdash; an adversary forges the request <span class="muted">(adversary cause: attacker forges a request)</span>',
+    '<span class="lbl">Handoff</span><b>threat-model</b> &mdash; an adversary forges the request <span class="muted">(adversary cause: attacker forges a request)</span>' +
+      '<br>Answer: <b>modelled</b>, recorded 2026-09-20 &mdash; threat-models/svc.md#forgery',
     '<span class="lbl">Function</span>serve requests',
     '<span class="lbl">Seeded from incident</span><code>INC-1</code>',
     '<span class="lbl">Effects</span><div class="fx"><div class="box"><span class="lbl">Local</span>no response</div>',
@@ -777,6 +784,7 @@ test("a row section carries its parts in order on a row that has every part", ()
     '<span class="lbl">Controls</span><ul><li><b>detection</b> &mdash; crash alerting <span class="muted">(existing, evidence test_result <code>alert suite</code>)</span></li></ul>',
     '<span class="lbl">Ratings</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1"><table>',
     `<span class="lbl">Post-action ratings — priority ${post.value}, RPN ${post.rpn}</span><div class="frame" tabindex="0" role="region" aria-label="Ratings of ch-1 after actions"><table>`,
+    '<span class="lbl">Risk accepted</span>the supervisor leaves a residual risk the alerting covers <span class="muted">(Service owner, decided 2026-09-10, review by 2027-03-01)</span>',
     '<span class="lbl">Actions</span><ul><li><code>act-1</code> add a supervisor <span class="muted">(T. Tester, Completed, target 2026-08-01, completed 2026-08-15, incident <code>INC-1</code>)</span></li></ul>',
     '<span class="lbl">Row history</span><ul><li>v2 2026-09-07 &mdash; element renamed</li></ul>',
     '<p class="back"><a href="#chains">',
@@ -788,11 +796,42 @@ test("a row section carries its parts in order on a row that has every part", ()
   assert.ok(!article.includes("rating-provisional"), "a rating-provisional finding is not repeated in the row");
 });
 
+test("an accepted risk with no review date prints no review clause, and its text is escaped", () => {
+  const doc = minimalDoc();
+  doc.chains[0].disposition = { status: "accepted", owner: "Ops & <team>", rationale: "the <b>controls</b> hold it", decided: "2026-09-10" };
+  const section = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+  assert.ok(section.includes('<span class="lbl">Risk accepted</span>the &lt;b&gt;controls&lt;/b&gt; hold it <span class="muted">(Ops &amp; &lt;team&gt;, decided 2026-09-10)</span>'));
+  assert.ok(!section.includes("review by"));
+});
+
+test("a received handoff stays under Needs attention, marked received; a modelled one leaves it", () => {
+  const doc = golden();
+  const ch5 = doc.chains.find((c) => c.id === "ch-5")!;
+  ch5.handoff!.result = { reference: "threat-models/session.md", status: "received", date: "2026-10-01" };
+  assert.ok(headerOf(doc).includes(attnItem(`1 row awaiting threat modelling<br>${mark("handoff")}`,
+    '<a href="#row-ch-5"><code>ch-5</code></a> A session token that this component did not issue for the current session is accepted <span class="muted">(received)</span>',
+    HANDOFFS_WHY)));
+  ch5.handoff!.result.status = "modelled";
+  assert.ok(!headerOf(doc).includes("awaiting threat modelling"));
+});
+
+test("an open handoff says so in its part, and an answer's text is escaped", () => {
+  const doc = minimalDoc();
+  doc.chains[0].causes = [{ text: "attacker forges a request", adversarial: true }];
+  doc.chains[0].handoff = { to: "threat-model", reason: "an adversary forges the request", adversary_cause: "attacker forges a request" };
+  const open = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+  assert.ok(open.includes('(adversary cause: attacker forges a request)</span><br><span class="muted">No answer recorded; the handoff is open.</span>'));
+  doc.chains[0].handoff.result = { reference: "<b>threat model</b> & notes", status: "declined", date: "2026-09-20" };
+  const answered = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
+  assert.ok(answered.includes("<br>Answer: <b>declined</b>, recorded 2026-09-20 &mdash; &lt;b&gt;threat model&lt;/b&gt; &amp; notes"));
+  assert.ok(!answered.includes("No answer recorded"));
+});
+
 test("a row section leaves out each part it has nothing for", () => {
   const doc = minimalDoc();
   doc.chains[0].trigger = "   ";
   const article = rowSection(renderHtml(doc, table, template, vocabulary), "ch-1");
-  for (const absent of ['<p class="finding', '<p class="stale-notice">', '<span class="lbl">Handoff</span>', '<span class="lbl">Seeded from incident</span>',
+  for (const absent of ['<p class="finding', '<p class="stale-notice">', '<span class="lbl">Handoff</span>', '<span class="lbl">Risk accepted</span>', '<span class="lbl">Seeded from incident</span>',
     '<span class="lbl">Trigger</span>', '<span class="lbl">Post-action ratings', '<span class="lbl">Row history</span>', "mark-trigger", "after actions:"]) {
     assert.ok(!article.includes(absent), `the row has ${absent}`);
   }

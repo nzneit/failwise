@@ -129,6 +129,17 @@ Only an adversarial cause writes a handoff. [skill-authored]
 - The report marks handoff rows, so a reader sees which chains were referred. [skill-authored]
 - Whether a cause is adversarial is a judgement, so `quality-and-lint.md` carries it as a reviewer rule, not a machine check. [skill-authored]
 
+### The contract
+
+- The packet a receiver reads is the row as written in the analysis JSON: `id`, `function`, `failure_mode`, `effects`, `causes`, `controls` and `handoff`. [skill-authored]
+- The packet adds the element's `security_rationale` and the analysis's `meta.boundary.security`; the receiver needs nothing else from the run. [skill-authored]
+- The receiver is whatever threat-modeling activity the person uses; in Claude Code, the `security-review` skill run over the element's code is one. [skill-authored]
+- The person records the receiver's answer on the row as `handoff.result`: a `reference` to where the answer lives, a `status` and a `date`. [skill-authored]
+- `status` is `received` when the receiver has the row, `modelled` when the threat model covers it, and `declined` when the receiver will not model it. [skill-authored]
+- The handoff stays open while `result` is absent or its `status` is `received`; `modelled` and `declined` close it. [skill-authored]
+- A recorded answer changes nothing else on the row: its ratings, priority and actions stand. [skill-authored]
+- The report lists the open handoffs under Needs attention and prints each answer in the row's section. [skill-authored]
+
 ### What the handoff does not do
 
 It does not remove the row. [skill-authored]

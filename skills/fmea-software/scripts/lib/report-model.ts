@@ -37,7 +37,7 @@ export type Where =
 
 export interface PlacedFinding { severity: Severity; rule: string; message: string; where: Where }
 
-export type RowMark = "stale" | "handoff" | "provisional" | "blocker";
+export type RowMark = "stale" | "handoff" | "accepted" | "provisional" | "blocker";
 
 // A cause of the row's chain that links to another chain: the cause's index, and the provider
 // chain's id, element and failure mode as stored; `differs` when the cause text and that mode
@@ -54,7 +54,7 @@ export interface RowModel {
   statement: string;               // the function's statement; "" when the function is missing
   style: RankStyle;                // the badge style of chain.priority.value
   postStyle: RankStyle | null;     // the badge style of chain.post_priority.value; null without post_priority
-  marks: RowMark[];                // §5.7 order: stale, handoff, provisional, blocker
+  marks: RowMark[];                // §5.7 order: stale, handoff, accepted, provisional, blocker
   findings: PlacedFinding[];       // row findings pointing into this chain, without warnings of rule "rating-provisional", in §5.8 order
   actionsCell: { text: string; due: string | null };   // "1 open" | "1 open of 2" | "all 2 closed" | "none"; due = earliest open target date
   trigger: string | null;          // the trimmed trigger, when it gets its own part (§5.3); else null
@@ -85,7 +85,7 @@ export interface Attention {
   blockers: { label: string; lines: PlacedFinding[] } | null;
   stale: { label: string; rows: { chainId: string; reason: string | null }[] } | null;
   provisional: { label: string; rows: { chainId: string; factors: string[] }[] } | null;   // factors: "S", "O", "D", "post-action S", ...
-  handoffs: { label: string; rows: { chainId: string; failureMode: string }[] } | null;
+  handoffs: { label: string; rows: { chainId: string; failureMode: string; received: boolean }[] } | null;   // received: the receiver has the row, not yet modelled or declined
   nextActions: ActionRow[];                                        // at most three; empty means the item is left out
 }
 
@@ -340,6 +340,7 @@ function rowMarks(chain: Chain, own: PlacedFinding[], unconfirmed: ReadonlySet<s
   const marks: RowMark[] = [];
   if (chain.stale.flag) marks.push("stale");
   if (chain.handoff) marks.push("handoff");
+  if (chain.disposition) marks.push("accepted");
   if (provisionalCount(chain, unconfirmed) > 0) marks.push("provisional");
   if (own.some((f) => f.severity === "blocker")) marks.push("blocker");
   return marks;
@@ -530,13 +531,21 @@ function staleItem(rows: RowModel[]): Attention["stale"] {
   };
 }
 
-// The rows handed off to threat modelling, in the index order, each with its failure mode.
+// Whether a handoff is still open: no answer recorded, or only that the receiver has the row. A
+// modelled or declined answer closes it.
+function handoffOpen(row: RowModel): boolean {
+  const result = row.chain.handoff?.result;
+  return row.marks.includes("handoff") && (result === undefined || result.status === "received");
+}
+
+// The rows whose handoff to threat modelling is still open, in the index order, each with its
+// failure mode and whether the receiver has it.
 function handoffItem(rows: RowModel[]): Attention["handoffs"] {
-  const marked = rows.filter((row) => row.marks.includes("handoff"));
+  const marked = rows.filter(handoffOpen);
   if (marked.length === 0) return null;
   return {
-    label: count(marked.length, "row", "rows") + " passed to threat modelling",
-    rows: marked.map((row) => ({ chainId: row.chain.id, failureMode: row.chain.failure_mode })),
+    label: count(marked.length, "row", "rows") + " awaiting threat modelling",
+    rows: marked.map((row) => ({ chainId: row.chain.id, failureMode: row.chain.failure_mode, received: row.chain.handoff?.result?.status === "received" })),
   };
 }
 

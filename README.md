@@ -1,6 +1,6 @@
 # failwise
 
-failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders a single-file HTML report. Version 0.7.0 is a pre-release: the skill did not pass its own evaluations and tracking has none; see [Status](#status).
+failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders a single-file HTML report. Version 0.8.0 is a pre-release: the skill did not pass its own evaluations and tracking has none; see [Status](#status).
 
 An FMEA asks what each part of a system must do, how that can fail, what that does to the system and its users, what causes it, and what prevents or detects it today. One failure mode with its effects, causes and controls is one failure chain. Its Severity, Occurrence and Detection ratings, each from 1 to 10, give it a priority that says where to act first. A design-side FMEA examines the design before the incident.
 
@@ -32,6 +32,8 @@ Claude works through a new analysis in seven steps: plan the scope, break the sy
 
 A **JSON analysis** against [`fmea.schema.json`](skills/fmea-software/schemas/fmea.schema.json), which you keep and update, and an **HTML report**: one self-contained file, no JavaScript, no network access, landscape print. The report holds, in order: a summary and needs-attention block; the ground rules, assumptions and review record; the structure and its dependencies; the flows; a chain index sorted by priority; one section per chain grouped by top-level element; the actions; the automated checks and quality score; and a provenance appendix.
 
+The priority table is the skill's own and carries no cell from any standard. Your own table, a licensed one included, replaces it at run time through `--table-file`; see [the scripts page](docs/scripts.md#bringing-your-own-table).
+
 An [example report](https://nzneit.github.io/failwise/) of a synthetic checkout service is published. Render it yourself with Node.js 24.2 or later:
 
 ```
@@ -39,6 +41,8 @@ node skills/fmea-software/scripts/render.ts dev/fixtures/checkout-service.fmea.j
 ```
 
 ## Status
+
+failwise is pre-1.0 and experimental. Until 1.0.0 a release may change the schema, the scales or what a script refuses in ways that an earlier document or an earlier plugin does not accept; a migration is offered where one was written but is not promised. What 1.0.0 will promise is not yet defined.
 
 | Version | Model | Rounds | Outcome |
 |---|---|---|---|
@@ -61,13 +65,17 @@ node skills/fmea-software/scripts/render.ts dev/fixtures/checkout-service.fmea.j
 ### Not in this version
 
 - Ready-made failure modes for every element kind. Interfaces, event streams, datastores and ML or LLM components get elicitation questions instead.
-- Threat modeling. An adversarial cause is written as a handoff to it.
+- Threat modeling. An adversarial cause is written as a handoff to it, and the answer is recorded on the row; the modeling happens elsewhere.
 - Process-side FMEA beyond a stub answer.
 - One owner and one tracker target per analysis. Per-codebase updates and per-team trackers are later work.
 
 ## Tracking actions as GitHub issues or Jira work items
 
 When you ask, Claude can create a GitHub issue or Jira work item per action and read their state back later. Tracking needs `gh` or `acli`, installed and signed in, and nothing is created before you agree to the plan. [The tracking page](docs/tracking.md) gives the commands, Jira differences and caveats.
+
+## What leaves your machine
+
+The analysis runs in your Claude Code session, so what you describe or paste, and every file Claude reads for it, reaches the model under your session's terms; the plugin adds no service. The analysis and the report are files on your disk. Only `track.ts` reaches the network, and only the tracker you named: `plan` and `refresh` read from it, and `apply` writes into it the fields [the tracking page](docs/tracking.md#what-an-item-says) lists, after you agree to its plan. A public or unknown-visibility target needs your explicit agreement, and Claude names the actions on handoff rows first. Redaction is yours: leave out what the tracker must not hold.
 
 ## The scripts
 
