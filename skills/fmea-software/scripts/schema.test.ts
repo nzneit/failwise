@@ -674,7 +674,8 @@ function derivationDoc(): Record<string, unknown> {
       users: { population: "internal only: operators", review: { status: "rescored", by: "R. Viewer", date: "2026-09-07" } } },
   ];
   doc.chains[0].flows = ["flow-1"];
-  // An answered handoff: the golden fixture's one handoff is open, so /$defs/handoffResult is reached here.
+  // An accepted risk and an answered handoff, which the golden fixture does not carry.
+  doc.chains[0].disposition = { status: "accepted", owner: "T. Tester", rationale: "the controls hold it", decided: "2026-09-01", review_by: "2026-12-01" };
   Object.assign(doc.chains[0].causes[0], { adversarial: true });
   doc.chains[0].handoff = {
     to: "threat-model", reason: "an adversary is the agent", adversary_cause: doc.chains[0].causes[0].text,

@@ -747,7 +747,6 @@ test("the index has a titled head and one row per chain linking to the row's sec
     `<td class="num">4</td><td class="num">5</td><td class="num">2</td><td class="num">40</td><td class="nw">1 open of 2<br><span class="muted">due 2026-10-30</span></td></tr>`,
   ), "ch-3's index row");
   assert.ok(index.includes(`<a href="#row-ch-7"><code>ch-7</code></a><br>${mark("blocker")}</td>`), "ch-7 carries the fixture's one blocker");
-  assert.ok(index.includes(`<a href="#row-ch-9"><code>ch-9</code></a><br>${mark("accepted")} ${mark("provisional")}</td>`), "ch-9's risk is accepted");
   assert.ok(index.includes('<td class="nw muted">none</td>'), "ch-5 has no action");
 });
 
