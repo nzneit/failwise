@@ -1126,6 +1126,13 @@
         }
       },
       "actions": [],
+      "disposition": {
+        "status": "accepted",
+        "owner": "Checkout service owner",
+        "rationale": "The retryable error is the designed behaviour while the gateway is degraded: the storefront keeps the cart and the shopper can retry. Queueing the order for later authorization was considered and declined, because a later decline would reach a shopper who believes the order is placed.",
+        "decided": "2026-09-03",
+        "review_by": "2026-12-01"
+      },
       "catalog_refs": [],
       "stale": {
         "flag": false
