@@ -96,7 +96,6 @@ Review runs while the analysis is produced, not only at the end, and the cross-d
    - For each function, write the failure modes, the effects, the causes, and the trigger wherever one can be named. [skill-authored]
    - Write the failure mode as what the function does wrong, and keep the reason out of it. [skill-authored]
    - Put every reason into `causes[]`: a cause names a driver or a mechanism the mode does not state. [skill-authored]
-   - Where the inputs name no driver, take one cause from the cited catalog row or the row it points to. [skill-authored]
    - Give a cause its `origin`, specification, design or code, where the inputs show which; otherwise leave it out. [skill-authored]
    - Write the effects at three levels: local, next level and end. [skill-authored]
    - Enumerate every function of every element of the structure. [skill-authored]
