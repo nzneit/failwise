@@ -79,6 +79,9 @@ Review runs while the analysis is produced, not only at the end, and the cross-d
      - Never write a placeholder into `sla` or `limits`, even one the inputs use. A placeholder says that the value is unknown or not given, such as "TBD", "unknown" or "not stated in the inputs". [skill-authored]
    - Give every element at least one `sources[]` entry whose kind is not `catalog`. [skill-authored]
    - Rate no chain for an element that lacks such an entry. [skill-authored]
+   - Cite as a source only what this run read or was told. [skill-authored]
+   - That is a file of the inputs, a heading in one, an incident record, a person's answer, or a repository path the run read. [skill-authored]
+   - List a repository the inputs only name in `meta.codebases[]`, and keep it out of every element's `sources[]`. [skill-authored]
    - Keep an existing control named in the inputs as a control on the rows it protects. Make it an element only when the inputs list it as a component in its own right. [skill-authored]
    - Record the promotion of a control to an element in `meta.history`. [skill-authored]
 
@@ -86,6 +89,7 @@ Review runs while the analysis is produced, not only at the end, and the cross-d
    - On every edge, `sla` and `limits` each hold the inputs' own words or are left out. [skill-authored]
    - Every `sla` or `limits` left out has an open assumption owned by `user` that names the provider and that field. [skill-authored]
    - Neither `sla` nor `limits` holds a placeholder such as "TBD", "unknown" or "not stated in the inputs". [skill-authored]
+   - Every `sources[]` ref names something this run read or was told. [skill-authored]
 3. **Function.** This step produces a function statement for each element. [skill-authored]
    - Write what the element must do, under what conditions, and for whom. [skill-authored]
    - Fill each flow's `steps` after this step. `steps` reference functions, and the session resolves the ids from the team's prose, so the human never transcribes opaque ids. [skill-authored]

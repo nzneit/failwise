@@ -250,6 +250,8 @@ So the stale rules of an architecture change never mix with the mapping. [skill-
 - A run over several codebases uses that form on every `repo` ref. [skill-authored]
 - A single-repository run may keep bare paths. [skill-authored]
 - The `repo-ref-form` lint checks the refs for consistency alone: once one `repo` ref is qualified, every `repo` ref must be. [skill-authored]
+- A `repo` ref names a repository the run read, given to it as a path or as files from it. [skill-authored]
+- A repository the inputs only name is a `meta.codebases[]` entry and never a source. [skill-authored]
 - Step 1 lists every codebase the run covers or reads in `meta.codebases[]`. [skill-authored]
 - Each entry names its repository in the `owner/repo` form and, for part of a monorepo, its `path`. [skill-authored]
 - `meta.boundary.included` describes what inside them is covered. [skill-authored]
