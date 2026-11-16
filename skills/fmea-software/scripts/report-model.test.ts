@@ -227,9 +227,9 @@ test("the fixture's rows carry their element, statement and badge styles in the 
   assert.equal(rows[0].statement, doc.functions.find((f) => f.id === "fn-checkout-order")?.statement);
 });
 
-test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-5, ch-8, handoff on ch-5, blocker on ch-7", () => {
+test("the fixture's row marks: provisional on ch-2, ch-9, ch-4, ch-5, ch-8, handoff on ch-5, accepted on ch-9, blocker on ch-7", () => {
   assert.deepEqual(modelOf(fixture()).rows.map((r) => [r.chain.id, r.marks]), [
-    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-7", ["blocker"]], ["ch-9", ["provisional"]],
+    ["ch-2", ["provisional"]], ["ch-1", []], ["ch-7", ["blocker"]], ["ch-9", ["accepted", "provisional"]],
     ["ch-4", ["provisional"]], ["ch-5", ["handoff", "provisional"]], ["ch-8", ["provisional"]], ["ch-6", []], ["ch-3", []],
   ]);
 });
