@@ -246,8 +246,9 @@ The second gate is the trigger **T** named in `trigger`: **T-traffic** when it i
 - So is one the inventory describes as a signature or schema check at request time, or a validation. [skill-authored]
 - Do not record such a control as detection unless the inputs say it alerts, pages or reports. [skill-authored]
 - A control listed in the team's control inventory with no evidence stated takes `evidence.kind: estimate` with the inventory as its reference. [skill-authored]
-- Write `none` only in two cases. [skill-authored]
+- Write `none` only in three cases. [skill-authored]
 - Either the inputs state the evidence is absent, or an incident record shows the control did not catch the mode. [skill-authored]
+- Or an action item created the control, the inventory does not list it, and the inputs give no evidence for it. [skill-authored]
 
 * On a seeded chain the incident's detection narrative governs the evidence of the controls that exist now. [skill-authored]
 * On a seeded chain, a control that acted carries `observed_incident`. [skill-authored]

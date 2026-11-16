@@ -240,6 +240,7 @@ Before you write a seeded document: [skill-authored]
 - Each such date field has an open assumption owned by `user` that asks for the real dates. [skill-authored]
 - No control carries `observed_incident` for an incident it did not act in, nor `test_result` for a test the inputs do not give for it. [skill-authored]
 - A control an action item created is `existing` only where the inputs' control inventory lists it. [skill-authored]
+- A control an action item created, which the inventory does not list and the inputs give no evidence for, carries `evidence.kind` `none`. [skill-authored]
 
 Before you send a seeded run's final message, check it against step 7's "Before you send the final message" list. [skill-authored]
 
