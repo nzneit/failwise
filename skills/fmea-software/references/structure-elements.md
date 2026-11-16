@@ -126,6 +126,7 @@ The default answer is false; a run that sets the flag true states its reason in 
 
 - A type, owner or external column of the sheet that maps to a role or a boundary is used first. [skill-authored]
 - When the sheet has no such column, each element is typed by the boundary and role tests applied to the sheet's item text, and every typing decision is recorded in the column mapping in `meta.history` as "typed by the converter from the item text". [skill-authored]
+- The column mapping names each typed element's `kind` and `boundary`. [skill-authored]
 - `security_relevant` is false unless the sheet or its item text says otherwise. [skill-authored]
 - When an item gets an edge and the sheet carries no strength for it, the edge's `strength` is `strong`. [skill-authored]
 - This default applies whatever the item's boundary. [skill-authored]
