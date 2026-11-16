@@ -1,6 +1,6 @@
 # failwise
 
-failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders a single-file HTML report. Version 0.8.0 is a pre-release: the skill did not pass its own evaluations and tracking has none; see [Status](#status).
+failwise is a Claude Code plugin that runs a design-side [Failure Mode and Effects Analysis](https://en.wikipedia.org/wiki/Failure_mode_and_effects_analysis) (FMEA) on a software system. You describe the system; Claude works through it with you, writes the analysis as one JSON document, checks and prioritizes it with bundled scripts, and renders a single-file HTML report. Version 0.9.0 is a pre-release: the skill did not pass its own evaluations and tracking has none; see [Status](#status).
 
 An FMEA asks what each part of a system must do, how that can fail, what that does to the system and its users, what causes it, and what prevents or detects it today. One failure mode with its effects, causes and controls is one failure chain. Its Severity, Occurrence and Detection ratings, each from 1 to 10, give it a priority that says where to act first. A design-side FMEA examines the design before the incident.
 

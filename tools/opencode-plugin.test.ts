@@ -67,7 +67,7 @@ test("the plugin registers fmea-software with the installed skill directory", as
   const skill = added[0];
   assert.equal(skill.id, "fmea-software");
   assert.equal(skill.name, "fmea-software");
-  assert.match(skill.description, /design-side Failure Mode and Effects Analysis/);
+  assert.match(skill.description, /design-side FMEA \(failure mode and effects analysis\)/);
   assert.equal(skill.path, join(SKILL_DIR, "SKILL.md"));
   assert.ok(skill.content.startsWith("# Software FMEA, design side"));
   assert.ok(!skill.content.includes("${CLAUDE_SKILL_DIR}"));

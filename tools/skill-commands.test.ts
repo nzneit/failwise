@@ -221,4 +221,5 @@ test("SKILL.md's frontmatter description is 1,024 characters or fewer, the limit
   const description = lines[0].slice("description:".length).trim();
   assert.doesNotMatch(description, /^[>|]?$/, "the description is written whole on its own line");
   assert.ok(description.length <= 1024, `the description is ${description.length} characters, over 1,024`);
+  assert.doesNotMatch(description, /: /, "the description holds no colon followed by a space, which ends a plain YAML scalar");
 });

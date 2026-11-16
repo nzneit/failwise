@@ -144,6 +144,7 @@ Reproduced from NASA-GB-8719.13, a work of the United States Government; public 
 | Ground rules and assumptions | Nowhere: they are decided by the analysis and written into `meta`. | [skill-authored] |
 
 Each place maps to a `sources[].kind` on the element it feeds: `document` for an architecture document or a converted sheet, `repo` for a repository, `interview` for a person, `incident` for an incident or postmortem record, `contract` for a supplier or service agreement, and `catalog` for a catalog row that prompted the element. [skill-authored] A `repo` ref may take the form `owner/repo@commit:path` with a full 40-hex-digit SHA; a run over several codebases uses it on every `repo` ref. [skill-authored] A service-catalog entry is `document`, never `catalog`; CI and observability configuration are `repo` when held in a repository and `document` otherwise; an interface definition file is `repo`, and `contract` is kept for a supplier or service agreement. [skill-authored]
+A `repo` source names a repository the run read; a repository the inputs only name is listed in `meta.codebases[]` and is not a source. [skill-authored]
 Where an input is missing and a person supplies it instead, the source kind is `interview` and the person or role is the reference. [skill-authored]
 
 ## The non-catalog source rule

@@ -126,6 +126,7 @@ The default answer is false; a run that sets the flag true states its reason in 
 
 - A type, owner or external column of the sheet that maps to a role or a boundary is used first. [skill-authored]
 - When the sheet has no such column, each element is typed by the boundary and role tests applied to the sheet's item text, and every typing decision is recorded in the column mapping in `meta.history` as "typed by the converter from the item text". [skill-authored]
+- The column mapping names each typed element's `kind` and `boundary`. [skill-authored]
 - `security_relevant` is false unless the sheet or its item text says otherwise. [skill-authored]
 - When an item gets an edge and the sheet carries no strength for it, the edge's `strength` is `strong`. [skill-authored]
 - This default applies whatever the item's boundary. [skill-authored]
@@ -155,14 +156,17 @@ So the stale rules of an architecture change never mix with the mapping. [skill-
 | `kind: security_component` | The role by the role tests, `component` when nothing more specific fits; `security_relevant: true`; `security_rationale: "migrated from kind security_component; confirm"` | [skill-authored] |
 | Every other element | `kind` kept; `boundary: in_scope` and `security_relevant: false`, both confirmed by the person for any element the run cannot read a source for | [skill-authored] |
 
+- Ask the person whether an `external_dependency` is in fact owned, which sets `owned_outside`. [skill-authored]
 - The person applies the default for every other element per element, not blindly. [skill-authored]
 - An element whose internals `meta.boundary.excluded` lists is a candidate for `owned_outside`, and the person decides. [skill-authored]
 - Catalog refs are renamed mechanically, `cat-external_dependency-NN` to `cat-dependency-NN` and `cat-security_component-NN` to `cat-security-NN`. [skill-authored]
 - Catalog refs are renamed in both places they occur: `chains[].catalog_refs[].id`, and `elements[].sources[].ref` where the source kind is `catalog`. [skill-authored]
 - Unattended, every question of this migration takes its stated default. [skill-authored]
 - Unattended, each question of this migration is also listed in `meta.assumptions[]` as an open assumption with owner `user`. [skill-authored]
+- The v2 migration, the conversion and the update mode each say what their own questions take unattended. [skill-authored]
 - Where an element's sources can be read, the migration applies the security test and records the rationale. [skill-authored]
 - The default of false, with an open assumption, applies only to an element whose sources cannot be read. [skill-authored]
+- Make each such default, and that element's `boundary: in_scope`, an open assumption with owner `user`. [skill-authored]
 - A migrated `security_component` whose sources can be read takes the rationale the security test gives, and the fixed text 'migrated from kind security_component; confirm' is used only where no source can be read. [skill-authored]
 - The migration leaves one kind of chain as it is. That chain applies a dependency row to an in-scope element that is the `to` of no edge. [skill-authored]
 - That chain's `dependency-row-without-dependency` warning is for the next update to settle. [skill-authored]
@@ -218,6 +222,7 @@ So the stale rules of an architecture change never mix with the mapping. [skill-
 - Migration marks no row stale: the edge carries what the block carried, and strength moves no rating. [skill-authored]
 - One open assumption owned by `user` names, by id, every chain on an element whose `dependency` block was `weak`. [skill-authored]
 - This is because the v2 scales barred the loss-of-access class on such a chain, and the v3 scales rate the end effect as written. [skill-authored]
+- Each named chain is for a named person to read against the end effect as written. [skill-authored]
 - A v2 assumption that recorded the classification doubt stays beside the weak-block assumption. [skill-authored]
 - Where the person finds the loss-of-access class credible, the classification and the effect disagree. [skill-authored]
 - In that case, an edge whose strength the person corrects in an ordinary update marks the element's chains stale. [skill-authored]
@@ -246,6 +251,8 @@ So the stale rules of an architecture change never mix with the mapping. [skill-
 - A run over several codebases uses that form on every `repo` ref. [skill-authored]
 - A single-repository run may keep bare paths. [skill-authored]
 - The `repo-ref-form` lint checks the refs for consistency alone: once one `repo` ref is qualified, every `repo` ref must be. [skill-authored]
+- A `repo` ref names a repository the run read, given to it as a path or as files from it. [skill-authored]
+- A repository the inputs only name is a `meta.codebases[]` entry and never a source. [skill-authored]
 - Step 1 lists every codebase the run covers or reads in `meta.codebases[]`. [skill-authored]
 - Each entry names its repository in the `owner/repo` form and, for part of a monorepo, its `path`. [skill-authored]
 - `meta.boundary.included` describes what inside them is covered. [skill-authored]

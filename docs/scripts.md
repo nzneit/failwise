@@ -32,4 +32,6 @@ Version 0.7.0 added the flow model and kept schema v3, whose `$id` is unchanged.
 
 Version 0.8.0 added two optional parts and kept schema v3: a chain's `disposition`, which records a risk accepted with no action owed, and a handoff's `result`, which records the threat-modeling answer. A 0.7.0 plugin refuses a document carrying either, with one `SCHEMA` line per row carrying one; a document carrying neither validates under both.
 
+Version 0.9.0 kept schema v3 and changed what `update-check.ts` refuses: with `--check` it refuses a rating whose `rationale` changes under a `rescored` or `authored` review the draft keeps, and it no longer refuses a draft whose new chain has no `priority` yet.
+
 The validator of 0.1.0 refuses a tracker target or link, and those of 0.2.0 and 0.3.0 also refuse a Jira target, so people sharing a document must share the plugin version too. A document validated by an earlier version can carry `computed` results the current `validate.ts` computes differently; run `validate.ts --write` before `render.ts`.
