@@ -487,14 +487,38 @@ const staleUnreached: CheckRule = (ctx, i) => {
   return mismatch("stale-unreached", `chain ${c.id} is newly flagged element-changed but no rule reaches it`, ptr("chains", i, "stale", "reason"));
 };
 
+const FACTORS = ["S", "O", "D"] as const;
+
 const ratingOutsideSet: CheckRule = (ctx, i) => {
   const c = ctx.draft.chains[i];
   const before = copyRow(ctx, i);
   if (before === undefined || c.stale.flag || hasClearingEntry(ctx, i)) return [];
-  const f = (["S", "O", "D"] as const).find((k) => c.ratings[k].value !== before.ratings[k].value);
+  const f = FACTORS.find((k) => c.ratings[k].value !== before.ratings[k].value);
   if (f === undefined) return [];
   return mismatch("rating-outside-set", `chain ${c.id} is not stale but its ${f} moved from ${before.ratings[f].value} to ${c.ratings[f].value} with no history entry at version ${ctx.draft.meta.version}`,
     ptr("chains", i, "ratings", f, "value"));
+};
+
+/** A review a person's name stands on: the status is rescored or authored. */
+function namedReview(review: RatingReview): boolean {
+  return review.status === "rescored" || review.status === "authored";
+}
+
+/** A carried-forward rating keeps its rating object as stored. One issue per rating of a row the
+ *  copy holds whose stored review is rescored or authored, whose draft review keeps that status,
+ *  by and date, and whose rationale differs; S, O, D in order. A row the copy lacks is new and
+ *  never read. Rule id rationale-under-kept-review. */
+const rationaleUnderKeptReview: CheckRule = (ctx, i) => {
+  const c = ctx.draft.chains[i];
+  const before = copyRow(ctx, i);
+  if (before === undefined) return [];
+  return FACTORS.flatMap((f) => {
+    const was = before.ratings[f];
+    const now = c.ratings[f];
+    if (!namedReview(was.review) || !sameReview(was.review, now.review) || was.rationale === now.rationale) return [];
+    return mismatch("rationale-under-kept-review", `chain ${c.id} keeps the ${was.review.status} review of ${was.review.by ?? "absent"} on ${was.review.date ?? "absent"} on its ${f} but its rationale changed`,
+      ptr("chains", i, "ratings", f, "rationale"));
+  });
 };
 
 /** One issue per cause of the row still linked into a removed chain to a chain that is not new; a
@@ -532,7 +556,7 @@ const flowSourcesLost: CheckRule = (ctx, i) => {
   });
 };
 
-const CHECK_RULES: readonly CheckRule[] = [staleMissing, staleReason, staleSinceVersion, staleUnreached, ratingOutsideSet, linkIntoRemoved, removedFlowStillNamed, flowSourcesLost];
+const CHECK_RULES: readonly CheckRule[] = [staleMissing, staleReason, staleSinceVersion, staleUnreached, ratingOutsideSet, rationaleUnderKeptReview, linkIntoRemoved, removedFlowStillNamed, flowSourcesLost];
 
 /** The UPDATE_MISMATCH issues of --check, rows in draft order, one line per row per rule in rule order. */
 export function mismatchIssues(copy: FmeaDocument, draft: FmeaDocument, diff: UpdateDiff): Issue[] {

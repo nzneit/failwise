@@ -550,6 +550,13 @@ const MISMATCHES: (Edit & { name: string; stderr: string })[] = [
   { name: "rating-outside-set: a rating changed on a row that is not stale, with no history entry at the draft's version, is refused",
     edit: (d) => { chainOf(d, "ch-3").ratings.O = rating(4); },
     stderr: "error UPDATE_MISMATCH: rating-outside-set: chain ch-3 is not stale but its O moved from 3 to 4 with no history entry at version 2 at /chains/2/ratings/O/value\n" },
+  { name: "rationale-under-kept-review: a rating whose rescored review is kept while its rationale changes is refused at its rationale",
+    edit: (d) => { chainOf(d, "ch-3").ratings.O.rationale = "carried forward"; },
+    stderr: "error UPDATE_MISMATCH: rationale-under-kept-review: chain ch-3 keeps the rescored review of T. Tester on 2026-09-03 on its O but its rationale changed at /chains/2/ratings/O/rationale\n" },
+  { name: "rationale-under-kept-review: an authored review kept under a changed rationale is refused the same way on a stale row",
+    copy: (c) => { chainOf(c, "ch-1").ratings.D = rating(4, "authored"); },
+    edit: (d) => { chainOf(d, "ch-1").ratings.D.rationale = "carried forward"; },
+    stderr: "error UPDATE_MISMATCH: rationale-under-kept-review: chain ch-1 keeps the authored review of T. Tester on 2026-09-03 on its D but its rationale changed at /chains/0/ratings/D/rationale\n" },
   { name: "one line per row per rule: a row with a wrong reason and a wrong since_version gets both lines, in rule order",
     edit: (d) => { chainOf(d, "ch-1").stale = { flag: true, reason: "function-changed", since_version: 1 }; },
     stderr: "error UPDATE_MISMATCH: stale-reason: chain ch-1 is reached by edge checkout to gw changed but its stale.reason is function-changed at /chains/0/stale/reason\n" +
@@ -572,6 +579,13 @@ const ACCEPTED: (Edit & { name: string })[] = [
     edit: (d) => { const c = chainOf(d, "ch-2"); c.stale = { flag: false }; c.history.push({ version: 2, date: "2026-10-08", change: "stale flag cleared; since_version 2" }); } },
   { name: "a rating changed outside the stale set is accepted with a history entry at the draft's version",
     edit: (d) => { const c = chainOf(d, "ch-3"); c.ratings.O = rating(4); c.history.push({ version: 2, date: "2026-10-08", change: "O re-scored" }); } },
+  { name: "a rationale changed on a row outside the stale set whose review is set to provisional",
+    edit: (d) => { const o = chainOf(d, "ch-3").ratings.O; o.rationale = "carried forward"; o.review = { status: "provisional" }; } },
+  { name: "a rationale changed under a new rescored review, by another person on another date",
+    edit: (d) => { const o = chainOf(d, "ch-3").ratings.O; o.rationale = "carried forward"; o.review = { status: "rescored", by: "A. Reviewer", date: "2026-11-16" }; } },
+  { name: "a rationale changed where the stored review is provisional",
+    copy: (c) => { chainOf(c, "ch-3").ratings.O = rating(3, "provisional"); },
+    edit: (d) => { chainOf(d, "ch-3").ratings.O.rationale = "carried forward"; } },
 ];
 
 for (const a of ACCEPTED) {
@@ -581,6 +595,51 @@ for (const a of ACCEPTED) {
     assert.equal(r.stderr, "");
   });
 }
+
+/** goodDraft of `copy` plus ch-4, new in this update: a clone of ch-3 under the new id with no
+ *  priority yet, as the draft holds it before priority.ts writes that block. */
+function draftWithNewChain(copy: FmeaDocument): FmeaDocument {
+  const d = goodDraft(copy);
+  const fresh = { ...clone(chainOf(d, "ch-3")), id: "ch-4" };
+  delete (fresh as Partial<Chain>).priority;
+  d.chains.push(fresh);
+  return d;
+}
+
+const BOTH_RUNS: string[][] = [[], ["--check"]];
+
+test("update-check.ts accepts a draft whose new chain has no priority yet, on the first run and under --check", () => {
+  const copy = storedCopy();
+  const draft = draftWithNewChain(copy);
+  for (const flags of BOTH_RUNS) {
+    const r = runCheck(copy, draft, ...flags);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    assert.ok(!r.stdout.includes("undefined"), r.stdout);
+  }
+});
+
+test("update-check.ts still refuses with SCHEMA a draft that drops the priority of a chain the stored copy holds", () => {
+  const copy = storedCopy();
+  const draft = goodDraft(copy);
+  delete (chainOf(draft, "ch-3") as Partial<Chain>).priority;
+  for (const flags of BOTH_RUNS) {
+    const r = runCheck(copy, draft, ...flags);
+    assert.equal(r.status, 2, r.stdout);
+    assert.equal(r.stderr, "error SCHEMA: schema: the draft: missing required property \"priority\" at /chains/2\n");
+  }
+});
+
+test("update-check.ts still refuses with SCHEMA a new chain that lacks another required field", () => {
+  const copy = storedCopy();
+  const draft = draftWithNewChain(copy);
+  delete (chainOf(draft, "ch-4") as Partial<Chain>).history;
+  for (const flags of BOTH_RUNS) {
+    const r = runCheck(copy, draft, ...flags);
+    assert.equal(r.status, 2, r.stdout);
+    assert.equal(r.stderr, "error SCHEMA: schema: the draft: missing required property \"history\" at /chains/3\n");
+  }
+});
 
 /** The copy one version on with ch-1 removed and ch-4 new on gw; ch-2 still links to ch-1 until an edit changes it. */
 function withoutCh1(copy: FmeaDocument): FmeaDocument {
