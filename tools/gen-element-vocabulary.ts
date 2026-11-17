@@ -4,8 +4,8 @@
 // left as it is. tools/ is independent of skills/fmea-software/scripts/: the data file is read by
 // path and its shape checked here, with this tool's own codes, one line `error <CODE>: <message>`,
 // exit 1 usage, 2 validation, 3 I/O.
-import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fail, readText, reason, report, writeText } from "./lib/coded-error.ts";
 import { isEntry } from "./lib/entry.ts";
 
 export const VOCABULARY_PATH: string = join(import.meta.dirname, "..", "skills", "fmea-software", "data", "element-vocabulary-v1.json");
@@ -20,17 +20,6 @@ const EXIT: Record<string, number> = { USAGE: 1, VOCABULARY_INVALID: 2, REGION_M
 const FULL_TAG = /^(?:(?:sourced|paraphrased|adapted-from|cites):C[0-9]{3}|skill-authored)$/;
 
 type Raw = Record<string, unknown>;
-
-interface CodedError extends Error {
-  code: string;
-}
-
-/** Throws the one error main reports as `error <code>: <message>`. */
-function fail(code: string, message: string): never {
-  const err = new Error(message) as CodedError;
-  err.code = code;
-  throw err;
-}
 
 function asObject(raw: unknown, where: string): Raw {
   if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) return raw as Raw;
@@ -113,36 +102,18 @@ export function replaceRegion(text: string, region: string): string {
   return text.slice(0, start) + region + text.slice(end + END.length);
 }
 
-/** One line whatever the cause says: V8's JSON.parse message can carry a newline. */
-function reason(err: unknown): string {
-  return (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").trim();
-}
-
-function read(path: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (err) {
-    return fail("IO_READ", `cannot read ${path}: ${reason(err)}`);
-  }
-}
-
 function parse(path: string): unknown {
+  const text = readText(path);
   try {
-    return JSON.parse(read(path));
+    return JSON.parse(text);
   } catch (err) {
-    if ((err as Partial<CodedError>).code !== undefined) throw err;
     return fail("IO_READ", `cannot parse ${path}: ${reason(err)}`);
   }
 }
 
 function regenerate(paths: { vocabulary: string; reference: string }): void {
   const region = renderRegion(parse(paths.vocabulary));
-  const text = replaceRegion(read(paths.reference), region);
-  try {
-    writeFileSync(paths.reference, text);
-  } catch (err) {
-    fail("IO_WRITE", `cannot write ${paths.reference}: ${reason(err)}`);
-  }
+  writeText(paths.reference, replaceRegion(readText(paths.reference), region));
 }
 
 /** With no arguments, rewrites the region of `paths.reference` from `paths.vocabulary`; any
@@ -153,10 +124,7 @@ export function main(argv: string[], paths = { vocabulary: VOCABULARY_PATH, refe
     regenerate(paths);
     return 0;
   } catch (err) {
-    const code = (err as Partial<CodedError>).code;
-    if (code === undefined || EXIT[code] === undefined) throw err;
-    process.stderr.write(`error ${code}: ${reason(err)}\n`);
-    return EXIT[code];
+    return report(err, EXIT);
   }
 }
 
