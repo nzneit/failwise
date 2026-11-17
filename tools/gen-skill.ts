@@ -21,7 +21,7 @@ export const PAIRS: readonly { source: string; output: string }[] = [
 ];
 
 /** One line of the text: its content without the "\r" of a CRLF ending, that ending, and whether
- *  it is frontmatter or inside a fence, which strip copies unchanged. */
+ *  it is frontmatter, a fence line or inside a fence, which strip copies unchanged. */
 interface Line {
   text: string;
   cr: string;
@@ -50,8 +50,9 @@ function lastCell(text: string): { text: string; start: number } | undefined {
   return { text: trimmed.slice(start + 1, -1), start };
 }
 
-/** Removes the last cell from every line of a table whose header's last cell is Provenance and
- *  whose body rows' last cells are all empty. */
+/** Removes the last cell from every line of a table whose lines all end in a pipe, whose header's
+ *  last cell is Provenance and whose body rows' last cells are all empty. A table with a line
+ *  that does not end in a pipe keeps every column; the suite's success-criterion test fails on it. */
 function dropOwnColumn(table: Line[]): void {
   const rows = table.map((line) => ({ line, cell: lastCell(line.text) }));
   const own = rows.length >= 2 && rows[0].cell?.text.trim() === "Provenance" && rows.every(({ cell }, i) => cell !== undefined && (i < 2 || cell.text.trim() === ""));
@@ -75,10 +76,11 @@ function tables(lines: Line[]): Line[][] {
   return runs;
 }
 
-/** The shipped form of a tagged Markdown text. Each `[skill-authored]` that does
- *  not touch a sourced tag is removed with the space before it. A last table
- *  column headed `Provenance` that is then left with only empty cells is removed.
- *  Frontmatter and fenced blocks pass unchanged. Pure, never throws, idempotent. */
+/** The shipped form of a tagged Markdown text. Each `[skill-authored]` that
+ *  does not touch a sourced tag is removed with the space before it. A last
+ *  table column headed `Provenance` that is then left with only empty cells is
+ *  removed when every line of its table ends in a pipe. Frontmatter and fenced
+ *  blocks pass unchanged. Pure, never throws, idempotent. */
 export function strip(text: string): string {
   const lines = splitLines(text);
   for (const line of lines) if (!line.fixed) line.text = line.text.replace(OWN_TAG, "");

@@ -6,7 +6,8 @@
 //
 // In scope is every tracked `*.md` outside `skills/`, plus every tracked file under `docs/`
 // whatever its extension. `.github/pull_request_template.md` and the tagged skill source under
-// `dev/skill-source/` are the exclusions.
+// `dev/skill-source/` are the exclusions; the source is skill text, as `skills/` is, not
+// documentation.
 // Seven paths are allowlisted; any other in-scope tracked path fails whatever its size.
 // `dev/docs-baseline.json` stores the caps, not the measurements, and is seeded by hand.
 // `--write-baseline` may only lower a cap, never raise one, and never creates or reshapes the file.

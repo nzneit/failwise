@@ -41,7 +41,8 @@ function leftovers(text: string): string[] {
     if (current && current[current.length - 1].n === entry.n - 1) current.push(entry);
     else tables.push([entry]);
   }
-  // The column is the header's last cell, found by its index in every row; a missing cell is empty.
+  // The column is the header's last cell, found by its index in every row; a missing cell is empty,
+  // so a row without its closing pipe or with an extra cell cannot hide an all-empty column.
   for (const [header, , ...body] of tables.filter((table) => table.length >= 2)) {
     const column = cells(header.line).length - 1;
     if (cells(header.line)[column] === "Provenance" && body.every(({ line }) => (cells(line)[column] ?? "") === "")) messages.push(`line ${header.n}: Provenance column of only empty cells`);
