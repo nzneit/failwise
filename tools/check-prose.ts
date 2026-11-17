@@ -1,5 +1,5 @@
 // Measures the skill's prose and ratchets it against a baseline (spec §7.6).
-// It reads SKILL.md and each references/*.md.
+// It reads the tagged skill source dev/skill-source/SKILL.md and each references/*.md.
 // It counts, per heading, the untagged items, the sentences over 25 words and the filler words.
 // Every file is measured on one basis.
 // The baseline is a ratchet, not a cap: a file's total above its entry fails the run.
@@ -57,6 +57,7 @@ export const FILLER = ["basically", "essentially", "simply", "actually", "in ord
 export const BASELINE_PATH = "dev/prose-baseline.json";
 
 const SKILL_DIR = "skills/fmea-software";
+const SKILL_SOURCE = "dev/skill-source/SKILL.md";
 const REFERENCES_PREFIX = `${SKILL_DIR}/references/`;
 const USAGE = "usage: node tools/check-prose.ts [--write-baseline]";
 const COUNT_NAMES = ["untagged", "long", "filler"] as const;
@@ -70,12 +71,15 @@ export function defaultProseHost(): ProseHost {
   return { ...defaultHost(), readFile: (path) => readFileSync(path, "utf8") };
 }
 
+/** The repository-relative paths the prose ratchet measures, in order: the tagged
+ *  source dev/skill-source/SKILL.md, then each references/*.md sorted by name.
+ *  It throws when the references folder cannot be listed. */
 export function proseFiles(root: string, host: ProseHost): string[] {
   const references = host
     .listDir(join(root, SKILL_DIR, "references"))
     .filter((name) => name.endsWith(".md"))
     .sort();
-  return [`${SKILL_DIR}/SKILL.md`, ...references.map((name) => `${SKILL_DIR}/references/${name}`)];
+  return [SKILL_SOURCE, ...references.map((name) => `${SKILL_DIR}/references/${name}`)];
 }
 
 function emptyCounts(): Counts {
@@ -364,7 +368,7 @@ export function checkProse(
     lines.push(line);
     writeError(line);
   };
-  let files: string[] = [`${SKILL_DIR}/SKILL.md`];
+  let files: string[] = [SKILL_SOURCE];
   let unlisted = false;
   try {
     files = proseFiles(root, host);

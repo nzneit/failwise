@@ -5,7 +5,8 @@
 //   node tools/check-docs.ts --write-baseline   # lower caps to the measurements
 //
 // In scope is every tracked `*.md` outside `skills/`, plus every tracked file under `docs/`
-// whatever its extension. `.github/pull_request_template.md` is the only exclusion.
+// whatever its extension. `.github/pull_request_template.md` and the tagged skill source under
+// `dev/skill-source/` are the exclusions.
 // Seven paths are allowlisted; any other in-scope tracked path fails whatever its size.
 // `dev/docs-baseline.json` stores the caps, not the measurements, and is seeded by hand.
 // `--write-baseline` may only lower a cap, never raise one, and never creates or reshapes the file.
@@ -92,6 +93,7 @@ function parseBaseline(text: string | null): Baseline | null {
 
 function inScope(path: string): boolean {
   if (path === TEMPLATE) return false;
+  if (path.startsWith("dev/skill-source/")) return false;
   if (path.startsWith("docs/")) return true;
   if (path.startsWith("skills/")) return false;
   return path.endsWith(".md");

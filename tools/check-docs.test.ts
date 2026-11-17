@@ -205,6 +205,12 @@ test("the pull request template is excluded", () => {
   assert.equal(result.status, 0);
 });
 
+test("the tagged skill source under dev/skill-source/ is out of scope, and another dev/ Markdown file is not", () => {
+  const source = "dev/skill-source/SKILL.md";
+  assert.equal(run(fakeHost({ tracked: [...ALLOWLIST, source], files: { ...cleanFiles(), [source]: "word\n" } })).status, 0);
+  assert.equal(run(fakeHost({ tracked: [...ALLOWLIST, "dev/notes.md"], files: { ...cleanFiles(), "dev/notes.md": "word\n" } })).status, 1);
+});
+
 test("--write-baseline lowers every cap to the measurement", () => {
   const host = fakeHost();
   const result = run(host, true);

@@ -6,6 +6,65 @@ import { join } from "node:path";
 import { main, PAIRS, strip } from "./gen-skill.ts";
 
 const TAG = "[skill-authored]";
+const ROOT = join(import.meta.dirname, "..");
+const SOURCED_TAG = /\[(?:sourced|paraphrased|adapted-from|cites):C\d+\]/;
+
+/** The lines of text outside its frontmatter and fences, numbered from 1, and the number of the
+ *  fence line left open, if one is. */
+function outsideFences(text: string): { lines: { n: number; line: string }[]; open: number | undefined } {
+  const all = text.split("\n").map((line) => line.replace(/\r$/, ""));
+  const close = all[0] === "---" ? all.indexOf("---", 1) : -1;
+  const lines: { n: number; line: string }[] = [];
+  let open: number | undefined;
+  all.forEach((line, i) => {
+    if (i <= close) return;
+    if (line.startsWith("```")) open = open === undefined ? i + 1 : undefined;
+    else if (open === undefined) lines.push({ n: i + 1, line });
+  });
+  return { lines, open };
+}
+
+/** The trimmed last cell of a table row. */
+function finalCell(row: string): string {
+  return row.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).at(-1)?.trim() ?? "";
+}
+
+/** One message per breach of the success criterion of the design (spec §1), written apart from
+ *  strip: a tag with no sourced tag on its line, a Provenance column of only empty cells, and a
+ *  fence left open. Frontmatter and fenced lines are not read. */
+function leftovers(text: string): string[] {
+  const { lines, open } = outsideFences(text);
+  const messages = lines.filter(({ line }) => line.includes(TAG) && !SOURCED_TAG.test(line)).map(({ n }) => `line ${n}: ${TAG} without a sourced tag`);
+  const tables: { n: number; line: string }[][] = [];
+  for (const entry of lines.filter(({ line }) => line.startsWith("|"))) {
+    const current = tables.at(-1);
+    if (current && current[current.length - 1].n === entry.n - 1) current.push(entry);
+    else tables.push([entry]);
+  }
+  for (const [header, , ...body] of tables.filter((table) => table.length >= 2)) {
+    if (finalCell(header.line) === "Provenance" && body.every(({ line }) => finalCell(line) === "")) messages.push(`line ${header.n}: Provenance column of only empty cells`);
+  }
+  if (open !== undefined) messages.push(`line ${open}: unclosed fence`);
+  return messages;
+}
+
+test("every generated skill file is exactly strip of its tagged source", () => {
+  for (const { source, output } of PAIRS) {
+    const message = `${output} differs from strip(${source}); edit ${source}, then run node tools/gen-skill.ts`;
+    assert.equal(readFileSync(join(ROOT, output), "utf8"), strip(readFileSync(join(ROOT, source), "utf8")), message);
+  }
+});
+
+test("every generated skill file meets the success criterion on its own", () => {
+  for (const { output } of PAIRS) assert.deepEqual(leftovers(readFileSync(join(ROOT, output), "utf8")), [], output);
+});
+
+test("leftovers names a stray tag, an empty Provenance column and an unclosed fence", () => {
+  assert.deepEqual(leftovers("Write `[skill-authored]` here.\n"), ["line 1: [skill-authored] without a sourced tag"]);
+  assert.deepEqual(leftovers("| A | Provenance |\n|---|---|\n| x | |\n"), ["line 1: Provenance column of only empty cells"]);
+  assert.deepEqual(leftovers("One.\n```\ncode [skill-authored]\n"), ["line 2: unclosed fence"]);
+  assert.deepEqual(leftovers("A. [paraphrased:C103] [skill-authored]\n```\nx [skill-authored]\n```\n"), []);
+});
 
 test("PAIRS holds the one pair: the tagged source generates the shipped SKILL.md", () => {
   assert.deepEqual(PAIRS, [{ source: "dev/skill-source/SKILL.md", output: "skills/fmea-software/SKILL.md" }]);
