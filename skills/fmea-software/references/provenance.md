@@ -2,6 +2,7 @@
 
 - Every sourced statement in a reference file cites a record id. [skill-authored]
 - Every unsourced statement is tagged `skill-authored`. [skill-authored]
+- `SKILL.md` ships without its `skill-authored` tags; the tagged source is `dev/skill-source/SKILL.md` in the plugin repository. [skill-authored]
 - An untagged sentence is a defect. [skill-authored]
 - A tag the cited record's source status does not permit is also a defect. [skill-authored]
 - This file is the rule the rest of the build is checked against. [skill-authored]

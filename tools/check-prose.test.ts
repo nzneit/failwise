@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -22,7 +22,7 @@ import {
 
 const ROOT = join(import.meta.dirname, "..");
 const CLI = join(import.meta.dirname, "check-prose.ts");
-const SKILL = "skills/fmea-software/SKILL.md";
+const SKILL = "dev/skill-source/SKILL.md";
 const REF = "skills/fmea-software/references/methodology.md";
 const STRUCTURE = "skills/fmea-software/references/structure-elements.md";
 const PROVENANCE = "skills/fmea-software/references/provenance.md";
@@ -204,7 +204,7 @@ test("checkProse fails closed: a missing or non-JSON baseline, an unreadable fil
   const passing = runCheck(fakeProseHost({ ...base, [BASELINE_PATH]: GOOD_BASELINE }));
   assert.equal(passing.status, 0);
   assert.deepEqual(passing.errors, []);
-  assert.match(passing.lines.join("\n"), /^## skills\/fmea-software\/SKILL\.md$/m);
+  assert.match(passing.lines.join("\n"), /^## dev\/skill-source\/SKILL\.md$/m);
 
   const missing = runCheck(fakeProseHost(base));
   assert.equal(missing.status, 3);
@@ -231,7 +231,7 @@ test("checkProse fails closed: a missing or non-JSON baseline, an unreadable fil
     }),
   );
   assert.equal(both.status, 3);
-  assert.match(both.errors.join("\n"), /^error PROSE: skills\/fmea-software\/SKILL\.md: long is 1, above its baseline 0$/m);
+  assert.match(both.errors.join("\n"), /^error PROSE: dev\/skill-source\/SKILL\.md: long is 1, above its baseline 0$/m);
   assert.match(both.errors.join("\n"), /^error IO_READ: /m);
 
   const mixed = runCheck(
@@ -242,7 +242,7 @@ test("checkProse fails closed: a missing or non-JSON baseline, an unreadable fil
     }),
   );
   assert.equal(mixed.status, 3);
-  assert.match(mixed.errors.join("\n"), /^error PROSE: skills\/fmea-software\/SKILL\.md: untagged is 2, above its baseline 1$/m);
+  assert.match(mixed.errors.join("\n"), /^error PROSE: dev\/skill-source\/SKILL\.md: untagged is 2, above its baseline 1$/m);
   assert.match(mixed.errors.join("\n"), /^error IO_READ: skills\/fmea-software\/references\/methodology\.md: EACCES$/m);
 
   const writeNotJson = runCheck(fakeProseHost({ ...base, [BASELINE_PATH]: "not json" }), true);
@@ -253,11 +253,12 @@ test("checkProse fails closed: a missing or non-JSON baseline, an unreadable fil
   assert.equal(writeUnreadable.lines.some((line) => line.startsWith("wrote")), false);
 });
 
-/** A temporary repository root holding SKILL.md, one reference and an empty dev folder. */
+/** A temporary repository root holding the tagged skill source under dev/skill-source/, one
+ *  reference, and no baseline in dev/. */
 function tempRoot(skill: string, reference: string): string {
   const root = mkdtempSync(join(tmpdir(), "check-prose-"));
   mkdirSync(join(root, "skills", "fmea-software", "references"), { recursive: true });
-  mkdirSync(join(root, "dev"));
+  mkdirSync(join(root, "dev", "skill-source"), { recursive: true });
   writeFileSync(join(root, SKILL), skill);
   writeFileSync(join(root, REF), reference);
   return root;
@@ -286,7 +287,7 @@ test("checkProse --write-baseline writes the measured counts with sorted keys an
 
     writeFileSync(join(root, SKILL), `${skill}${sentence(30)} [skill-authored]\n`);
     assert.equal(run(true), 1);
-    assert.match(errors.join("\n"), /^error PROSE: skills\/fmea-software\/SKILL\.md: long would rise from 0 to 1$/m);
+    assert.match(errors.join("\n"), /^error PROSE: dev\/skill-source\/SKILL\.md: long would rise from 0 to 1$/m);
     assert.equal(readFileSync(path, "utf8"), written);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -300,7 +301,7 @@ test("checkProse: a references folder that cannot be listed still measures SKILL
   };
   const result = runCheck(host);
   assert.equal(result.status, 3);
-  assert.match(result.lines.join("\n"), /^## skills\/fmea-software\/SKILL\.md$/m);
+  assert.match(result.lines.join("\n"), /^## dev\/skill-source\/SKILL\.md$/m);
   assert.equal(result.errors.filter((line) => line.startsWith("error IO_READ:")).length, 1);
   assert.doesNotMatch(result.errors.join("\n"), /error PROSE:/);
   assert.equal(runCheck(host, true).status, 3);
@@ -318,7 +319,9 @@ test("checkProse: a baseline that is JSON but not an object is an IO_READ line, 
 
 test("checkProse: a failed baseline write is one IO_WRITE line, exit 3, and no file", () => {
   const root = tempRoot(`# Top\n${sentence(6)} [skill-authored]\n`, `# Ref\n${sentence(7)}\n`);
-  rmSync(join(root, "dev"), { recursive: true });
+  // dev/ holds the tagged source, so it stays; the baseline path is a link into a folder that
+  // does not exist, so the write fails.
+  symlinkSync(join(root, "missing", "prose-baseline.json"), join(root, BASELINE_PATH));
   try {
     const lines: string[] = [];
     const errors: string[] = [];
@@ -345,8 +348,8 @@ test("the CLI prints every count and exits 1 above the baseline, 0 at it", () =>
     writeFileSync(join(root, SKILL), `${skill}${sentence(30)} [skill-authored]\n`);
     const above = run();
     assert.equal(above.status, 1);
-    assert.match(above.stderr, /^error PROSE: skills\/fmea-software\/SKILL\.md: long is 1, above its baseline 0$/m);
-    assert.match(above.stdout, /^## skills\/fmea-software\/SKILL\.md$/m);
+    assert.match(above.stderr, /^error PROSE: dev\/skill-source\/SKILL\.md: long is 1, above its baseline 0$/m);
+    assert.match(above.stdout, /^## dev\/skill-source\/SKILL\.md$/m);
     assert.match(above.stdout, /^- \(preamble\): \d+ untagged, \d+ over 25 words, \d+ filler$/m);
 
     const other = run("--other");

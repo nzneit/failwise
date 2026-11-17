@@ -11,6 +11,8 @@ node tools/check.ts
 
 The first runs both suites under `node --test`, every `*.test.ts` under `skills/fmea-software/scripts/` and under `tools/`, with the file lists built by the script; it exits 1 when a suite has no test file or a folder cannot be listed. The second runs five static checks in order: the type check (`tsc`), the linter (`oxlint`) with warnings denied, the dead-code, duplication and complexity analysis (`fallow`), the prose ratchet (`tools/check-prose.ts`) against `dev/prose-baseline.json`, and the documentation check (`tools/check-docs.ts`) against the caps in `dev/docs-baseline.json`; it exits 1 on any finding or a missing tool. Lower a prose baseline in the same commit with `node tools/check-prose.ts --write-baseline`. Documentation caps may only be lowered; `--write-baseline` refuses a raise and leaves the file unchanged, and only the maintainer raises one, in a separate reviewed commit.
 
+`skills/fmea-software/SKILL.md` is generated: edit the tagged source `dev/skill-source/SKILL.md`, run `node tools/gen-skill.ts`, and commit both files; the suite fails when they disagree.
+
 Both commands are the same in bash and fish. Node 24.2 or later must be on PATH (`source ~/.nvm/nvm.sh` in bash, `nvm use 24` in fish); `bun tools/run-tests.ts` and `bun tools/check.ts` also work and find Node 24.2 or later through nvm.
 
 The checkers are development tools declared in `dev/package.json`. Install them once with `npm ci --prefix dev --ignore-scripts`, and again when `dev/package-lock.json` changes. Never add a lockfile or a dependency to the root `package.json`: Claude Code installs whatever a plugin's root declares on every user's machine.
