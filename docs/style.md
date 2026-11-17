@@ -1,5 +1,5 @@
 # How the skill's prose is written
-This page is the style rule for `skills/fmea-software/SKILL.md` and the files in `skills/fmea-software/references/`.
+This page is the style rule for `dev/skill-source/SKILL.md` and the files in `skills/fmea-software/references/`.
 
 ## Two kinds of text
 An instruction tells the model what to do; a description tells a person what is so. Tell them apart by the verb and the reader.
@@ -52,6 +52,6 @@ A sourced sentence carries `sourced:`, `paraphrased:`, `adapted-from:` or `cites
 ## The checker
 Run `node tools/check-prose.ts` from the repository root; `bun tools/check-prose.ts` also works, and `tools/check.ts` runs it as its fourth step.
 
-- It reads `SKILL.md` and every `references/*.md` and counts untagged items, sentences over 25 words and filler words, per heading and file; an item is a sentence outside a table, bullet or row, and a row is untagged when its last cell holds no tag; the register and generated region are exempt.
+- It reads `dev/skill-source/SKILL.md` and every `references/*.md` and counts untagged items, sentences over 25 words and filler words, per heading and file; an item is a sentence outside a table, bullet or row, and a row is untagged when its last cell holds no tag; the register and generated region are exempt.
 - Keep each paragraph and bullet on one line: it measures each line alone, a bullet is one item at any length, and a tag anywhere in it tags it.
 - It compares each file's three totals with `dev/prose-baseline.json`: a count may fall, never rise. Lower it with `node tools/check-prose.ts --write-baseline`; that write refuses a rise, and the suite refuses a baseline above the measured count. It fails closed: exit 0 when the counts hold, 1 on a rise, bad argument or scope mismatch, and 3 on an unreadable baseline, file or folder, or a failed write.

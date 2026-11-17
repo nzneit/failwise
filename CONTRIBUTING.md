@@ -22,7 +22,7 @@ node tools/check.ts
 
 It runs five checks in order: the TypeScript type check (`tsc`), the linter (`oxlint`) with type-aware rules and warnings denied, the dead-code, duplication and complexity analysis (`fallow`), the prose ratchet (`tools/check-prose.ts`), and the documentation check (`tools/check-docs.ts`). It exits 1 on any finding or a missing tool.
 
-The prose ratchet compares `SKILL.md` and the reference files with `dev/prose-baseline.json`; it fails when a count rises, when a reference file is added, renamed or removed, or when it cannot read its input. Lower the baseline in the same commit with `node tools/check-prose.ts --write-baseline`.
+The prose ratchet compares `dev/skill-source/SKILL.md` and the reference files with `dev/prose-baseline.json`; it fails when a count rises, when a reference file is added, renamed or removed, or when it cannot read its input. Lower the baseline in the same commit with `node tools/check-prose.ts --write-baseline`.
 
 The documentation check enforces the seven-file documentation surface and the caps in `dev/docs-baseline.json`. Caps may only be lowered: `--write-baseline` refuses a raise, refuses to add or remove a path, and leaves the file unchanged on a refusal. Only the maintainer may raise a cap, in a separate reviewed commit.
 
@@ -44,6 +44,8 @@ The maintainer audits every change to the references for restricted wording befo
 ## Writing the skill's prose
 
 `SKILL.md` and the reference files are written to [`docs/style.md`](docs/style.md), which covers the two kinds of text, the shape of a procedure, the caps, one word for one thing, the tag rules, what a change to a sourced sentence needs, and the checker. Write each rule once, where it applies, and keep every paragraph and bullet on one line.
+
+`skills/fmea-software/SKILL.md` is generated: edit the tagged source `dev/skill-source/SKILL.md`, run `node tools/gen-skill.ts`, and commit both files; the suite fails when they disagree.
 
 ## Opening a pull request
 
