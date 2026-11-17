@@ -7,7 +7,10 @@
 // `## Purpose` and `## Verification`. A title is at most 100 characters.
 // A commit body is at most 200 words and its subject at most 100 characters. A squash landing
 // whose subject carries a ` (#N)` suffix is exempt from the 200-word body limit, because the
-// pull request limit governs it; its title is measured without the suffix.
+// pull request limit governs it; its title is measured without the suffix. A commit body is
+// measured without a final paragraph of person trailers (`Co-authored-by:`, `Signed-off-by:`) and
+// the dashed line GitHub writes before the trailers it appends to a squash, so a squash landing
+// measures what its pull request body measured.
 // The body and title arrive only through the environment, never through argv, because a fork's
 // pull request body is attacker-controlled.
 // Exit 1 on a violation or a usage error, 3 when the body is absent or git cannot be read.
@@ -22,6 +25,9 @@ const TITLE_CAP = 100;
 const DIFF_PREFIX = "Read the diff: https://revision.city/";
 const USAGE = "usage: node tools/check-bodies.ts --pr | --commits <base>..<head>";
 const SQUASH = /^(.*) \(#\d+\)$/u;
+// A trailer that names a person; only these keys are dropped, so a closing `Note: …` still counts.
+const PERSON_TRAILER = /^[A-Za-z][A-Za-z-]*-by: \S/iu;
+const DASHED_LINE = /^-{3,}$/u;
 
 interface Commit {
   sha: string;
@@ -33,13 +39,24 @@ function lengthInCodePoints(text: string): number {
   return Array.from(text).length;
 }
 
+/** The body without its final paragraph when every line of it is a person trailer, and then
+ *  without a dashed line standing as the paragraph before it, as GitHub writes on a squash. */
+function withoutTrailers(body: string): string {
+  const paragraphs = body.trimEnd().split(/\n[ \t]*\n/u);
+  const last = paragraphs[paragraphs.length - 1].split("\n");
+  if (!last.every((line) => PERSON_TRAILER.test(line.trim()))) return body;
+  paragraphs.pop();
+  if (paragraphs.length > 0 && DASHED_LINE.test(paragraphs[paragraphs.length - 1].trim())) paragraphs.pop();
+  return paragraphs.join("\n\n");
+}
+
 function commitLines({ sha, subject, body }: Commit): string[] {
   const short = sha.slice(0, 7);
   const squash = SQUASH.exec(subject);
   const title = squash ? (squash[1] ?? subject) : subject;
   const bodyCap = squash ? PR_BODY_CAP : COMMIT_BODY_CAP;
   const errors: string[] = [];
-  const words = countWords(body);
+  const words = countWords(withoutTrailers(body));
   if (words > bodyCap) {
     errors.push(`error BODIES: ${short} has a ${words}-word body, above the cap of ${bodyCap}`);
   }
