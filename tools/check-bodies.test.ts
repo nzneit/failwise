@@ -167,6 +167,21 @@ test("a direct push with the same body fails the 200-word cap", () => {
   assert.ok(result.errors[0]?.includes("200-word cap") || result.errors[0]?.includes("cap of 200"), result.errors[0]);
 });
 
+test("a squash landing is measured without the separator and trailers GitHub appends", () => {
+  const appended = "\n\n---------\n\nCo-authored-by: A Person <a@example.com>\n";
+  const at = runCommits("main..head", fakeHost({ commits: [{ sha: "1".repeat(40), subject: "Title (#36)", body: `${words(350)}${appended}` }] }));
+  assert.equal(at.status, 0, at.errors.join("\n"));
+  const above = runCommits("main..head", fakeHost({ commits: [{ sha: "2".repeat(40), subject: "Title (#36)", body: `${words(351)}${appended}` }] }));
+  assert.deepEqual(above.errors, [`error BODIES: ${"2".repeat(7)} has a 351-word body, above the cap of 350`]);
+});
+
+test("person trailers at the end of an ordinary commit are not counted, and a closing line that only looks like one is", () => {
+  const signed = runCommits("main..head", fakeHost({ commits: [{ sha: "3".repeat(40), subject: "Subject", body: `${words(200)}\n\nSigned-off-by: A <a@example.com>\nReviewed-by: B <b@example.com>\n` }] }));
+  assert.equal(signed.status, 0, signed.errors.join("\n"));
+  const note = runCommits("main..head", fakeHost({ commits: [{ sha: "4".repeat(40), subject: "Subject", body: `${words(198)}\n\nNote: three more\n` }] }));
+  assert.deepEqual(note.errors, [`error BODIES: ${"4".repeat(7)} has a 201-word body, above the cap of 200`]);
+});
+
 test("a squash title is measured without its suffix", () => {
   const sha = "0".repeat(40);
   const result = runCommits("main..head", fakeHost({ commits: [{ sha, subject: `${"t".repeat(100)} (#31)`, body: words(10) }] }));
