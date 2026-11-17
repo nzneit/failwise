@@ -24,9 +24,9 @@ function outsideFences(text: string): { lines: { n: number; line: string }[]; op
   return { lines, open };
 }
 
-/** The trimmed last cell of a table row. */
-function finalCell(row: string): string {
-  return row.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).at(-1)?.trim() ?? "";
+/** The trimmed cells of a table row, its outer pipes dropped. */
+function cells(row: string): string[] {
+  return row.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(/(?<!\\)\|/).map((cell) => cell.trim());
 }
 
 /** One message per breach of the success criterion of the design (spec §1), written apart from
@@ -41,8 +41,10 @@ function leftovers(text: string): string[] {
     if (current && current[current.length - 1].n === entry.n - 1) current.push(entry);
     else tables.push([entry]);
   }
+  // The column is the header's last cell, found by its index in every row; a missing cell is empty.
   for (const [header, , ...body] of tables.filter((table) => table.length >= 2)) {
-    if (finalCell(header.line) === "Provenance" && body.every(({ line }) => finalCell(line) === "")) messages.push(`line ${header.n}: Provenance column of only empty cells`);
+    const column = cells(header.line).length - 1;
+    if (cells(header.line)[column] === "Provenance" && body.every(({ line }) => (cells(line)[column] ?? "") === "")) messages.push(`line ${header.n}: Provenance column of only empty cells`);
   }
   if (open !== undefined) messages.push(`line ${open}: unclosed fence`);
   return messages;
@@ -64,6 +66,14 @@ test("leftovers names a stray tag, an empty Provenance column and an unclosed fe
   assert.deepEqual(leftovers("| A | Provenance |\n|---|---|\n| x | |\n"), ["line 1: Provenance column of only empty cells"]);
   assert.deepEqual(leftovers("One.\n```\ncode [skill-authored]\n"), ["line 2: unclosed fence"]);
   assert.deepEqual(leftovers("A. [paraphrased:C103] [skill-authored]\n```\nx [skill-authored]\n```\n"), []);
+});
+
+test("leftovers finds the Provenance column by the header's cells, so a row without its closing pipe or with an extra cell still counts", () => {
+  const empty = ["line 1: Provenance column of only empty cells"];
+  assert.deepEqual(leftovers("| A | Provenance\n|---|---\n| x |\n"), empty);
+  assert.deepEqual(leftovers("| S | P | Provenance |\n|---|---|---|\n| a | A. | |\n| b | B. |\n"), empty);
+  assert.deepEqual(leftovers("| A | Provenance |\n|---|---|\n| x | | extra |\n"), empty);
+  assert.deepEqual(leftovers("| A | Provenance |\n|---|---|\n| x | |\n| y | [cites:C001] |\n"), []);
 });
 
 test("PAIRS holds the one pair: the tagged source generates the shipped SKILL.md", () => {
